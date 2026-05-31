@@ -36,6 +36,9 @@ class AuthViewModel : ViewModel() {
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
+    private val _currentUserEmail = MutableStateFlow(auth?.currentUser?.email ?: "")
+    val currentUserEmail: StateFlow<String> = _currentUserEmail.asStateFlow()
+
     init {
         try {
             if (auth?.currentUser != null) {
@@ -57,6 +60,7 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 auth?.signInWithEmailAndPassword(email, pass)?.await()
+                _currentUserEmail.value = auth?.currentUser?.email ?: email
                 _authState.value = AuthState.Authenticated
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Login failed")
@@ -82,6 +86,7 @@ class AuthViewModel : ViewModel() {
                     )
                     db?.collection("profiles")?.document(user.uid)?.set(profile)?.await()
                 }
+                _currentUserEmail.value = auth?.currentUser?.email ?: email
                 _authState.value = AuthState.Authenticated
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Signup failed")
@@ -92,6 +97,7 @@ class AuthViewModel : ViewModel() {
     fun logout() {
         try {
             auth?.signOut()
+            _currentUserEmail.value = ""
             _authState.value = AuthState.Idle
         } catch (e: Exception) {
             _authState.value = AuthState.Error("Failed to logout")
