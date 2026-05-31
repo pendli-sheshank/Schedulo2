@@ -2,6 +2,7 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
+  alias(libs.plugins.google.services)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
 }
@@ -11,7 +12,7 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.schedulo.abcde"
+    applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
     versionCode = 11
