@@ -1,16 +1,11 @@
 package com.example
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -28,14 +23,12 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
 import com.example.ui.theme.AccentBlue
 import com.example.ui.theme.AccentOrange
 import com.example.ui.theme.OnSurfaceVariantLight
-import com.example.ui.theme.OutlineLight
 import com.example.ui.theme.PrimaryGreen
-import com.example.ui.theme.SecondaryGreen
-import com.example.ui.theme.SurfaceVariantLight
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CheckCircle
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -262,7 +255,6 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
             confirmButton = {
                 Button(
                     onClick = {
-                        if (title.isBlank()) return@Button
                         val finalRate = if (isGigWork) 0.0 else (rateStr.toDoubleOrNull() ?: 15.0)
                         val finalGoal = goalHoursStr.toDoubleOrNull() ?: 20.0
 
@@ -274,7 +266,6 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                         }
                         showDialog = false
                     },
-                    enabled = title.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
                 ) {
                     Text("Save")
@@ -900,33 +891,11 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
 @Composable
 fun ProfileScreen(
     dashboardViewModel: DashboardViewModel,
-    authViewModel: AuthViewModel? = null,
     onBack: () -> Unit
 ) {
     val currentCompany by dashboardViewModel.defaultCompany.collectAsState()
     val currentRate by dashboardViewModel.defaultRate.collectAsState()
     val jobs by dashboardViewModel.jobs.collectAsState()
-    val shifts by dashboardViewModel.shifts.collectAsState()
-    val userName by dashboardViewModel.userName.collectAsState()
-    val memberSince by dashboardViewModel.memberSince.collectAsState()
-    val userEmail by authViewModel?.currentUserEmail?.collectAsState() ?: remember { mutableStateOf("") }
-
-    val displayName = userName.ifBlank { userEmail.substringBefore("@").ifBlank { "User" } }
-    val initials = remember(userName, userEmail) {
-        if (userName.isNotBlank()) {
-            val parts = userName.trim().split(" ")
-            if (parts.size >= 2) "${parts.first().first()}${parts.last().first()}".uppercase()
-            else userName.take(2).uppercase()
-        } else {
-            val prefix = userEmail.substringBefore("@")
-            if (prefix.length >= 2) prefix.take(2).uppercase() else prefix.uppercase().ifEmpty { "U" }
-        }
-    }
-
-    val now = System.currentTimeMillis()
-    val completedShifts = shifts.filter { it.startTime < now }
-    val totalHours = completedShifts.sumOf { it.durationHours }
-    val totalEarned = completedShifts.sumOf { it.totalEarned }
 
     var company by remember(currentCompany) { mutableStateOf(currentCompany) }
     var rate by remember(currentRate) { mutableStateOf(currentRate.toString()) }
@@ -947,231 +916,68 @@ fun ProfileScreen(
         Column(
             modifier = Modifier
                 .padding(padding)
+                .padding(16.dp)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .imePadding()
         ) {
-            // Hero card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = PrimaryGreen)
-            ) {
-                Column(
+            Text("Default Shift Details", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = company,
+                    onValueChange = { company = it },
+                    label = { Text("Default Job/Company") },
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+                )
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(88.dp)
-                            .clip(CircleShape)
-                            .background(SecondaryGreen)
-                            .border(3.dp, Color.White, CircleShape),
-                        contentAlignment = Alignment.Center
+                        .matchParentSize()
+                        .clickable { expanded = true }
+                )
+                if (jobs.isNotEmpty()) {
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
                     ) {
-                        Text(
-                            text = initials,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = displayName,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    if (userEmail.isNotBlank()) {
-                        Text(
-                            text = userEmail,
-                            fontSize = 14.sp,
-                            color = Color.White.copy(alpha = 0.8f)
-                        )
-                    }
-                    if (memberSince.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Surface(
-                            shape = CircleShape,
-                            color = Color.White.copy(alpha = 0.2f)
-                        ) {
-                            Text(
-                                text = "Member since $memberSince",
-                                fontSize = 12.sp,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        jobs.forEach { job ->
+                            DropdownMenuItem(
+                                text = { Text(job.title) },
+                                onClick = {
+                                    company = job.title
+                                    rate = job.defaultHourlyRate.toString()
+                                    expanded = false
+                                }
                             )
                         }
                     }
                 }
             }
-
-            // Activity stats row
-            Row(
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = rate,
+                onValueChange = { rate = it },
+                label = { Text("Default Hourly Rate ($)") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                onClick = {
+                    dashboardViewModel.saveSettings(company, rate.toDoubleOrNull() ?: 0.0)
+                    onBack()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    .height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
             ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    label = "SHIFTS",
-                    value = "${completedShifts.size}"
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    label = "HOURS",
-                    value = "${"%.1f".format(totalHours)}"
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    label = "EARNED",
-                    value = "$${"%.0f".format(totalEarned)}"
-                )
+                Text("Save Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Employers card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, OutlineLight)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.WorkOutline,
-                            contentDescription = null,
-                            tint = PrimaryGreen,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Employers (${jobs.size})",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                    }
-                    if (jobs.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = jobs.joinToString(" · ") { it.title },
-                            fontSize = 13.sp,
-                            color = OnSurfaceVariantLight,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = OutlineLight)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Default Shift Settings
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("Default Shift Settings", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = company,
-                        onValueChange = { company = it },
-                        label = { Text("Default Job/Company") },
-                        readOnly = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
-                    )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clickable { expanded = true }
-                    )
-                    if (jobs.isNotEmpty()) {
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
-                            jobs.forEach { job ->
-                                DropdownMenuItem(
-                                    text = { Text(job.title) },
-                                    onClick = {
-                                        company = job.title
-                                        rate = job.defaultHourlyRate.toString()
-                                        expanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = rate,
-                    onValueChange = { rate = it },
-                    label = { Text("Default Hourly Rate ($)") },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(
-                    onClick = {
-                        dashboardViewModel.saveSettings(company, rate.toDoubleOrNull() ?: 0.0)
-                        onBack()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
-                ) {
-                    Text("Save Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatCard(modifier: Modifier = Modifier, label: String, value: String) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, OutlineLight)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = value,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = PrimaryGreen
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = label,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = OnSurfaceVariantLight,
-                letterSpacing = 1.sp
-            )
         }
     }
 }
