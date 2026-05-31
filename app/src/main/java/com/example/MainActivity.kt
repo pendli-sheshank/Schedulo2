@@ -28,8 +28,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.*
-import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,22 +44,6 @@ import androidx.navigation.compose.rememberNavController
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        try {
-            if (BuildConfig.FIREBASE_API_KEY.isNotBlank() && 
-                !BuildConfig.FIREBASE_API_KEY.contains("Example") &&
-                !BuildConfig.FIREBASE_API_KEY.contains("YOUR_")) {
-                val options = FirebaseOptions.Builder()
-                    .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
-                    .setApplicationId(BuildConfig.FIREBASE_APP_ID)
-                    .setApiKey(BuildConfig.FIREBASE_API_KEY)
-                    .build()
-                FirebaseApp.initializeApp(applicationContext, options)
-            }
-        } catch (t: Throwable) {
-            // Error initializing Firebase or already initialized
-        }
-
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
