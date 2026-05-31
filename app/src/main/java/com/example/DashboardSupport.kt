@@ -114,24 +114,42 @@ class DashboardViewModel : ViewModel() {
     private val _memberSince = MutableStateFlow("")
     val memberSince = _memberSince.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading = _isLoading.asStateFlow()
+
+    private val _syncError = MutableStateFlow<String?>(null)
+    val syncError = _syncError.asStateFlow()
+
     private var loadedForUserId: String? = null
     private var jobsListenerRegistration: ListenerRegistration? = null
     private var shiftsListenerRegistration: ListenerRegistration? = null
     private var profileListenerRegistration: ListenerRegistration? = null
     
+    fun clearSyncError() {
+        _syncError.value = null
+    }
+
     fun loadSettings() {
         val uid = auth?.currentUser?.uid ?: "local_user"
         _userId.value = uid
         val database = db
         if (database != null && uid != "local_user") {
-            database.collection("settings").document(uid).addSnapshotListener { doc, _ ->
+            database.collection("settings").document(uid).addSnapshotListener { doc, error ->
+                if (error != null) {
+                    _syncError.value = "Failed to load settings: ${error.message}"
+                    return@addSnapshotListener
+                }
                 if (doc != null && doc.exists()) {
                     _defaultCompany.value = doc.getString("defaultCompany") ?: ""
                     _defaultRate.value = doc.getDouble("defaultRate") ?: 0.0
                 }
             }
             profileListenerRegistration?.remove()
-            profileListenerRegistration = database.collection("profiles").document(uid).addSnapshotListener { doc, _ ->
+            profileListenerRegistration = database.collection("profiles").document(uid).addSnapshotListener { doc, error ->
+                if (error != null) {
+                    _syncError.value = "Failed to load profile: ${error.message}"
+                    return@addSnapshotListener
+                }
                 if (doc != null && doc.exists()) {
                     _userName.value = doc.getString("full_name") ?: ""
                     val createdAt = doc.getLong("created_at")
@@ -139,9 +157,23 @@ class DashboardViewModel : ViewModel() {
                         val fmt = java.text.SimpleDateFormat("MMMM yyyy", Locale.US)
                         _memberSince.value = fmt.format(Date(createdAt))
                     }
+                } else {
+                    ensureProfileExists(uid, database)
                 }
             }
         }
+    }
+
+    private fun ensureProfileExists(uid: String, database: FirebaseFirestore) {
+        val email = auth?.currentUser?.email ?: ""
+        val displayName = auth?.currentUser?.displayName ?: ""
+        val profile = hashMapOf(
+            "id" to uid,
+            "email" to email,
+            "full_name" to displayName,
+            "created_at" to System.currentTimeMillis()
+        )
+        database.collection("profiles").document(uid).set(profile)
     }
 
     fun saveSettings(company: String, rate: Double) {
@@ -151,8 +183,16 @@ class DashboardViewModel : ViewModel() {
         _defaultRate.value = rate
         val database = db
         if (database != null && uid != "local_user") {
-            val data = mapOf("defaultCompany" to company, "defaultRate" to rate)
+            val data = hashMapOf(
+                "defaultCompany" to company,
+                "defaultRate" to rate,
+                "userId" to uid,
+                "updatedAt" to System.currentTimeMillis()
+            )
             database.collection("settings").document(uid).set(data)
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to save settings: ${e.message}"
+                }
         }
     }
 
@@ -160,16 +200,20 @@ class DashboardViewModel : ViewModel() {
         val uid = auth?.currentUser?.uid ?: "local_user"
         _userId.value = uid
         val database = db
-        if (database != null) {
+        if (database != null && uid != "local_user") {
             jobsListenerRegistration?.remove()
             jobsListenerRegistration = database.collection("jobs")
                 .whereEqualTo("userId", uid)
                 .addSnapshotListener { value, error ->
+                    if (error != null) {
+                        _syncError.value = "Failed to load jobs: ${error.message}"
+                        return@addSnapshotListener
+                    }
                     if (value != null) {
                         val list = value.documents.mapNotNull { doc ->
                             doc.toObject(Job::class.java)?.copy(id = doc.id)
                         }
-                        if (list.isEmpty()) {
+                        if (list.isEmpty() && !value.metadata.isFromCache) {
                             val defaultJobs = listOf(
                                 Job(title = "7-ELEVEN", isGigWork = false, defaultHourlyRate = 15.0, goalHours = 20.0, goalType = "Hours", weeklyCycleStartDay = "Friday"),
                                 Job(title = "Walmart", isGigWork = false, defaultHourlyRate = 17.5, goalHours = 25.0, goalType = "Hours", weeklyCycleStartDay = "Monday"),
@@ -209,6 +253,10 @@ class DashboardViewModel : ViewModel() {
         val database = db
         if (database != null) {
             database.collection("jobs").document(job.id).set(job)
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to save job: ${e.message}"
+                    _jobs.value = _jobs.value + job
+                }
         } else {
             _jobs.value = _jobs.value + job
         }
@@ -227,6 +275,9 @@ class DashboardViewModel : ViewModel() {
         val database = db
         if (database != null) {
             database.collection("jobs").document(jobId).set(updated)
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to update job: ${e.message}"
+                }
         } else {
             _jobs.value = _jobs.value.map { if (it.id == jobId) updated else it }
         }
@@ -236,6 +287,9 @@ class DashboardViewModel : ViewModel() {
         val database = db
         if (database != null) {
             database.collection("jobs").document(jobId).delete()
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to delete job: ${e.message}"
+                }
         } else {
             _jobs.value = _jobs.value.filter { it.id != jobId }
         }
@@ -255,21 +309,30 @@ class DashboardViewModel : ViewModel() {
         _defaultRate.value = 0.0
         _userName.value = ""
         _memberSince.value = ""
+        _isLoading.value = false
+        _syncError.value = null
     }
 
     fun loadShifts() {
         val uid = auth?.currentUser?.uid ?: "local_user"
         if (loadedForUserId == uid) return
         loadedForUserId = uid
+        _isLoading.value = true
+        _syncError.value = null
         loadSettings()
         loadJobs()
         _userId.value = uid
         val database = db
-        if (database != null) {
+        if (database != null && uid != "local_user") {
             shiftsListenerRegistration?.remove()
             shiftsListenerRegistration = database.collection("shifts")
                 .whereEqualTo("userId", uid)
                 .addSnapshotListener { value, error ->
+                    _isLoading.value = false
+                    if (error != null) {
+                        _syncError.value = "Failed to load shifts: ${error.message}"
+                        return@addSnapshotListener
+                    }
                     if (value != null) {
                         val list = value.documents.mapNotNull { doc ->
                             doc.toObject(Shift::class.java)?.copy(id = doc.id)
@@ -277,6 +340,11 @@ class DashboardViewModel : ViewModel() {
                         _shifts.value = list
                     }
                 }
+        } else {
+            _isLoading.value = false
+            if (uid == "local_user") {
+                _syncError.value = "Not signed in. Data will not sync across devices."
+            }
         }
     }
 
@@ -300,8 +368,12 @@ class DashboardViewModel : ViewModel() {
             reminderBeforeMinutes = reminderBeforeMinutes
         )
         val database = db
-        if (database != null) {
+        if (database != null && uid != "local_user") {
             database.collection("shifts").document(shift.id).set(shift)
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to save shift: ${e.message}"
+                    _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
+                }
         } else {
             _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         }
@@ -324,8 +396,11 @@ class DashboardViewModel : ViewModel() {
             reminderBeforeMinutes = reminderBeforeMinutes
         )
         val database = db
-        if (database != null) {
+        if (database != null && shift.userId != "local_user") {
             database.collection("shifts").document(shiftId).set(updated)
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to update shift: ${e.message}"
+                }
         } else {
             _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
         }
@@ -335,6 +410,9 @@ class DashboardViewModel : ViewModel() {
         val database = db
         if (database != null) {
             database.collection("shifts").document(shiftId).delete()
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to delete shift: ${e.message}"
+                }
         } else {
             _shifts.value = _shifts.value.filter { it.id != shiftId }
         }
@@ -344,6 +422,9 @@ class DashboardViewModel : ViewModel() {
         val database = db
         if (database != null) {
             database.collection("shifts").document(shiftId).update("isPaid", isPaid)
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to update payment status: ${e.message}"
+                }
         } else {
             _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = isPaid) else it }
         }
@@ -358,11 +439,25 @@ class DashboardViewModel : ViewModel() {
                 batch.update(docRef, "isPaid", isPaid)
             }
             batch.commit()
+                .addOnFailureListener { e ->
+                    _syncError.value = "Failed to mark cycle as paid: ${e.message}"
+                }
         } else {
-            _shifts.value = _shifts.value.map { 
-                if (it.id in shiftIds) it.copy(isPaid = isPaid) else it 
+            _shifts.value = _shifts.value.map {
+                if (it.id in shiftIds) it.copy(isPaid = isPaid) else it
             }
         }
+    }
+
+    fun updateUserName(newName: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        database.collection("profiles").document(uid)
+            .update("full_name", newName)
+            .addOnSuccessListener { _userName.value = newName }
+            .addOnFailureListener { e ->
+                _syncError.value = "Failed to update name: ${e.message}"
+            }
     }
 
     override fun onCleared() {
