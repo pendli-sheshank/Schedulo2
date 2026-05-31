@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
                     composable("jobs") { MainLayout(navController, "jobs", authViewModel, dashboardViewModel) }
                     composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel) }
                     composable("profile") {
-                        ProfileScreen(dashboardViewModel = dashboardViewModel, onBack = { navController.popBackStack() })
+                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { navController.popBackStack() })
                     }
                     composable(
                         route = "add_shift?shiftId={shiftId}",
@@ -226,7 +226,8 @@ fun DashboardScreen(
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(OutlineLight)
-                        .border(2.dp, Color.White, CircleShape),
+                        .border(2.dp, Color.White, CircleShape)
+                        .clickable { onNavigateToProfile() },
                     contentAlignment = Alignment.Center
                 ) {
                     Box(

@@ -108,9 +108,16 @@ class DashboardViewModel : ViewModel() {
     private val _defaultRate = MutableStateFlow(0.0)
     val defaultRate = _defaultRate.asStateFlow()
 
+    private val _userName = MutableStateFlow("")
+    val userName = _userName.asStateFlow()
+
+    private val _memberSince = MutableStateFlow("")
+    val memberSince = _memberSince.asStateFlow()
+
     private var loadedForUserId: String? = null
     private var jobsListenerRegistration: ListenerRegistration? = null
     private var shiftsListenerRegistration: ListenerRegistration? = null
+    private var profileListenerRegistration: ListenerRegistration? = null
     
     fun loadSettings() {
         val uid = auth?.currentUser?.uid ?: "local_user"
@@ -121,6 +128,17 @@ class DashboardViewModel : ViewModel() {
                 if (doc != null && doc.exists()) {
                     _defaultCompany.value = doc.getString("defaultCompany") ?: ""
                     _defaultRate.value = doc.getDouble("defaultRate") ?: 0.0
+                }
+            }
+            profileListenerRegistration?.remove()
+            profileListenerRegistration = database.collection("profiles").document(uid).addSnapshotListener { doc, _ ->
+                if (doc != null && doc.exists()) {
+                    _userName.value = doc.getString("full_name") ?: ""
+                    val createdAt = doc.getLong("created_at")
+                    if (createdAt != null) {
+                        val fmt = java.text.SimpleDateFormat("MMMM yyyy", Locale.US)
+                        _memberSince.value = fmt.format(Date(createdAt))
+                    }
                 }
             }
         }
@@ -229,10 +247,14 @@ class DashboardViewModel : ViewModel() {
         jobsListenerRegistration = null
         shiftsListenerRegistration?.remove()
         shiftsListenerRegistration = null
+        profileListenerRegistration?.remove()
+        profileListenerRegistration = null
         _shifts.value = emptyList()
         _jobs.value = emptyList()
         _defaultCompany.value = ""
         _defaultRate.value = 0.0
+        _userName.value = ""
+        _memberSince.value = ""
     }
 
     fun loadShifts() {
@@ -347,6 +369,7 @@ class DashboardViewModel : ViewModel() {
         super.onCleared()
         jobsListenerRegistration?.remove()
         shiftsListenerRegistration?.remove()
+        profileListenerRegistration?.remove()
     }
 }
 
