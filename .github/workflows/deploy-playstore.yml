@@ -1,11 +1,12 @@
-name: Build & Release
+name: Build & Deploy to Play Store
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -40,13 +41,10 @@ jobs:
           name: release-aab
           path: app/build/outputs/bundle/release/app-release.aab
 
-      # Uncomment the step below once you have API access in Play Console
-      # and have added the PLAY_SERVICE_ACCOUNT_JSON secret
-      #
-      # - name: Deploy to Play Store (Internal Testing)
-      #   uses: r0adkll/upload-google-play@v1
-      #   with:
-      #     serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-      #     packageName: com.schedulo2.app
-      #     releaseFiles: app/build/outputs/bundle/release/app-release.aab
-      #     track: internal
+      - name: Deploy to Play Store (Internal Testing)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.schedulo2.app
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: internal
