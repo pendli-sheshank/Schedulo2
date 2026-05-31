@@ -108,7 +108,7 @@ class DashboardViewModel : ViewModel() {
     private val _defaultRate = MutableStateFlow(0.0)
     val defaultRate = _defaultRate.asStateFlow()
 
-    private var isLoaded = false
+    private var loadedForUserId: String? = null
     private var jobsListenerRegistration: ListenerRegistration? = null
     private var shiftsListenerRegistration: ListenerRegistration? = null
     
@@ -223,12 +223,24 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
+    fun reset() {
+        loadedForUserId = null
+        jobsListenerRegistration?.remove()
+        jobsListenerRegistration = null
+        shiftsListenerRegistration?.remove()
+        shiftsListenerRegistration = null
+        _shifts.value = emptyList()
+        _jobs.value = emptyList()
+        _defaultCompany.value = ""
+        _defaultRate.value = 0.0
+    }
+
     fun loadShifts() {
-        if (isLoaded) return
-        isLoaded = true
+        val uid = auth?.currentUser?.uid ?: "local_user"
+        if (loadedForUserId == uid) return
+        loadedForUserId = uid
         loadSettings()
         loadJobs()
-        val uid = auth?.currentUser?.uid ?: "local_user"
         _userId.value = uid
         val database = db
         if (database != null) {
@@ -247,17 +259,17 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun addShift(company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double) {
-        addShift(company, startTime, endTime, hourlyRate, false, 0.0, 30)
+        addShift(company, startTime, endTime, hourlyRate, false, 0.0, 30, role)
     }
 
-    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int) {
+    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, role: String = "") {
         val uid = auth?.currentUser?.uid ?: "local_user"
         _userId.value = uid
         val shift = Shift(
             id = java.util.UUID.randomUUID().toString(),
             userId = uid,
             company = company,
-            role = "",
+            role = role,
             startTime = startTime,
             endTime = endTime,
             hourlyRate = hourlyRate,
@@ -274,14 +286,14 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun updateShift(shiftId: String, company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double) {
-        updateShift(shiftId, company, startTime, endTime, hourlyRate, false, 0.0, 30)
+        updateShift(shiftId, company, startTime, endTime, hourlyRate, false, 0.0, 30, role)
     }
 
-    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int) {
+    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, role: String = "") {
         val shift = shifts.value.find { it.id == shiftId } ?: return
         val updated = shift.copy(
             company = company,
-            role = "",
+            role = role,
             startTime = startTime,
             endTime = endTime,
             hourlyRate = hourlyRate,
@@ -388,6 +400,7 @@ fun AddShiftScreen(
     var showEndTimePicker by remember { mutableStateOf(false) }
 
     var expandedCompany by remember { mutableStateOf(false) }
+    var showJobError by remember { mutableStateOf(false) }
 
     val initialUtcMillis = remember {
         val localCal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
@@ -412,6 +425,7 @@ fun AddShiftScreen(
                         cal.timeInMillis = utcMs
                         val localCal = Calendar.getInstance()
                         localCal.set(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH), 0, 0, 0)
+                        localCal.set(Calendar.MILLISECOND, 0)
                         selectedDateMillis = localCal.timeInMillis
                     }
                     showDatePicker = false
@@ -435,6 +449,9 @@ fun AddShiftScreen(
                     showStartTimePicker = false
                 }) { Text("OK") }
             },
+            dismissButton = {
+                TextButton(onClick = { showStartTimePicker = false }) { Text("Cancel") }
+            },
             text = { Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TimePicker(state = startTimePickerState) } }
         )
     }
@@ -448,6 +465,9 @@ fun AddShiftScreen(
                     endMinute = endTimePickerState.minute
                     showEndTimePicker = false
                 }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndTimePicker = false }) { Text("Cancel") }
             },
             text = { Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TimePicker(state = endTimePickerState) } }
         )
@@ -518,6 +538,14 @@ fun AddShiftScreen(
                         }
                     }
                 }
+            }
+            if (showJobError) {
+                Text(
+                    text = "Please select a job before saving.",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -622,7 +650,12 @@ fun AddShiftScreen(
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = {
-                    val calStart = Calendar.getInstance().apply { 
+                    if (selectedJob == null && company.isBlank()) {
+                        showJobError = true
+                        return@Button
+                    }
+                    showJobError = false
+                    val calStart = Calendar.getInstance().apply {
                         timeInMillis = selectedDateMillis
                         set(Calendar.HOUR_OF_DAY, startHour)
                         set(Calendar.MINUTE, startMinute)

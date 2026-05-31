@@ -255,6 +255,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
             confirmButton = {
                 Button(
                     onClick = {
+                        if (title.isBlank()) return@Button
                         val finalRate = if (isGigWork) 0.0 else (rateStr.toDoubleOrNull() ?: 15.0)
                         val finalGoal = goalHoursStr.toDoubleOrNull() ?: 20.0
 
@@ -266,6 +267,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                         }
                         showDialog = false
                     },
+                    enabled = title.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
                 ) {
                     Text("Save")
