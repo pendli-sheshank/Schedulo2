@@ -26,7 +26,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Decode keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/upload-keystore.jks
+        run: echo "$KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > app/upload-keystore.jks
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
 
       - name: Build release AAB
         run: ./gradlew bundleRelease
