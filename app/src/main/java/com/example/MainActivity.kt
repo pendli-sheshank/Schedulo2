@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
                     composable("jobs") { MainLayout(navController, "jobs", authViewModel, dashboardViewModel) }
                     composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel) }
                     composable("profile") {
-                        ProfileScreen(dashboardViewModel = dashboardViewModel, onBack = { navController.popBackStack() })
+                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { navController.popBackStack() })
                     }
                     composable(
                         route = "add_shift?shiftId={shiftId}",
@@ -120,6 +120,13 @@ fun DashboardScreen(
 ) {
     val shifts by dashboardViewModel?.shifts?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
     val jobs by dashboardViewModel?.jobs?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
+    val userEmail by authViewModel?.currentUserEmail?.collectAsState() ?: remember { mutableStateOf("") }
+    val isLoading by dashboardViewModel?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
+    val syncError by dashboardViewModel?.syncError?.collectAsState() ?: remember { mutableStateOf<String?>(null) }
+    val userInitials = remember(userEmail) {
+        val prefix = userEmail.substringBefore("@")
+        if (prefix.length >= 2) prefix.take(2).uppercase() else prefix.uppercase().ifEmpty { "U" }
+    }
     val now = System.currentTimeMillis()
 
     var weekOffset by remember { mutableStateOf(0) }
@@ -187,6 +194,7 @@ fun DashboardScreen(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = {
+                    dashboardViewModel?.reset()
                     authViewModel?.logout()
                     onNavigateToLogin?.invoke()
                 }) {
@@ -202,7 +210,8 @@ fun DashboardScreen(
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(OutlineLight)
-                        .border(2.dp, Color.White, CircleShape),
+                        .border(2.dp, Color.White, CircleShape)
+                        .clickable { onNavigateToProfile() },
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
@@ -212,7 +221,7 @@ fun DashboardScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "JD",
+                            text = userInitials,
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                             color = Color.White
                         )
@@ -272,6 +281,51 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
+
+        // Sync error banner
+        if (syncError != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFFFF3E0))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = Color(0xFFE65100),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = syncError ?: "",
+                    fontSize = 12.sp,
+                    color = Color(0xFFE65100),
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Dismiss",
+                    tint = Color(0xFFE65100),
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable { dashboardViewModel?.clearSyncError() }
+                )
+            }
+        }
+
+        // Loading indicator
+        if (isLoading) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                color = PrimaryGreen
+            )
         }
 
         // Main Content (Scrollable)

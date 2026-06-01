@@ -36,12 +36,35 @@ class AuthViewModel : ViewModel() {
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
+    private val _currentUserEmail = MutableStateFlow(auth?.currentUser?.email ?: "")
+    val currentUserEmail: StateFlow<String> = _currentUserEmail.asStateFlow()
+
+    private var authStateListener: FirebaseAuth.AuthStateListener? = null
+
     init {
         try {
-            if (auth?.currentUser != null) {
-                _authState.value = AuthState.Authenticated
-            } else if (auth == null) {
+            val firebaseAuth = auth
+            if (firebaseAuth == null) {
                 _authState.value = AuthState.Error("Firebase not configured. Please add secrets.")
+            } else {
+                authStateListener = FirebaseAuth.AuthStateListener { fireAuth ->
+                    val user = fireAuth.currentUser
+                    if (user != null) {
+                        _currentUserEmail.value = user.email ?: ""
+                        _authState.value = AuthState.Authenticated
+                    } else {
+                        _currentUserEmail.value = ""
+                        if (_authState.value is AuthState.Authenticated) {
+                            _authState.value = AuthState.Idle
+                        }
+                    }
+                }
+                firebaseAuth.addAuthStateListener(authStateListener!!)
+
+                if (firebaseAuth.currentUser != null) {
+                    _authState.value = AuthState.Authenticated
+                    _currentUserEmail.value = firebaseAuth.currentUser?.email ?: ""
+                }
             }
         } catch (e: Exception) {
             _authState.value = AuthState.Error(e.message ?: "Unknown init error")
@@ -57,7 +80,10 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 auth?.signInWithEmailAndPassword(email, pass)?.await()
+                val user = auth?.currentUser
+                _currentUserEmail.value = user?.email ?: email
                 _authState.value = AuthState.Authenticated
+                ensureProfileExistsForUser(user?.uid, email)
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Login failed")
             }
@@ -89,6 +115,27 @@ class AuthViewModel : ViewModel() {
         }
     }
 
+    private suspend fun ensureProfileExistsForUser(uid: String?, email: String) {
+        if (uid == null || db == null) return
+        try {
+            val doc = db?.collection("profiles")?.document(uid)?.get()?.await()
+            if (doc == null || !doc.exists()) {
+                val profile = hashMapOf(
+                    "id" to uid,
+                    "email" to email,
+                    "full_name" to "",
+                    "created_at" to System.currentTimeMillis()
+                )
+                db?.collection("profiles")?.document(uid)?.set(profile)?.await()
+            } else {
+                val storedEmail = doc.getString("email") ?: ""
+                if (storedEmail != email && email.isNotBlank()) {
+                    db?.collection("profiles")?.document(uid)?.update("email", email)?.await()
+                }
+            }
+        } catch (_: Exception) { }
+    }
+
     fun logout() {
         try {
             auth?.signOut()
@@ -97,5 +144,9 @@ class AuthViewModel : ViewModel() {
             _authState.value = AuthState.Error("Failed to logout")
         }
     }
-}
 
+    override fun onCleared() {
+        super.onCleared()
+        authStateListener?.let { auth?.removeAuthStateListener(it) }
+    }
+}
