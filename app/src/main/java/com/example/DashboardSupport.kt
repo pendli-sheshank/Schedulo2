@@ -144,6 +144,16 @@ class DashboardViewModel : ViewModel() {
     private val _syncError = MutableStateFlow<String?>(null)
     val syncError = _syncError.asStateFlow()
 
+    private val _themeMode = MutableStateFlow("system")
+    val themeMode = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: String) {
+        _themeMode.value = mode
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        database.collection("settings").document(uid).update("themeMode", mode)
+    }
+
     private var loadedForUserId: String? = null
     private var jobsListenerRegistration: ListenerRegistration? = null
     private var shiftsListenerRegistration: ListenerRegistration? = null
@@ -166,6 +176,7 @@ class DashboardViewModel : ViewModel() {
                 if (doc != null && doc.exists()) {
                     _defaultCompany.value = doc.getString("defaultCompany") ?: ""
                     _defaultRate.value = doc.getDouble("defaultRate") ?: 0.0
+                    _themeMode.value = doc.getString("themeMode") ?: "system"
                 }
             }
             profileListenerRegistration?.remove()
@@ -339,6 +350,7 @@ class DashboardViewModel : ViewModel() {
         _memberSince.value = ""
         _isLoading.value = false
         _syncError.value = null
+        _themeMode.value = "system"
     }
 
     fun loadShifts() {
@@ -477,24 +489,90 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun generateCsvReport(): String {
+    fun generateFormattedReport(weekStartMillis: Long, employer: String?): String {
+        val weekEndMillis = weekStartMillis + 7L * 24 * 60 * 60 * 1000L
+        val filtered = _shifts.value.filter { shift ->
+            shift.startTime >= weekStartMillis && shift.startTime < weekEndMillis &&
+            (employer == null || employer == "All" || shift.company.equals(employer, ignoreCase = true))
+        }.sortedBy { it.startTime }
+
         val sb = StringBuilder()
-        sb.appendLine("Date,Company,Start Time,End Time,Hours,Hourly Rate,Earnings,Type,Paid")
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val timeFormat = SimpleDateFormat("hh:mm a", Locale.US)
-        val sorted = _shifts.value.sortedBy { it.startTime }
-        for (shift in sorted) {
-            val date = dateFormat.format(Date(shift.startTime))
+        val weekFormat = SimpleDateFormat("MMM dd", Locale.US)
+        val dayFormat = SimpleDateFormat("EEEE (M/dd)", Locale.US)
+        val timeFormat = SimpleDateFormat("h:mm a", Locale.US)
+        sb.appendLine("Schedule: ${weekFormat.format(Date(weekStartMillis))} – ${weekFormat.format(Date(weekEndMillis - 1000L))}")
+        if (employer != null && employer != "All") sb.appendLine("Employer: $employer")
+        sb.appendLine()
+
+        var totalHours = 0.0
+        var totalEarnings = 0.0
+        for (shift in filtered) {
+            val day = dayFormat.format(Date(shift.startTime))
             val start = timeFormat.format(Date(shift.startTime))
             val end = timeFormat.format(Date(shift.endTime))
-            val hours = "%.2f".format(shift.durationHours)
-            val rate = "%.2f".format(shift.hourlyRate)
-            val earned = "%.2f".format(shift.totalEarned)
-            val type = if (shift.isGig) "Gig" else "Hourly"
-            val paid = if (shift.isPaid) "Yes" else "No"
-            sb.appendLine("$date,\"${shift.company}\",$start,$end,$hours,$rate,$earned,$type,$paid")
+            val hrs = shift.durationHours
+            totalHours += hrs
+            totalEarnings += shift.totalEarned
+            sb.appendLine("$day: $start – $end (${"%.0f".format(hrs)} hours)")
         }
+        sb.appendLine()
+        sb.appendLine("Total ${"%.0f".format(totalHours)} hours · $${"%.2f".format(totalEarnings)}")
         return sb.toString()
+    }
+
+    fun getAvailableWeeks(): List<Pair<Long, String>> {
+        val weekFormat = SimpleDateFormat("MMM dd", Locale.US)
+        val weeks = mutableSetOf<Long>()
+        val now = System.currentTimeMillis()
+        for (offset in -8..4) {
+            val cal = Calendar.getInstance().apply {
+                firstDayOfWeek = Calendar.MONDAY
+                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                add(Calendar.WEEK_OF_YEAR, offset)
+            }
+            weeks.add(cal.timeInMillis)
+        }
+        return weeks.sorted().map { start ->
+            val end = start + 7L * 24 * 60 * 60 * 1000L
+            val label = "${weekFormat.format(Date(start))} – ${weekFormat.format(Date(end - 1000L))}" +
+                if (now in start until end) " (Current)" else ""
+            Pair(start, label)
+        }.reversed()
+    }
+
+    fun addWeekPlan(company: String, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderMinutes: Int, weekStartMillis: Long, dayEntries: List<Triple<Int, Int, Int>>) {
+        val existingShifts = _shifts.value
+        val dayFormat = SimpleDateFormat("yyyyMMdd", Locale.US)
+        for ((dayOffset, startH, endH) in dayEntries) {
+            val dayMillis = weekStartMillis + dayOffset.toLong() * 24 * 60 * 60 * 1000L
+            val dateKey = dayFormat.format(Date(dayMillis))
+            val alreadyExists = existingShifts.any {
+                it.company.equals(company, ignoreCase = true) &&
+                dayFormat.format(Date(it.startTime)) == dateKey
+            }
+            if (alreadyExists) continue
+
+            val calStart = Calendar.getInstance().apply {
+                timeInMillis = dayMillis
+                set(Calendar.HOUR_OF_DAY, startH)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+            }
+            val calEnd = Calendar.getInstance().apply {
+                timeInMillis = dayMillis
+                set(Calendar.HOUR_OF_DAY, endH)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+            }
+            var endTime = calEnd.timeInMillis
+            if (endTime <= calStart.timeInMillis) endTime += 86400000L
+
+            addShift(company, calStart.timeInMillis, endTime, hourlyRate, isGig, customEarned, reminderMinutes)
+        }
     }
 
     fun updateUserName(newName: String) {
@@ -538,6 +616,8 @@ fun AddShiftScreen(
             }
         )
     }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     var company by remember(selectedJob) { mutableStateOf(selectedJob?.title ?: existingShift?.company ?: "") }
     var isGig by remember(selectedJob) { mutableStateOf(selectedJob?.isGigWork ?: existingShift?.isGig ?: false) }
@@ -865,8 +945,16 @@ fun AddShiftScreen(
 
                     if (existingShift != null) {
                         viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, reminderMinutes)
+                        if (reminderMinutes > 0) {
+                            NotificationHelper.scheduleReminder(context, Shift(id = existingShift.id, company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = reminderMinutes))
+                        } else {
+                            NotificationHelper.cancelReminder(context, existingShift.id)
+                        }
                     } else {
                         viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, reminderMinutes)
+                        if (reminderMinutes > 0) {
+                            NotificationHelper.scheduleReminder(context, Shift(company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = reminderMinutes))
+                        }
                         if (recurrence != "None") {
                             val weeks = recurrenceWeeks.toIntOrNull()?.coerceIn(1, 52) ?: 4
                             val dayIncrement = when (recurrence) {
@@ -878,12 +966,9 @@ fun AddShiftScreen(
                             val totalOccurrences = if (recurrence == "Daily") weeks * 7 else weeks
                             for (i in 1..totalOccurrences) {
                                 val offsetMs = i.toLong() * dayIncrement * 24 * 60 * 60 * 1000L
-                                viewModel.addShift(
-                                    company,
-                                    calStart.timeInMillis + offsetMs,
-                                    finalEndTime + offsetMs,
-                                    hourly, isGig, earned, reminderMinutes
-                                )
+                                val recurShift = Shift(company = company, startTime = calStart.timeInMillis + offsetMs, endTime = finalEndTime + offsetMs, reminderBeforeMinutes = reminderMinutes)
+                                viewModel.addShift(company, calStart.timeInMillis + offsetMs, finalEndTime + offsetMs, hourly, isGig, earned, reminderMinutes)
+                                if (reminderMinutes > 0) NotificationHelper.scheduleReminder(context, recurShift)
                             }
                         }
                     }
