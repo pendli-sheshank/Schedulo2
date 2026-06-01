@@ -895,7 +895,6 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     dashboardViewModel: DashboardViewModel,

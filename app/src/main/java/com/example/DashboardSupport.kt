@@ -321,7 +321,6 @@ class DashboardViewModel : ViewModel() {
         _syncError.value = null
         loadSettings()
         loadJobs()
-        val uid = auth?.currentUser?.uid ?: "local_user"
         _userId.value = uid
         val database = db
         if (database != null && uid != "local_user") {
