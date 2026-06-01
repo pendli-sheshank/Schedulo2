@@ -262,7 +262,6 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
             confirmButton = {
                 Button(
                     onClick = {
-                        if (title.isBlank()) return@Button
                         val finalRate = if (isGigWork) 0.0 else (rateStr.toDoubleOrNull() ?: 15.0)
                         val finalGoal = goalHoursStr.toDoubleOrNull() ?: 20.0
 
@@ -274,7 +273,6 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                         }
                         showDialog = false
                     },
-                    enabled = title.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
                 ) {
                     Text("Save")
@@ -897,6 +895,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     dashboardViewModel: DashboardViewModel,
@@ -951,7 +950,6 @@ fun ProfileScreen(
                 .verticalScroll(rememberScrollState())
                 .imePadding()
         ) {
-            // Hero card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1011,33 +1009,19 @@ fun ProfileScreen(
                 }
             }
 
-            // Activity stats row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    label = "SHIFTS",
-                    value = "${completedShifts.size}"
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    label = "HOURS",
-                    value = "${"%.1f".format(totalHours)}"
-                )
-                StatCard(
-                    modifier = Modifier.weight(1f),
-                    label = "EARNED",
-                    value = "$${"%.0f".format(totalEarned)}"
-                )
+                StatCard(modifier = Modifier.weight(1f), label = "SHIFTS", value = "${completedShifts.size}")
+                StatCard(modifier = Modifier.weight(1f), label = "HOURS", value = "${"%.1f".format(totalHours)}")
+                StatCard(modifier = Modifier.weight(1f), label = "EARNED", value = "$${"%.0f".format(totalEarned)}")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Employers card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1077,7 +1061,6 @@ fun ProfileScreen(
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = OutlineLight)
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Default Shift Settings
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                 Text("Default Shift Settings", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                 Spacer(modifier = Modifier.height(16.dp))

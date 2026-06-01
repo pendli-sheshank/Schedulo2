@@ -51,10 +51,10 @@ fun LoginScreen(
         }
     }
 
+    val isFormValid = email.isNotBlank() && password.length >= 6
     val isLoading = authState is AuthState.Loading
-    val isFormValid = email.isNotBlank() && password.isNotBlank()
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(
@@ -76,7 +76,6 @@ fun LoginScreen(
         ) {
             Spacer(modifier = Modifier.height(60.dp))
 
-            // Logo
             Surface(
                 modifier = Modifier.size(72.dp),
                 shape = RoundedCornerShape(22.dp),
@@ -111,7 +110,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(44.dp))
 
-            // Form card
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
@@ -205,7 +203,6 @@ fun LoginScreen(
                         )
                     )
 
-                    // Error banner
                     if (authState is AuthState.Error) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Surface(
@@ -309,10 +306,10 @@ fun SignupScreen(
         }
     }
 
+    val isFormValid = fullName.isNotBlank() && email.isNotBlank() && password.length >= 6
     val isLoading = authState is AuthState.Loading
-    val isFormValid = fullName.isNotBlank() && email.isNotBlank() && password.isNotBlank()
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(
@@ -334,7 +331,6 @@ fun SignupScreen(
         ) {
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Compact header
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(44.dp),
@@ -362,7 +358,6 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Form card
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
@@ -481,7 +476,6 @@ fun SignupScreen(
                         )
                     )
 
-                    // Error banner
                     if (authState is AuthState.Error) {
                         Spacer(modifier = Modifier.height(14.dp))
                         Surface(

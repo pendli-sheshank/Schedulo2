@@ -541,7 +541,7 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
             }
             Spacer(modifier = Modifier.height(6.dp))
             LinearProgressIndicator(
-                progress = { progressFraction.toFloat() },
+                progress = progressFraction.toFloat(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp)
@@ -594,8 +594,7 @@ fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (Strin
             Text("No shifts registered matching your timeframe", fontSize = 14.sp, color = OnSurfaceVariantLight)
         } else {
             val format = java.text.SimpleDateFormat("EEEE, MMM dd • hh:mm a", java.util.Locale.US)
-            val displayedShifts = upcomingShifts.sortedBy { it.startTime }.take(5)
-            displayedShifts.forEachIndexed { index, shift ->
+            upcomingShifts.sortedBy { it.startTime }.take(5).forEachIndexed { index, shift ->
                 val colors = listOf(AccentBlue, AccentOrange, PrimaryGreen)
                 ShiftItem(
                     modifier = Modifier.clickable { onEditShift(shift.id) },
@@ -605,7 +604,7 @@ fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (Strin
                     amount = "$${"%.2f".format(shift.totalEarned)}",
                     reminderMinutes = shift.reminderBeforeMinutes
                 )
-                if (index < displayedShifts.size - 1) {
+                if (index < minOf(shifts.size - 1, 4)) {
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
