@@ -38,7 +38,9 @@ data class Job(
     var defaultHourlyRate: Double = 15.0,
     var goalHours: Double = 20.0,
     var goalType: String = "Hours", // "Hours" or "Earnings"
-    var weeklyCycleStartDay: String? = "Monday" // "Monday", "Tuesday", etc.
+    var weeklyCycleStartDay: String? = "Monday", // "Monday", "Tuesday", etc.
+    var overtimeThresholdHours: Double = 40.0, // weekly hours after which overtime kicks in
+    var overtimeMultiplier: Double = 1.5 // pay multiplier for overtime (e.g., 1.5x)
 ) {
     fun getStartOfCurrentCycle(targetMillis: Long = System.currentTimeMillis()): Long {
         val calendar = Calendar.getInstance()
@@ -87,6 +89,28 @@ data class Shift(
     @get:com.google.firebase.firestore.Exclude
     val totalEarned: Double
         get() = if (isGig) customEarned else (durationHours * hourlyRate)
+}
+
+fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, Double> {
+    // Returns (regularEarnings, overtimeEarnings)
+    if (job.isGigWork) {
+        // Gig work doesn't have overtime
+        return Pair(shifts.sumOf { it.totalEarned }, 0.0)
+    }
+    val totalHours = shifts.sumOf { it.durationHours }
+    val threshold = job.overtimeThresholdHours
+    val rate = job.defaultHourlyRate
+    val multiplier = job.overtimeMultiplier
+
+    return if (totalHours <= threshold) {
+        Pair(totalHours * rate, 0.0)
+    } else {
+        val regularHours = threshold
+        val overtimeHours = totalHours - threshold
+        val regularEarnings = regularHours * rate
+        val overtimeEarnings = overtimeHours * rate * multiplier
+        Pair(regularEarnings, overtimeEarnings)
+    }
 }
 
 class DashboardViewModel : ViewModel() {
@@ -237,7 +261,7 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun addJob(title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday") {
+    fun addJob(title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday", overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
         val uid = auth?.currentUser?.uid ?: "local_user"
         _userId.value = uid
         val job = Job(
@@ -248,7 +272,9 @@ class DashboardViewModel : ViewModel() {
             defaultHourlyRate = defaultHourlyRate,
             goalHours = goalHours,
             goalType = goalType,
-            weeklyCycleStartDay = weeklyCycleStartDay
+            weeklyCycleStartDay = weeklyCycleStartDay,
+            overtimeThresholdHours = overtimeThresholdHours,
+            overtimeMultiplier = overtimeMultiplier
         )
         val database = db
         if (database != null) {
@@ -262,7 +288,7 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun updateJob(jobId: String, title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String) {
+    fun updateJob(jobId: String, title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String, overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
         val job = jobs.value.find { it.id == jobId } ?: return
         val updated = job.copy(
             title = title,
@@ -270,7 +296,9 @@ class DashboardViewModel : ViewModel() {
             defaultHourlyRate = defaultHourlyRate,
             goalHours = goalHours,
             goalType = goalType,
-            weeklyCycleStartDay = weeklyCycleStartDay
+            weeklyCycleStartDay = weeklyCycleStartDay,
+            overtimeThresholdHours = overtimeThresholdHours,
+            overtimeMultiplier = overtimeMultiplier
         )
         val database = db
         if (database != null) {

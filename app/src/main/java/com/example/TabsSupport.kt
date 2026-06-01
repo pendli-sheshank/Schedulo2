@@ -330,6 +330,8 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
     var goalHoursStr by remember { mutableStateOf("20.0") }
     var goalType by remember { mutableStateOf("Hours") }
     var weeklyCycleStartDay by remember { mutableStateOf("Monday") }
+    var overtimeThresholdStr by remember { mutableStateOf("40.0") }
+    var overtimeMultiplierStr by remember { mutableStateOf("1.5") }
     var daysExpanded by remember { mutableStateOf(false) }
     val daysOfWeek = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
 
@@ -404,6 +406,26 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                         }
                     }
 
+                    if (!isGigWork) {
+                        OutlinedTextField(
+                            value = overtimeThresholdStr,
+                            onValueChange = { overtimeThresholdStr = it },
+                            label = { Text("Overtime After (hrs/week)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = overtimeMultiplierStr,
+                            onValueChange = { overtimeMultiplierStr = it },
+                            label = { Text("Overtime Rate Multiplier") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -437,12 +459,14 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                     onClick = {
                         val finalRate = if (isGigWork) 0.0 else (rateStr.toDoubleOrNull() ?: 15.0)
                         val finalGoal = goalHoursStr.toDoubleOrNull() ?: 20.0
+                        val finalOvertimeThreshold = overtimeThresholdStr.toDoubleOrNull() ?: 40.0
+                        val finalOvertimeMultiplier = overtimeMultiplierStr.toDoubleOrNull() ?: 1.5
 
                         val jobId = editingJobId
                         if (jobId == null) {
-                            dashboardViewModel.addJob(title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay)
+                            dashboardViewModel.addJob(title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOvertimeThreshold, finalOvertimeMultiplier)
                         } else {
-                            dashboardViewModel.updateJob(jobId, title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay)
+                            dashboardViewModel.updateJob(jobId, title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOvertimeThreshold, finalOvertimeMultiplier)
                         }
                         showDialog = false
                     },
@@ -473,6 +497,8 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                     goalHoursStr = "20.0"
                     goalType = "Hours"
                     weeklyCycleStartDay = "Monday"
+                    overtimeThresholdStr = "40.0"
+                    overtimeMultiplierStr = "1.5"
                     showDialog = true
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
@@ -513,6 +539,8 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                                 goalHoursStr = job.goalHours.toString()
                                 goalType = job.goalType
                                 weeklyCycleStartDay = job.weeklyCycleStartDay ?: "Monday"
+                                overtimeThresholdStr = job.overtimeThresholdHours.toString()
+                                overtimeMultiplierStr = job.overtimeMultiplier.toString()
                                 showDialog = true
                             },
                         colors = CardDefaults.cardColors(containerColor = Color.White),
