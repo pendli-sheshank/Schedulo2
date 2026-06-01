@@ -95,47 +95,220 @@ fun MainLayout(
 
 @Composable
 fun PlanScreen(
-    modifier: Modifier = Modifier, 
+    modifier: Modifier = Modifier,
     dashboardViewModel: DashboardViewModel,
     onEditShift: (String) -> Unit
 ) {
     val shifts by dashboardViewModel.shifts.collectAsState(initial = emptyList())
+    val jobs by dashboardViewModel.jobs.collectAsState(initial = emptyList())
     val now = System.currentTimeMillis()
+
+    var selectedTabIndex by remember { mutableStateOf(0) }
+
+    val weekFormat = remember { SimpleDateFormat("MMM dd", Locale.US) }
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
+    val dayFormat = remember { SimpleDateFormat("EEE, MMM dd", Locale.US) }
+
     val upcomingShifts = shifts.filter { it.startTime >= now }.sortedBy { it.startTime }
     val previousShifts = shifts.filter { it.startTime < now }.sortedByDescending { it.startTime }
-    
-    var selectedTabIndex by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0) }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        TabRow(selectedTabIndex = selectedTabIndex) {
-            Tab(selected = selectedTabIndex == 0, onClick = { selectedTabIndex = 0 }, text = { Text("Upcoming") })
-            Tab(selected = selectedTabIndex == 1, onClick = { selectedTabIndex = 1 }, text = { Text("Previous") })
+    val activeShifts = if (selectedTabIndex == 0) upcomingShifts else previousShifts
+
+    val weeklyGroups = remember(activeShifts) {
+        activeShifts.groupBy { shift ->
+            val cal = Calendar.getInstance()
+            cal.timeInMillis = shift.startTime
+            cal.firstDayOfWeek = Calendar.MONDAY
+            cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            cal.timeInMillis
+        }.toSortedMap(if (selectedTabIndex == 0) compareBy { it } else compareByDescending { it })
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        TabRow(
+            selectedTabIndex = selectedTabIndex,
+            containerColor = Color.White,
+            contentColor = PrimaryGreen,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(12.dp))
+        ) {
+            Tab(
+                selected = selectedTabIndex == 0,
+                onClick = { selectedTabIndex = 0 },
+                text = {
+                    Text(
+                        "Upcoming (${upcomingShifts.size})",
+                        fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            )
+            Tab(
+                selected = selectedTabIndex == 1,
+                onClick = { selectedTabIndex = 1 },
+                text = {
+                    Text(
+                        "Previous (${previousShifts.size})",
+                        fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        val listToDisplay = if (selectedTabIndex == 0) upcomingShifts else previousShifts
-        val emptyMessage = if (selectedTabIndex == 0) "No upcoming shifts planned." else "No previous shifts."
 
-        val format = remember { SimpleDateFormat("EEEE, MMM dd, yyyy • hh:mm a", Locale.US) }
-
-        if (listToDisplay.isEmpty()) {
+        if (activeShifts.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(emptyMessage, color = OnSurfaceVariantLight)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = if (selectedTabIndex == 0) Icons.Default.EventAvailable else Icons.Default.History,
+                        contentDescription = null,
+                        tint = OnSurfaceVariantLight.copy(alpha = 0.5f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        if (selectedTabIndex == 0) "No upcoming shifts planned." else "No previous shifts recorded.",
+                        color = OnSurfaceVariantLight,
+                        fontSize = 15.sp
+                    )
+                }
             }
         } else {
             LazyColumn(
-                contentPadding = PaddingValues(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(listToDisplay) { shift ->
-                    ShiftItem(
-                        modifier = Modifier.clickable { onEditShift(shift.id) },
-                        color = if (selectedTabIndex == 0) AccentBlue else OnSurfaceVariantLight,
-                        title = if (shift.isGig) "${shift.company} (Gig)" else shift.company,
-                        timeStr = "Starts: ${format.format(Date(shift.startTime))}\nEnds: ${format.format(Date(shift.endTime))}",
-                        amount = "Est: $${"%.2f".format(shift.totalEarned)}",
-                        reminderMinutes = shift.reminderBeforeMinutes
-                    )
+                weeklyGroups.forEach { (weekStart, weekShifts) ->
+                    val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
+                    val weekRangeStr = "${weekFormat.format(Date(weekStart))} – ${weekFormat.format(Date(weekEnd - 1000L))}"
+                    val weekTotalHours = weekShifts.sumOf { it.durationHours }
+                    val weekTotalEarned = weekShifts.sumOf { it.totalEarned }
+                    val isCurrentWeek = now in weekStart until weekEnd
+
+                    item(key = "header_$weekStart") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isCurrentWeek) PrimaryGreen.copy(alpha = 0.08f) else SurfaceVariantLight.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.DateRange,
+                                        contentDescription = null,
+                                        tint = if (isCurrentWeek) PrimaryGreen else OnSurfaceVariantLight,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = weekRangeStr,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                        Text(
+                                            text = "${weekShifts.size} shift${if (weekShifts.size != 1) "s" else ""} · ${"%.1f".format(weekTotalHours)} hrs",
+                                            fontSize = 12.sp,
+                                            color = OnSurfaceVariantLight
+                                        )
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "$${"%.2f".format(weekTotalEarned)}",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryGreen
+                                    )
+                                    if (isCurrentWeek) {
+                                        Text(
+                                            text = "This Week",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = PrimaryGreen
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    items(weekShifts, key = { it.id }) { shift ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onEditShift(shift.id) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(1.dp, OutlineLight)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(4.dp)
+                                        .height(44.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(if (shift.isGig) AccentOrange else AccentBlue)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (shift.isGig) "${shift.company} (Gig)" else shift.company,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = dayFormat.format(Date(shift.startTime)),
+                                        fontSize = 12.sp,
+                                        color = OnSurfaceVariantLight
+                                    )
+                                    Text(
+                                        text = "${timeFormat.format(Date(shift.startTime))} → ${timeFormat.format(Date(shift.endTime))} · ${"%.1f".format(shift.durationHours)} hrs",
+                                        fontSize = 12.sp,
+                                        color = OnSurfaceVariantLight
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "$${"%.2f".format(shift.totalEarned)}",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryGreen
+                                    )
+                                    if (shift.reminderBeforeMinutes > 0 && selectedTabIndex == 0) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(PrimaryGreen.copy(alpha = 0.1f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "${shift.reminderBeforeMinutes}m",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = PrimaryGreen
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -505,15 +678,16 @@ fun groupShiftsIntoCycles(shifts: List<Shift>, jobs: List<Job>, now: Long): List
         cyclesMap[key]?.add(shift)
     }
     
-    val oneWeekMillis = 7L * 24 * 60 * 60 * 1000L
-    
+    val holdDays = 4L * 24 * 60 * 60 * 1000L
+
     return cyclesMap.map { (key, shiftList) ->
         val (start, end) = key
         val totalEarned = shiftList.sumOf { it.totalEarned }
-        
+        val holdEndMillis = end + holdDays
+
         val status = when {
             now < end -> PayCycleStatus.UPCOMING
-            now >= end && now < (end + oneWeekMillis) -> PayCycleStatus.PENDING_HOLD
+            now >= end && now < holdEndMillis -> PayCycleStatus.PENDING_HOLD
             else -> {
                 val allPaid = shiftList.isNotEmpty() && shiftList.all { it.isPaid }
                 if (allPaid) PayCycleStatus.PAID else PayCycleStatus.DUE
@@ -549,6 +723,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
     
     val cycleFormat = remember { java.text.SimpleDateFormat("MMM dd", java.util.Locale.US) }
     val fullDateFormat = remember { java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US) }
+    val shiftTimeFormat = remember { java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US) }
     
     var expandedCycleStart by remember { mutableStateOf<Long?>(null) }
     var cycleToConfirmPaid by remember { mutableStateOf<WeeklyPayCycle?>(null) }
@@ -642,7 +817,10 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
             
             items(cycles) { cycle ->
                 val cycleRangeStr = "${cycleFormat.format(java.util.Date(cycle.startDate))} – ${cycleFormat.format(java.util.Date(cycle.endDate - 1000L))}"
-                val payoutDateStr = fullDateFormat.format(java.util.Date(cycle.endDate + 7L * 24 * 60 * 60 * 1000L))
+                val holdEndMillis = cycle.endDate + 4L * 24 * 60 * 60 * 1000L
+                val payWindowEndMillis = holdEndMillis + 7L * 24 * 60 * 60 * 1000L
+                val payWindowStartStr = fullDateFormat.format(java.util.Date(holdEndMillis))
+                val payWindowEndStr = fullDateFormat.format(java.util.Date(payWindowEndMillis - 1000L))
                 val isExpanded = expandedCycleStart == cycle.startDate
                 
                 Card(
@@ -728,20 +906,80 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                             }
                         }
                         
-                        // If hold is running, display payout date
                         if (cycle.status == PayCycleStatus.PENDING_HOLD) {
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "🔒 1-Week hold scenario: Payout released on $payoutDateStr",
-                                fontSize = 12.sp,
-                                color = AccentOrange,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = AccentOrange.copy(alpha = 0.08f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Schedule,
+                                            contentDescription = null,
+                                            tint = AccentOrange,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Payment Hold Active",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = AccentOrange
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "Payment window: $payWindowStartStr – $payWindowEndStr",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    val daysLeft = ((holdEndMillis - now) / (24 * 60 * 60 * 1000L)).toInt().coerceAtLeast(0)
+                                    if (daysLeft > 0) {
+                                        Text(
+                                            text = "$daysLeft day${if (daysLeft != 1) "s" else ""} until payout window opens",
+                                            fontSize = 11.sp,
+                                            color = OnSurfaceVariantLight
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Payout window is now open",
+                                            fontSize = 11.sp,
+                                            color = PrimaryGreen,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
                         }
                         
-                        // If due, offer Mark as Paid button
                         if (cycle.status == PayCycleStatus.DUE) {
                             Spacer(modifier = Modifier.height(12.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = PrimaryGreen.copy(alpha = 0.06f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Payment,
+                                        contentDescription = null,
+                                        tint = PrimaryGreen,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Payment window: $payWindowStartStr – $payWindowEndStr",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
                             Button(
                                 onClick = {
                                     cycleToConfirmPaid = cycle
@@ -769,52 +1007,61 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                             )
                             
                             cycle.shifts.forEach { shift ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = SurfaceVariantLight.copy(alpha = 0.3f))
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = shift.company,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onBackground
-                                        )
-                                        Text(
-                                            text = "${SimpleDateFormat("EEE, MMM dd", java.util.Locale.US).format(java.util.Date(shift.startTime))} • ${"%.1f".format(shift.durationHours)} hrs",
-                                            fontSize = 12.sp,
-                                            color = OnSurfaceVariantLight
-                                        )
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "$${"%.2f".format(shift.totalEarned)}",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = PrimaryGreen,
-                                            modifier = Modifier.padding(end = 6.dp)
-                                        )
-                                        
-                                        // Allow marking individual shifts paid if they are not in upcoming
-                                        if (cycle.status != PayCycleStatus.UPCOMING) {
-                                            Checkbox(
-                                                checked = shift.isPaid,
-                                                onCheckedChange = { checked ->
-                                                    dashboardViewModel.toggleShiftPaidStatus(shift.id, checked)
-                                                },
-                                                modifier = Modifier.size(24.dp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = shift.company,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onBackground
                                             )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("Est", fontSize = 10.sp, color = OnSurfaceVariantLight)
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = SimpleDateFormat("EEE, MMM dd", java.util.Locale.US).format(java.util.Date(shift.startTime)),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                                            )
+                                            Text(
+                                                text = "${shiftTimeFormat.format(java.util.Date(shift.startTime))} → ${shiftTimeFormat.format(java.util.Date(shift.endTime))} · ${"%.1f".format(shift.durationHours)} hrs",
+                                                fontSize = 12.sp,
+                                                color = OnSurfaceVariantLight
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = "$${"%.2f".format(shift.totalEarned)}",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = PrimaryGreen
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            if (cycle.status != PayCycleStatus.UPCOMING) {
+                                                Checkbox(
+                                                    checked = shift.isPaid,
+                                                    onCheckedChange = { checked ->
+                                                        dashboardViewModel.toggleShiftPaidStatus(shift.id, checked)
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("Est", fontSize = 10.sp, color = OnSurfaceVariantLight)
+                                                }
                                             }
                                         }
                                     }
