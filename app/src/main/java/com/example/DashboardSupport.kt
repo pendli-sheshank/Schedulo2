@@ -38,7 +38,9 @@ data class Job(
     var defaultHourlyRate: Double = 15.0,
     var goalHours: Double = 20.0,
     var goalType: String = "Hours", // "Hours" or "Earnings"
-    var weeklyCycleStartDay: String? = "Monday" // "Monday", "Tuesday", etc.
+    var weeklyCycleStartDay: String? = "Monday", // "Monday", "Tuesday", etc.
+    var overtimeThresholdHours: Double = 40.0, // weekly hours after which overtime kicks in
+    var overtimeMultiplier: Double = 1.5 // pay multiplier for overtime (e.g., 1.5x)
 ) {
     fun getStartOfCurrentCycle(targetMillis: Long = System.currentTimeMillis()): Long {
         val calendar = Calendar.getInstance()
@@ -87,6 +89,28 @@ data class Shift(
     @get:com.google.firebase.firestore.Exclude
     val totalEarned: Double
         get() = if (isGig) customEarned else (durationHours * hourlyRate)
+}
+
+fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, Double> {
+    // Returns (regularEarnings, overtimeEarnings)
+    if (job.isGigWork) {
+        // Gig work doesn't have overtime
+        return Pair(shifts.sumOf { it.totalEarned }, 0.0)
+    }
+    val totalHours = shifts.sumOf { it.durationHours }
+    val threshold = job.overtimeThresholdHours
+    val rate = job.defaultHourlyRate
+    val multiplier = job.overtimeMultiplier
+
+    return if (totalHours <= threshold) {
+        Pair(totalHours * rate, 0.0)
+    } else {
+        val regularHours = threshold
+        val overtimeHours = totalHours - threshold
+        val regularEarnings = regularHours * rate
+        val overtimeEarnings = overtimeHours * rate * multiplier
+        Pair(regularEarnings, overtimeEarnings)
+    }
 }
 
 class DashboardViewModel : ViewModel() {
@@ -237,7 +261,7 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun addJob(title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday") {
+    fun addJob(title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday", overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
         val uid = auth?.currentUser?.uid ?: "local_user"
         _userId.value = uid
         val job = Job(
@@ -248,7 +272,9 @@ class DashboardViewModel : ViewModel() {
             defaultHourlyRate = defaultHourlyRate,
             goalHours = goalHours,
             goalType = goalType,
-            weeklyCycleStartDay = weeklyCycleStartDay
+            weeklyCycleStartDay = weeklyCycleStartDay,
+            overtimeThresholdHours = overtimeThresholdHours,
+            overtimeMultiplier = overtimeMultiplier
         )
         val database = db
         if (database != null) {
@@ -262,7 +288,7 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun updateJob(jobId: String, title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String) {
+    fun updateJob(jobId: String, title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String, overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
         val job = jobs.value.find { it.id == jobId } ?: return
         val updated = job.copy(
             title = title,
@@ -270,7 +296,9 @@ class DashboardViewModel : ViewModel() {
             defaultHourlyRate = defaultHourlyRate,
             goalHours = goalHours,
             goalType = goalType,
-            weeklyCycleStartDay = weeklyCycleStartDay
+            weeklyCycleStartDay = weeklyCycleStartDay,
+            overtimeThresholdHours = overtimeThresholdHours,
+            overtimeMultiplier = overtimeMultiplier
         )
         val database = db
         if (database != null) {
@@ -449,6 +477,26 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
+    fun generateCsvReport(): String {
+        val sb = StringBuilder()
+        sb.appendLine("Date,Company,Start Time,End Time,Hours,Hourly Rate,Earnings,Type,Paid")
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val timeFormat = SimpleDateFormat("hh:mm a", Locale.US)
+        val sorted = _shifts.value.sortedBy { it.startTime }
+        for (shift in sorted) {
+            val date = dateFormat.format(Date(shift.startTime))
+            val start = timeFormat.format(Date(shift.startTime))
+            val end = timeFormat.format(Date(shift.endTime))
+            val hours = "%.2f".format(shift.durationHours)
+            val rate = "%.2f".format(shift.hourlyRate)
+            val earned = "%.2f".format(shift.totalEarned)
+            val type = if (shift.isGig) "Gig" else "Hourly"
+            val paid = if (shift.isPaid) "Yes" else "No"
+            sb.appendLine("$date,\"${shift.company}\",$start,$end,$hours,$rate,$earned,$type,$paid")
+        }
+        return sb.toString()
+    }
+
     fun updateUserName(newName: String) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
@@ -512,6 +560,9 @@ fun AddShiftScreen(
     var startMinute by remember { mutableStateOf(existingShift?.let { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.MINUTE) } ?: 0) }
     var endHour by remember { mutableStateOf(existingShift?.let { Calendar.getInstance().apply { timeInMillis = it.endTime }.get(Calendar.HOUR_OF_DAY) } ?: 17) }
     var endMinute by remember { mutableStateOf(existingShift?.let { Calendar.getInstance().apply { timeInMillis = it.endTime }.get(Calendar.MINUTE) } ?: 0) }
+
+    var recurrence by remember { mutableStateOf("None") }
+    var recurrenceWeeks by remember { mutableStateOf("4") }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showStartTimePicker by remember { mutableStateOf(false) }
@@ -749,16 +800,57 @@ fun AddShiftScreen(
                 }
             }
 
+            if (existingShift == null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Repeat Shift", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("None", "Daily", "Weekly", "Biweekly").forEach { option ->
+                        val selected = recurrence == option
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { recurrence = option }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = option,
+                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+                if (recurrence != "None") {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = recurrenceWeeks,
+                        onValueChange = { recurrenceWeeks = it },
+                        label = { Text("Repeat for (weeks)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = {
-                    val calStart = Calendar.getInstance().apply { 
+                    val calStart = Calendar.getInstance().apply {
                         timeInMillis = selectedDateMillis
                         set(Calendar.HOUR_OF_DAY, startHour)
                         set(Calendar.MINUTE, startMinute)
                         set(Calendar.SECOND, 0)
                     }
-                    val calEnd = Calendar.getInstance().apply { 
+                    val calEnd = Calendar.getInstance().apply {
                         timeInMillis = selectedDateMillis
                         set(Calendar.HOUR_OF_DAY, endHour)
                         set(Calendar.MINUTE, endMinute)
@@ -766,7 +858,7 @@ fun AddShiftScreen(
                     }
                     var finalEndTime = calEnd.timeInMillis
                     if (finalEndTime < calStart.timeInMillis) {
-                        finalEndTime += 86400000L // Add one day
+                        finalEndTime += 86400000L
                     }
                     val hourly = if (isGig) 0.0 else (rate.toDoubleOrNull() ?: 0.0)
                     val earned = if (isGig) (customEarnings.toDoubleOrNull() ?: 0.0) else 0.0
@@ -775,6 +867,25 @@ fun AddShiftScreen(
                         viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, reminderMinutes)
                     } else {
                         viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, reminderMinutes)
+                        if (recurrence != "None") {
+                            val weeks = recurrenceWeeks.toIntOrNull()?.coerceIn(1, 52) ?: 4
+                            val dayIncrement = when (recurrence) {
+                                "Daily" -> 1
+                                "Weekly" -> 7
+                                "Biweekly" -> 14
+                                else -> 0
+                            }
+                            val totalOccurrences = if (recurrence == "Daily") weeks * 7 else weeks
+                            for (i in 1..totalOccurrences) {
+                                val offsetMs = i.toLong() * dayIncrement * 24 * 60 * 60 * 1000L
+                                viewModel.addShift(
+                                    company,
+                                    calStart.timeInMillis + offsetMs,
+                                    finalEndTime + offsetMs,
+                                    hourly, isGig, earned, reminderMinutes
+                                )
+                            }
+                        }
                     }
                     onBack()
                 },

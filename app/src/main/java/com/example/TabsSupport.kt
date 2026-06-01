@@ -36,6 +36,8 @@ import com.example.ui.theme.OutlineLight
 import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.SecondaryGreen
 import com.example.ui.theme.SurfaceVariantLight
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -330,6 +332,8 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
     var goalHoursStr by remember { mutableStateOf("20.0") }
     var goalType by remember { mutableStateOf("Hours") }
     var weeklyCycleStartDay by remember { mutableStateOf("Monday") }
+    var overtimeThresholdStr by remember { mutableStateOf("40.0") }
+    var overtimeMultiplierStr by remember { mutableStateOf("1.5") }
     var daysExpanded by remember { mutableStateOf(false) }
     val daysOfWeek = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
 
@@ -404,6 +408,26 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                         }
                     }
 
+                    if (!isGigWork) {
+                        OutlinedTextField(
+                            value = overtimeThresholdStr,
+                            onValueChange = { overtimeThresholdStr = it },
+                            label = { Text("Overtime After (hrs/week)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = overtimeMultiplierStr,
+                            onValueChange = { overtimeMultiplierStr = it },
+                            label = { Text("Overtime Rate Multiplier") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -437,12 +461,14 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                     onClick = {
                         val finalRate = if (isGigWork) 0.0 else (rateStr.toDoubleOrNull() ?: 15.0)
                         val finalGoal = goalHoursStr.toDoubleOrNull() ?: 20.0
+                        val finalOvertimeThreshold = overtimeThresholdStr.toDoubleOrNull() ?: 40.0
+                        val finalOvertimeMultiplier = overtimeMultiplierStr.toDoubleOrNull() ?: 1.5
 
                         val jobId = editingJobId
                         if (jobId == null) {
-                            dashboardViewModel.addJob(title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay)
+                            dashboardViewModel.addJob(title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOvertimeThreshold, finalOvertimeMultiplier)
                         } else {
-                            dashboardViewModel.updateJob(jobId, title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay)
+                            dashboardViewModel.updateJob(jobId, title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOvertimeThreshold, finalOvertimeMultiplier)
                         }
                         showDialog = false
                     },
@@ -473,6 +499,8 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                     goalHoursStr = "20.0"
                     goalType = "Hours"
                     weeklyCycleStartDay = "Monday"
+                    overtimeThresholdStr = "40.0"
+                    overtimeMultiplierStr = "1.5"
                     showDialog = true
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
@@ -513,6 +541,8 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                                 goalHoursStr = job.goalHours.toString()
                                 goalType = job.goalType
                                 weeklyCycleStartDay = job.weeklyCycleStartDay ?: "Monday"
+                                overtimeThresholdStr = job.overtimeThresholdHours.toString()
+                                overtimeMultiplierStr = job.overtimeMultiplier.toString()
                                 showDialog = true
                             },
                         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1300,6 +1330,58 @@ fun ProfileScreen(
                             maxLines = 1
                         )
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            val context = LocalContext.current
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clickable {
+                        val csv = dashboardViewModel.generateCsvReport()
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/csv"
+                            putExtra(Intent.EXTRA_SUBJECT, "Schedulo Shift Report")
+                            putExtra(Intent.EXTRA_TEXT, csv)
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, "Export Report"))
+                    },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = BorderStroke(1.dp, OutlineLight)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.FileDownload,
+                        contentDescription = null,
+                        tint = PrimaryGreen,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Export Shift Report",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = "Share shift history as CSV",
+                            fontSize = 13.sp,
+                            color = OnSurfaceVariantLight
+                        )
+                    }
+                    Icon(
+                        Icons.Default.Share,
+                        contentDescription = null,
+                        tint = OnSurfaceVariantLight,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
 

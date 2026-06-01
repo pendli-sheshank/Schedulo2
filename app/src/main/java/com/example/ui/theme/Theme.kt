@@ -1,6 +1,8 @@
 package com.example.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
@@ -19,9 +21,26 @@ private val LightColorScheme =
     outline = OutlineLight
   )
 
+private val DarkColorScheme =
+  darkColorScheme(
+    primary = PrimaryGreen,
+    onPrimary = SurfaceDark,
+    secondary = SecondaryGreen,
+    onSecondary = OnBackgroundDark,
+    background = BackgroundDark,
+    onBackground = OnBackgroundDark,
+    surface = SurfaceDark,
+    onSurface = OnBackgroundDark,
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = OnSurfaceVariantDark,
+    outline = OutlineDark
+  )
+
 @Composable
 fun MyApplicationTheme(
+  darkTheme: Boolean = isSystemInDarkTheme(),
   content: @Composable () -> Unit,
 ) {
-  MaterialTheme(colorScheme = LightColorScheme, typography = Typography, content = content)
+  val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
 }

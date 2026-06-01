@@ -441,7 +441,10 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
     
     val hours = shiftsForJob.sumOf { it.durationHours }
     val earnings = shiftsForJob.sumOf { it.totalEarned }
-    
+
+    val (regularEarnings, overtimeEarnings) = calculateEarningsWithOvertime(shiftsForJob, job)
+    val overtimeHours = if (!job.isGigWork && hours > job.overtimeThresholdHours) hours - job.overtimeThresholdHours else 0.0
+
     val isGig = job.isGigWork
     val isHoursGoal = job.goalType == "Hours"
     
@@ -552,6 +555,20 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
             if (progressFraction >= 1.0) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text("🎉 Goal achieved this week!", fontSize = 11.sp, color = PrimaryGreen, fontWeight = FontWeight.Bold)
+            }
+            if (!isGig && overtimeHours > 0.0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Overtime: ${"%.1f".format(overtimeHours)} hrs (+$${"%.2f".format(overtimeEarnings)})",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentOrange
+                    )
+                }
             }
         }
     }
