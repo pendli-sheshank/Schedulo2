@@ -15,8 +15,8 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    versionCode = 20
-    versionName = "20.0"
+    versionCode = 21
+    versionName = "21.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
