@@ -459,18 +459,22 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun toggleShiftPaidStatus(shiftId: String, isPaid: Boolean) {
+        _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = isPaid) else it }
         val database = db
         if (database != null) {
             database.collection("shifts").document(shiftId).update("isPaid", isPaid)
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to update payment status: ${e.message}"
+                    _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = !isPaid) else it }
                 }
-        } else {
-            _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = isPaid) else it }
         }
     }
 
     fun markCycleAsPaid(shiftIds: List<String>, isPaid: Boolean) {
+        val shiftIdSet = shiftIds.toSet()
+        _shifts.value = _shifts.value.map {
+            if (it.id in shiftIdSet) it.copy(isPaid = isPaid) else it
+        }
         val database = db
         if (database != null) {
             val batch = database.batch()
@@ -481,11 +485,10 @@ class DashboardViewModel : ViewModel() {
             batch.commit()
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to mark cycle as paid: ${e.message}"
+                    _shifts.value = _shifts.value.map {
+                        if (it.id in shiftIdSet) it.copy(isPaid = !isPaid) else it
+                    }
                 }
-        } else {
-            _shifts.value = _shifts.value.map {
-                if (it.id in shiftIds) it.copy(isPaid = isPaid) else it
-            }
         }
     }
 
