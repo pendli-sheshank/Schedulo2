@@ -459,28 +459,34 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun toggleShiftPaidStatus(shiftId: String, isPaid: Boolean) {
-        _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = isPaid) else it }
+        val updatedShifts = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = isPaid) else it }
+        _shifts.value = updatedShifts
         val database = db
         if (database != null) {
-            database.collection("shifts").document(shiftId).update("isPaid", isPaid)
-                .addOnFailureListener { e ->
-                    _syncError.value = "Failed to update payment status: ${e.message}"
-                    _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = !isPaid) else it }
-                }
+            val updatedShift = updatedShifts.firstOrNull { it.id == shiftId }
+            if (updatedShift != null) {
+                database.collection("shifts").document(shiftId).set(updatedShift)
+                    .addOnFailureListener { e ->
+                        _syncError.value = "Failed to update payment status: ${e.message}"
+                        _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = !isPaid) else it }
+                    }
+            }
         }
     }
 
     fun markCycleAsPaid(shiftIds: List<String>, isPaid: Boolean) {
         val shiftIdSet = shiftIds.toSet()
-        _shifts.value = _shifts.value.map {
+        val updatedShifts = _shifts.value.map {
             if (it.id in shiftIdSet) it.copy(isPaid = isPaid) else it
         }
+        _shifts.value = updatedShifts
         val database = db
         if (database != null) {
             val batch = database.batch()
-            for (id in shiftIds) {
-                val docRef = database.collection("shifts").document(id)
-                batch.update(docRef, "isPaid", isPaid)
+            val shiftsToWrite = updatedShifts.filter { it.id in shiftIdSet }
+            for (shift in shiftsToWrite) {
+                val docRef = database.collection("shifts").document(shift.id)
+                batch.set(docRef, shift)
             }
             batch.commit()
                 .addOnFailureListener { e ->
