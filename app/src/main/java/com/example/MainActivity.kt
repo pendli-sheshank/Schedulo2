@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.example.ui.theme.*
 
 import androidx.compose.runtime.collectAsState
@@ -105,7 +106,10 @@ class MainActivity : ComponentActivity() {
                     composable("jobs") { MainLayout(navController, "jobs", authViewModel, dashboardViewModel) }
                     composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel) }
                     composable("profile") {
-                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { navController.popBackStack() })
+                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") })
+                    }
+                    composable("insights") {
+                        InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { navController.popBackStack() })
                     }
                     composable("add_week_plan") {
                         AddWeekPlanScreen(viewModel = dashboardViewModel, onBack = { navController.popBackStack() })
@@ -147,6 +151,7 @@ private fun weekRangeLabel(offset: Int): String {
     return "$start – $end"
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     modifier: Modifier = Modifier,
@@ -163,6 +168,7 @@ fun DashboardScreen(
     val userName by dashboardViewModel?.userName?.collectAsState() ?: remember { mutableStateOf("") }
     val isLoading by dashboardViewModel?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
     val syncError by dashboardViewModel?.syncError?.collectAsState() ?: remember { mutableStateOf<String?>(null) }
+    val isRefreshing by dashboardViewModel?.isRefreshing?.collectAsState() ?: remember { mutableStateOf(false) }
     val displayInitials = remember(userName, userEmail) {
         if (userName.isNotBlank()) {
             val parts = userName.trim().split(" ")
@@ -204,8 +210,13 @@ fun DashboardScreen(
         dashboardViewModel?.loadShifts()
     }
 
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = { dashboardViewModel?.refreshData() },
+        modifier = modifier.fillMaxSize()
+    ) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
@@ -381,6 +392,7 @@ fun DashboardScreen(
                 item { UpcomingShiftsSection(shifts, onEditShift) }
             }
         }
+    }
     }
 }
 

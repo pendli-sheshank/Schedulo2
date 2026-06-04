@@ -26,6 +26,7 @@ import java.util.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.google.firebase.firestore.ListenerRegistration
@@ -164,6 +165,23 @@ class DashboardViewModel : ViewModel() {
     private var profileListenerRegistration: ListenerRegistration? = null
     private var settingsListenerRegistration: ListenerRegistration? = null
     
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
+    fun refreshData() {
+        _isRefreshing.value = true
+        loadedForUserId = null
+        loadShifts()
+        _isRefreshing.value = false
+    }
+
+    fun detectConflicts(startTime: Long, endTime: Long, excludeShiftId: String? = null): List<Shift> {
+        return _shifts.value.filter { shift ->
+            shift.id != excludeShiftId &&
+                shift.startTime < endTime && shift.endTime > startTime
+        }
+    }
+
     fun clearSyncError() {
         _syncError.value = null
     }
@@ -597,6 +615,57 @@ class DashboardViewModel : ViewModel() {
             }
     }
 
+    data class WeekSummary(val weekStart: Long, val label: String, val hours: Double, val earnings: Double, val shiftCount: Int)
+
+    fun getWeeklyEarningsSummary(weeks: Int = 8): List<WeekSummary> {
+        val weekFormat = SimpleDateFormat("MMM dd", Locale.US)
+        val now = System.currentTimeMillis()
+        val completedShifts = _shifts.value.filter { it.startTime < now }
+        return (0 until weeks).map { offset ->
+            val cal = Calendar.getInstance().apply {
+                firstDayOfWeek = Calendar.MONDAY
+                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                add(Calendar.WEEK_OF_YEAR, -offset)
+            }
+            val weekStart = cal.timeInMillis
+            val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
+            val weekShifts = completedShifts.filter { it.startTime in weekStart until weekEnd }
+            WeekSummary(
+                weekStart = weekStart,
+                label = weekFormat.format(Date(weekStart)),
+                hours = weekShifts.sumOf { it.durationHours },
+                earnings = weekShifts.sumOf { it.totalEarned },
+                shiftCount = weekShifts.size
+            )
+        }.reversed()
+    }
+
+    fun getEarningsByEmployer(): Map<String, Double> {
+        val now = System.currentTimeMillis()
+        return _shifts.value.filter { it.startTime < now }
+            .groupBy { it.company }
+            .mapValues { (_, shifts) -> shifts.sumOf { it.totalEarned } }
+            .toList().sortedByDescending { it.second }.toMap()
+    }
+
+    fun generateCsvReport(weekStart: Long, employer: String): String {
+        val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
+        val filtered = _shifts.value.filter { shift ->
+            shift.startTime in weekStart until weekEnd &&
+                (employer == "All" || shift.company.equals(employer, ignoreCase = true))
+        }.sortedBy { it.startTime }
+
+        val sb = StringBuilder()
+        sb.appendLine("Date,Company,Start,End,Hours,Rate,Earned,Gig,Paid")
+        filtered.forEach { s ->
+            sb.appendLine("${dateFormat.format(Date(s.startTime))},${s.company},${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid}")
+        }
+        return sb.toString()
+    }
+
     override fun onCleared() {
         super.onCleared()
         jobsListenerRegistration?.remove()
@@ -930,6 +999,38 @@ fun AddShiftScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
+                }
+            }
+
+            val previewCalStart = remember(selectedDateMillis, startHour, startMinute) {
+                Calendar.getInstance().apply { timeInMillis = selectedDateMillis; set(Calendar.HOUR_OF_DAY, startHour); set(Calendar.MINUTE, startMinute); set(Calendar.SECOND, 0) }.timeInMillis
+            }
+            val previewCalEnd = remember(selectedDateMillis, endHour, endMinute, previewCalStart) {
+                val end = Calendar.getInstance().apply { timeInMillis = selectedDateMillis; set(Calendar.HOUR_OF_DAY, endHour); set(Calendar.MINUTE, endMinute); set(Calendar.SECOND, 0) }.timeInMillis
+                if (end < previewCalStart) end + 86400000L else end
+            }
+            val conflicts = remember(previewCalStart, previewCalEnd, shifts) {
+                viewModel.detectConflicts(previewCalStart, previewCalEnd, existingShift?.id)
+            }
+            if (conflicts.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B))
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("Shift Overlap Detected", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Color(0xFF92400E))
+                            conflicts.forEach { conflict ->
+                                val fmt = SimpleDateFormat("MMM dd h:mm a", Locale.US)
+                                Text("${conflict.company}: ${fmt.format(Date(conflict.startTime))} - ${fmt.format(Date(conflict.endTime))}", fontSize = 12.sp, color = Color(0xFF92400E))
+                            }
+                        }
+                    }
                 }
             }
 

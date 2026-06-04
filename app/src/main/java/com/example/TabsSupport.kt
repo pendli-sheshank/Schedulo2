@@ -15,11 +15,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,8 +32,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import com.example.ui.theme.AccentBlue
 import com.example.ui.theme.AccentOrange
@@ -113,6 +117,7 @@ fun MainLayout(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun PlanScreen(
     modifier: Modifier = Modifier,
     dashboardViewModel: DashboardViewModel,
@@ -120,9 +125,11 @@ fun PlanScreen(
 ) {
     val shifts by dashboardViewModel.shifts.collectAsState(initial = emptyList())
     val jobs by dashboardViewModel.jobs.collectAsState(initial = emptyList())
+    val isRefreshing by dashboardViewModel.isRefreshing.collectAsState()
     val now = System.currentTimeMillis()
 
     var selectedTabIndex by remember { mutableStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val weekFormat = remember { SimpleDateFormat("MMM dd", Locale.US) }
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
@@ -130,7 +137,9 @@ fun PlanScreen(
 
     val upcomingShifts = shifts.filter { it.startTime >= now }.sortedBy { it.startTime }
     val previousShifts = shifts.filter { it.startTime < now }.sortedByDescending { it.startTime }
-    val activeShifts = if (selectedTabIndex == 0) upcomingShifts else previousShifts
+    val unfilteredShifts = if (selectedTabIndex == 0) upcomingShifts else previousShifts
+    val activeShifts = if (searchQuery.isBlank()) unfilteredShifts
+        else unfilteredShifts.filter { it.company.contains(searchQuery, ignoreCase = true) }
 
     val weeklyGroups = remember(activeShifts) {
         activeShifts.groupBy { shift ->
@@ -146,12 +155,34 @@ fun PlanScreen(
         }.toSortedMap(if (selectedTabIndex == 0) compareBy { it } else compareByDescending { it })
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = { dashboardViewModel.refreshData() },
+        modifier = modifier.fillMaxSize()
+    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Search by employer...", fontSize = 14.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+            trailingIcon = if (searchQuery.isNotBlank()) {
+                { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, "Clear", modifier = Modifier.size(18.dp)) } }
+            } else null,
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = PrimaryGreen,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        )
+
         TabRow(
             selectedTabIndex = selectedTabIndex,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = PrimaryGreen,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clip(RoundedCornerShape(12.dp))
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(12.dp))
         ) {
             Tab(
                 selected = selectedTabIndex == 0, onClick = { selectedTabIndex = 0 },
@@ -247,6 +278,7 @@ fun PlanScreen(
                 }
             }
         }
+    }
     }
 }
 
@@ -686,7 +718,8 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
 fun ProfileScreen(
     dashboardViewModel: DashboardViewModel,
     authViewModel: AuthViewModel? = null,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToInsights: () -> Unit = {}
 ) {
     val currentCompany by dashboardViewModel.defaultCompany.collectAsState()
     val currentRate by dashboardViewModel.defaultRate.collectAsState()
@@ -719,6 +752,25 @@ fun ProfileScreen(
     var expanded by remember { mutableStateOf(false) }
 
     var showExportDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showReauthDialog by remember { mutableStateOf(false) }
+    var deletePassword by remember { mutableStateOf("") }
+    val deleteState by authViewModel?.deleteState?.collectAsState() ?: remember { mutableStateOf(DeleteAccountState.Idle) }
+
+    LaunchedEffect(deleteState) {
+        when (deleteState) {
+            is DeleteAccountState.NeedsReauth -> {
+                showDeleteDialog = false
+                showReauthDialog = true
+            }
+            is DeleteAccountState.Success -> {
+                showDeleteDialog = false
+                showReauthDialog = false
+                onBack()
+            }
+            else -> {}
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -829,6 +881,25 @@ fun ProfileScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onNavigateToInsights() },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Insights, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Earnings Insights", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                        Text("Charts, trends & analytics", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
             Spacer(modifier = Modifier.height(16.dp))
@@ -860,11 +931,106 @@ fun ProfileScreen(
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text("Danger Zone", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { showDeleteDialog = true },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.DeleteForever, null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Delete Account", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
         }
     }
 
     if (showExportDialog) {
         ExportFilterDialog(dashboardViewModel = dashboardViewModel, onDismiss = { showExportDialog = false })
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false; authViewModel?.resetDeleteState() },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp)) },
+            title = { Text("Delete Account", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("This will permanently delete your account and all your shift data. This action cannot be undone.")
+                    if (deleteState is DeleteAccountState.Error) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text((deleteState as DeleteAccountState.Error).message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { authViewModel?.deleteAccount() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    enabled = deleteState !is DeleteAccountState.Loading
+                ) {
+                    if (deleteState is DeleteAccountState.Loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    } else {
+                        Text("Delete")
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false; authViewModel?.resetDeleteState() }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showReauthDialog) {
+        AlertDialog(
+            onDismissRequest = { showReauthDialog = false; deletePassword = ""; authViewModel?.resetDeleteState() },
+            title = { Text("Re-enter Password", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("For security, please re-enter your password to delete your account.", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = deletePassword,
+                        onValueChange = { deletePassword = it },
+                        label = { Text("Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    if (deleteState is DeleteAccountState.Error) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text((deleteState as DeleteAccountState.Error).message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { authViewModel?.deleteAccount(deletePassword) },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    enabled = deletePassword.isNotBlank() && deleteState !is DeleteAccountState.Loading
+                ) {
+                    if (deleteState is DeleteAccountState.Loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    } else {
+                        Text("Delete")
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showReauthDialog = false; deletePassword = ""; authViewModel?.resetDeleteState() }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
 
@@ -876,12 +1042,17 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
 
     var selectedWeekIndex by remember { mutableStateOf(availableWeeks.indexOfFirst { it.second.contains("Current") }.coerceAtLeast(0)) }
     var selectedEmployer by remember { mutableStateOf("All") }
+    var exportFormat by remember { mutableStateOf("Text") }
     var weekExpanded by remember { mutableStateOf(false) }
     var employerExpanded by remember { mutableStateOf(false) }
 
-    val preview = remember(selectedWeekIndex, selectedEmployer) {
+    val preview = remember(selectedWeekIndex, selectedEmployer, exportFormat) {
         if (availableWeeks.isNotEmpty()) {
-            dashboardViewModel.generateFormattedReport(availableWeeks[selectedWeekIndex].first, selectedEmployer)
+            if (exportFormat == "CSV") {
+                dashboardViewModel.generateCsvReport(availableWeeks[selectedWeekIndex].first, selectedEmployer)
+            } else {
+                dashboardViewModel.generateFormattedReport(availableWeeks[selectedWeekIndex].first, selectedEmployer)
+            }
         } else ""
     }
 
@@ -922,6 +1093,22 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
                     }
                 }
 
+                // Format selector
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Text", "CSV").forEach { format ->
+                        val selected = exportFormat == format
+                        Box(
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { exportFormat = format }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(format, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        }
+                    }
+                }
+
                 // Preview
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
@@ -932,8 +1119,9 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
         },
         confirmButton = {
             Button(onClick = {
+                val mimeType = if (exportFormat == "CSV") "text/csv" else "text/plain"
                 val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
+                    type = mimeType
                     putExtra(Intent.EXTRA_SUBJECT, "Schedulo Shift Report")
                     putExtra(Intent.EXTRA_TEXT, preview)
                 }
