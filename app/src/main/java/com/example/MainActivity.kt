@@ -316,14 +316,14 @@ fun DashboardScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFFFF3E0))
+                    .background(MaterialTheme.colorScheme.errorContainer)
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = syncError ?: "", fontSize = 12.sp, color = Color(0xFFE65100), modifier = Modifier.weight(1f))
-                Icon(imageVector = Icons.Default.Close, contentDescription = "Dismiss", tint = Color(0xFFE65100),
+                Text(text = syncError ?: "", fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                Icon(imageVector = Icons.Default.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(16.dp).clickable { dashboardViewModel?.clearSyncError() })
             }
         }

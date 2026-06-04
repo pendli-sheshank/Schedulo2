@@ -152,12 +152,17 @@ class DashboardViewModel : ViewModel() {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
         database.collection("settings").document(uid).update("themeMode", mode)
+            .addOnFailureListener {
+                database.collection("settings").document(uid)
+                    .set(mapOf("themeMode" to mode, "userId" to uid), com.google.firebase.firestore.SetOptions.merge())
+            }
     }
 
     private var loadedForUserId: String? = null
     private var jobsListenerRegistration: ListenerRegistration? = null
     private var shiftsListenerRegistration: ListenerRegistration? = null
     private var profileListenerRegistration: ListenerRegistration? = null
+    private var settingsListenerRegistration: ListenerRegistration? = null
     
     fun clearSyncError() {
         _syncError.value = null
@@ -168,7 +173,8 @@ class DashboardViewModel : ViewModel() {
         _userId.value = uid
         val database = db
         if (database != null && uid != "local_user") {
-            database.collection("settings").document(uid).addSnapshotListener { doc, error ->
+            settingsListenerRegistration?.remove()
+            settingsListenerRegistration = database.collection("settings").document(uid).addSnapshotListener { doc, error ->
                 if (error != null) {
                     _syncError.value = "Failed to load settings: ${error.message}"
                     return@addSnapshotListener
@@ -224,7 +230,7 @@ class DashboardViewModel : ViewModel() {
                 "userId" to uid,
                 "updatedAt" to System.currentTimeMillis()
             )
-            database.collection("settings").document(uid).set(data)
+            database.collection("settings").document(uid).set(data, com.google.firebase.firestore.SetOptions.merge())
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to save settings: ${e.message}"
                 }
@@ -287,15 +293,13 @@ class DashboardViewModel : ViewModel() {
             overtimeThresholdHours = overtimeThresholdHours,
             overtimeMultiplier = overtimeMultiplier
         )
+        _jobs.value = _jobs.value + job
         val database = db
         if (database != null) {
             database.collection("jobs").document(job.id).set(job)
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to save job: ${e.message}"
-                    _jobs.value = _jobs.value + job
                 }
-        } else {
-            _jobs.value = _jobs.value + job
         }
     }
 
@@ -311,26 +315,24 @@ class DashboardViewModel : ViewModel() {
             overtimeThresholdHours = overtimeThresholdHours,
             overtimeMultiplier = overtimeMultiplier
         )
+        _jobs.value = _jobs.value.map { if (it.id == jobId) updated else it }
         val database = db
         if (database != null) {
             database.collection("jobs").document(jobId).set(updated)
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to update job: ${e.message}"
                 }
-        } else {
-            _jobs.value = _jobs.value.map { if (it.id == jobId) updated else it }
         }
     }
 
     fun deleteJob(jobId: String) {
+        _jobs.value = _jobs.value.filter { it.id != jobId }
         val database = db
         if (database != null) {
             database.collection("jobs").document(jobId).delete()
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to delete job: ${e.message}"
                 }
-        } else {
-            _jobs.value = _jobs.value.filter { it.id != jobId }
         }
     }
 
@@ -342,6 +344,8 @@ class DashboardViewModel : ViewModel() {
         shiftsListenerRegistration = null
         profileListenerRegistration?.remove()
         profileListenerRegistration = null
+        settingsListenerRegistration?.remove()
+        settingsListenerRegistration = null
         _shifts.value = emptyList()
         _jobs.value = emptyList()
         _defaultCompany.value = ""
@@ -408,15 +412,13 @@ class DashboardViewModel : ViewModel() {
             reminderBeforeMinutes = reminderBeforeMinutes,
             isPaid = isGig
         )
+        _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         val database = db
         if (database != null && uid != "local_user") {
             database.collection("shifts").document(shift.id).set(shift)
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to save shift: ${e.message}"
-                    _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
                 }
-        } else {
-            _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         }
     }
 
@@ -437,26 +439,24 @@ class DashboardViewModel : ViewModel() {
             reminderBeforeMinutes = reminderBeforeMinutes,
             isPaid = if (isGig) true else shift.isPaid
         )
+        _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
         val database = db
         if (database != null && shift.userId != "local_user") {
             database.collection("shifts").document(shiftId).set(updated)
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to update shift: ${e.message}"
                 }
-        } else {
-            _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
         }
     }
 
     fun deleteShift(shiftId: String) {
+        _shifts.value = _shifts.value.filter { it.id != shiftId }
         val database = db
         if (database != null) {
             database.collection("shifts").document(shiftId).delete()
                 .addOnFailureListener { e ->
                     _syncError.value = "Failed to delete shift: ${e.message}"
                 }
-        } else {
-            _shifts.value = _shifts.value.filter { it.id != shiftId }
         }
     }
 
@@ -602,6 +602,7 @@ class DashboardViewModel : ViewModel() {
         jobsListenerRegistration?.remove()
         shiftsListenerRegistration?.remove()
         profileListenerRegistration?.remove()
+        settingsListenerRegistration?.remove()
     }
 }
 
