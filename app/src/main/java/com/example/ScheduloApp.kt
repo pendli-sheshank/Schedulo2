@@ -46,5 +46,7 @@ class ScheduloApp : Application() {
             val mgr = getSystemService(NotificationManager::class.java)
             mgr.createNotificationChannel(channel)
         }
+
+        NotificationHelper.rescheduleAllReminders(this)
     }
 }

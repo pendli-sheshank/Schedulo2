@@ -20,7 +20,9 @@ service cloud.firestore {
     // Settings: users can only read/write their own settings
     match /settings/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId
+        && (!('remindersEnabled' in request.resource.data) || request.resource.data.remindersEnabled is bool)
+        && (!('defaultReminderMinutes' in request.resource.data) || request.resource.data.defaultReminderMinutes is int);
     }
 
     // Shifts: users can only CRUD their own shifts
@@ -34,7 +36,8 @@ service cloud.firestore {
         && request.resource.data.endTime is int
         && request.resource.data.endTime > request.resource.data.startTime
         && request.resource.data.hourlyRate is number
-        && request.resource.data.hourlyRate >= 0;
+        && request.resource.data.hourlyRate >= 0
+        && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000));
       allow update: if request.auth != null
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid
@@ -44,7 +47,8 @@ service cloud.firestore {
         && request.resource.data.endTime is int
         && request.resource.data.endTime > request.resource.data.startTime
         && request.resource.data.hourlyRate is number
-        && request.resource.data.hourlyRate >= 0;
+        && request.resource.data.hourlyRate >= 0
+        && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000));
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 

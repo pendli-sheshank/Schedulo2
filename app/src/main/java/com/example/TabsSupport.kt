@@ -262,6 +262,9 @@ fun PlanScreen(
                                     Text(dayFormat.format(Date(shift.startTime)), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text("${timeFormat.format(Date(shift.startTime))} → ${timeFormat.format(Date(shift.endTime))} · ${"%.1f".format(shift.durationHours)} hrs",
                                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (shift.notes.isNotBlank()) {
+                                        Text(shift.notes.lines().first().take(60), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 1)
+                                    }
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text("$${"%.2f".format(shift.totalEarned)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
@@ -757,6 +760,22 @@ fun ProfileScreen(
     var deletePassword by remember { mutableStateOf("") }
     val deleteState by authViewModel?.deleteState?.collectAsState() ?: remember { mutableStateOf(DeleteAccountState.Idle) }
 
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var editNameValue by remember(userName) { mutableStateOf(userName) }
+
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    val passwordChangeState by authViewModel?.passwordChangeState?.collectAsState() ?: remember { mutableStateOf(PasswordChangeState.Idle) }
+
+    LaunchedEffect(passwordChangeState) {
+        if (passwordChangeState is PasswordChangeState.Success) {
+            showChangePasswordDialog = false
+            currentPassword = ""; newPassword = ""; confirmPassword = ""
+        }
+    }
+
     LaunchedEffect(deleteState) {
         when (deleteState) {
             is DeleteAccountState.NeedsReauth -> {
@@ -789,7 +808,11 @@ fun ProfileScreen(
                         Text(initials, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(displayName, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { editNameValue = userName; showEditNameDialog = true }) {
+                        Text(displayName, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(Icons.Default.Edit, "Edit name", tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+                    }
                     if (userEmail.isNotBlank()) Text(userEmail, fontSize = 14.sp, color = Color.White.copy(alpha = 0.8f))
                     if (memberSince.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -833,6 +856,70 @@ fun ProfileScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(label, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Change Password card
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { showChangePasswordDialog = true },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Lock, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Change Password", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                        Text("Update your account password", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Notification Preferences card
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Notifications, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Notification Preferences", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val remindersOn by dashboardViewModel.remindersEnabled.collectAsState()
+                    val defaultReminder by dashboardViewModel.defaultReminderMinutes.collectAsState()
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Enable Shift Reminders", fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                        Switch(checked = remindersOn, onCheckedChange = { dashboardViewModel.setRemindersEnabled(it) }, colors = SwitchDefaults.colors(checkedTrackColor = PrimaryGreen))
+                    }
+                    if (remindersOn) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Default Reminder Time", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(15 to "15m", 30 to "30m", 60 to "1h", 120 to "2h").forEach { (minutes, label) ->
+                                val selected = defaultReminder == minutes
+                                Box(
+                                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                                        .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { dashboardViewModel.setDefaultReminderMinutes(minutes) }
+                                        .padding(vertical = 10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(label, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                }
                             }
                         }
                     }
@@ -1028,6 +1115,104 @@ fun ProfileScreen(
                 }
             },
             dismissButton = { TextButton(onClick = { showReauthDialog = false; deletePassword = ""; authViewModel?.resetDeleteState() }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showEditNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = false },
+            title = { Text("Edit Name", fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = editNameValue,
+                    onValueChange = { if (it.length <= 100) editNameValue = it },
+                    label = { Text("Full Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = editNameValue.trim()
+                        if (trimmed.isNotBlank()) {
+                            dashboardViewModel.updateUserName(trimmed)
+                            showEditNameDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                    enabled = editNameValue.trim().isNotBlank()
+                ) { Text("Save", color = Color.White, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showEditNameDialog = false }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showChangePasswordDialog) {
+        AlertDialog(
+            onDismissRequest = { showChangePasswordDialog = false; currentPassword = ""; newPassword = ""; confirmPassword = ""; authViewModel?.resetPasswordChangeState() },
+            title = { Text("Change Password", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = currentPassword,
+                        onValueChange = { currentPassword = it },
+                        label = { Text("Current Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("New Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        supportingText = { Text("Min 8 chars, letters and numbers") }
+                    )
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text("Confirm New Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        isError = confirmPassword.isNotEmpty() && confirmPassword != newPassword
+                    )
+                    if (confirmPassword.isNotEmpty() && confirmPassword != newPassword) {
+                        Text("Passwords do not match", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    }
+                    if (passwordChangeState is PasswordChangeState.Error) {
+                        Text((passwordChangeState as PasswordChangeState.Error).message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    }
+                    if (passwordChangeState is PasswordChangeState.Success) {
+                        Text("Password changed successfully!", color = PrimaryGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { authViewModel?.changePassword(currentPassword, newPassword) },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                    enabled = currentPassword.isNotBlank() && newPassword.isNotBlank() && newPassword == confirmPassword && passwordChangeState !is PasswordChangeState.Loading
+                ) {
+                    if (passwordChangeState is PasswordChangeState.Loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    } else {
+                        Text("Change", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showChangePasswordDialog = false; currentPassword = ""; newPassword = ""; confirmPassword = ""; authViewModel?.resetPasswordChangeState() }) { Text("Cancel") } },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(16.dp)
         )
