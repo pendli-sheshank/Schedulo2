@@ -84,6 +84,12 @@ class ShiftReminderReceiver : BroadcastReceiver() {
             .build()
 
         notificationManager.notify(shiftId.hashCode(), notification)
+
+        // Launch AlarmActivity directly so alarm sound/vibration plays immediately
+        // even when the device is unlocked (fullScreenIntent only auto-launches on lock screen)
+        try {
+            context.startActivity(fullScreenIntent)
+        } catch (_: Exception) { }
     }
 
     companion object {
