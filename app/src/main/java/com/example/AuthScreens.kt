@@ -26,8 +26,15 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Patterns
 import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.SecondaryGreen
+
+private fun isValidEmail(email: String): Boolean =
+    email.trim().isNotBlank() && Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
+
+private fun isStrongPassword(password: String): Boolean =
+    password.length >= 8 && password.any { it.isLetter() } && password.any { it.isDigit() }
 
 private val DarkGreen = Color(0xFF2D3F27)
 private val LightGreenBg = Color(0xFFF0F5EE)
@@ -51,7 +58,8 @@ fun LoginScreen(
         }
     }
 
-    val isFormValid = email.isNotBlank() && password.length >= 6
+    val emailError = if (email.isNotBlank() && !isValidEmail(email)) "Enter a valid email address" else null
+    val isFormValid = isValidEmail(email) && password.length >= 6
     val isLoading = authState is AuthState.Loading
 
     Column(
@@ -143,6 +151,8 @@ fun LoginScreen(
                         leadingIcon = {
                             Icon(Icons.Default.Email, contentDescription = null, tint = PrimaryGreen)
                         },
+                        supportingText = emailError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        isError = emailError != null,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
@@ -188,7 +198,7 @@ fun LoginScreen(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                if (isFormValid && !isLoading) viewModel.login(email, password)
+                                if (isFormValid && !isLoading) viewModel.login(email.trim(), password)
                             }
                         ),
                         singleLine = true,
@@ -234,7 +244,7 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Button(
-                        onClick = { viewModel.login(email, password) },
+                        onClick = { viewModel.login(email.trim(), password) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
@@ -306,7 +316,11 @@ fun SignupScreen(
         }
     }
 
-    val isFormValid = fullName.isNotBlank() && email.isNotBlank() && password.length >= 6
+    val nameError = if (fullName.isNotBlank() && fullName.trim().length > 100) "Name must be 100 characters or less" else null
+    val signupEmailError = if (email.isNotBlank() && !isValidEmail(email)) "Enter a valid email address" else null
+    val passwordError = if (password.isNotBlank() && !isStrongPassword(password)) "Min 8 characters with at least 1 letter and 1 number" else null
+    val isFormValid = fullName.trim().isNotBlank() && fullName.trim().length <= 100 &&
+        isValidEmail(email) && isStrongPassword(password)
     val isLoading = authState is AuthState.Loading
 
     Column(
@@ -386,11 +400,13 @@ fun SignupScreen(
 
                     OutlinedTextField(
                         value = fullName,
-                        onValueChange = { fullName = it },
+                        onValueChange = { if (it.length <= 100) fullName = it },
                         label = { Text("Full name") },
                         leadingIcon = {
                             Icon(Icons.Default.Person, contentDescription = null, tint = PrimaryGreen)
                         },
+                        supportingText = nameError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        isError = nameError != null,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
                             onNext = { focusManager.moveFocus(FocusDirection.Down) }
@@ -416,6 +432,8 @@ fun SignupScreen(
                         leadingIcon = {
                             Icon(Icons.Default.Email, contentDescription = null, tint = PrimaryGreen)
                         },
+                        supportingText = signupEmailError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        isError = signupEmailError != null,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
@@ -458,10 +476,12 @@ fun SignupScreen(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
                         ),
+                        supportingText = passwordError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        isError = passwordError != null,
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                if (isFormValid && !isLoading) viewModel.signup(email, password, fullName)
+                                if (isFormValid && !isLoading) viewModel.signup(email.trim(), password, fullName.trim())
                             }
                         ),
                         singleLine = true,
@@ -507,7 +527,7 @@ fun SignupScreen(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Button(
-                        onClick = { viewModel.signup(email, password, fullName) },
+                        onClick = { viewModel.signup(email.trim(), password, fullName.trim()) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),

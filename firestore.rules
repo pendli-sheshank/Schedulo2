@@ -5,26 +5,70 @@ service cloud.firestore {
 
     // Profiles: users can only read/write their own profile
     match /profiles/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.full_name is string
+        && request.resource.data.full_name.size() <= 100
+        && request.resource.data.email is string;
+      allow update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.full_name is string
+        && request.resource.data.full_name.size() <= 100
+        && request.resource.data.email is string;
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     // Settings: users can only read/write their own settings
     match /settings/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
     // Shifts: users can only CRUD their own shifts
     match /shifts/{shiftId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.company is string
+        && request.resource.data.company.size() <= 200
+        && request.resource.data.startTime is int
+        && request.resource.data.endTime is int
+        && request.resource.data.endTime > request.resource.data.startTime
+        && request.resource.data.hourlyRate is number
+        && request.resource.data.hourlyRate >= 0;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.company is string
+        && request.resource.data.company.size() <= 200
+        && request.resource.data.startTime is int
+        && request.resource.data.endTime is int
+        && request.resource.data.endTime > request.resource.data.startTime
+        && request.resource.data.hourlyRate is number
+        && request.resource.data.hourlyRate >= 0;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
     // Jobs: users can only CRUD their own jobs
     match /jobs/{jobId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.defaultHourlyRate is number
+        && request.resource.data.defaultHourlyRate >= 0
+        && request.resource.data.goalHours is number
+        && request.resource.data.goalHours >= 0;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.defaultHourlyRate is number
+        && request.resource.data.defaultHourlyRate >= 0
+        && request.resource.data.goalHours is number
+        && request.resource.data.goalHours >= 0;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
   }
 }

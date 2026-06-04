@@ -5,6 +5,7 @@ plugins {
   alias(libs.plugins.google.services)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
+  alias(libs.plugins.firebase.crashlytics.plugin)
 }
 
 android {
@@ -15,8 +16,8 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    versionCode = 27
-    versionName = "27.0"
+    versionCode = 28
+    versionName = "28.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -40,7 +41,8 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
@@ -72,6 +74,7 @@ dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   implementation(libs.firebase.auth)
+  implementation(libs.firebase.crashlytics)
   implementation(libs.firebase.firestore)
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)

@@ -2,8 +2,11 @@ package com.example
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.firestore.FirebaseFirestore
+import android.util.Patterns
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +18,14 @@ sealed class AuthState {
     object Loading : AuthState()
     object Authenticated : AuthState()
     data class Error(val message: String) : AuthState()
+}
+
+sealed class DeleteAccountState {
+    object Idle : DeleteAccountState()
+    object Loading : DeleteAccountState()
+    object NeedsReauth : DeleteAccountState()
+    object Success : DeleteAccountState()
+    data class Error(val message: String) : DeleteAccountState()
 }
 
 class AuthViewModel : ViewModel() {
@@ -72,14 +83,19 @@ class AuthViewModel : ViewModel() {
     }
 
     fun login(email: String, pass: String) {
+        val trimmedEmail = email.trim()
         if (auth == null) {
             _authState.value = AuthState.Error("Firebase not configured. Please add secrets.")
+            return
+        }
+        if (!Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
+            _authState.value = AuthState.Error("Please enter a valid email address.")
             return
         }
         _authState.value = AuthState.Loading
         viewModelScope.launch {
             try {
-                auth?.signInWithEmailAndPassword(email, pass)?.await()
+                auth?.signInWithEmailAndPassword(trimmedEmail, pass)?.await()
                 val user = auth?.currentUser
                 _currentUserEmail.value = user?.email ?: email
                 _authState.value = AuthState.Authenticated
@@ -91,19 +107,33 @@ class AuthViewModel : ViewModel() {
     }
 
     fun signup(email: String, pass: String, fullName: String) {
+        val trimmedEmail = email.trim()
+        val trimmedName = fullName.trim()
         if (auth == null || db == null) {
             _authState.value = AuthState.Error("Firebase not configured. Please add secrets.")
+            return
+        }
+        if (!Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
+            _authState.value = AuthState.Error("Please enter a valid email address.")
+            return
+        }
+        if (pass.length < 8 || !pass.any { it.isLetter() } || !pass.any { it.isDigit() }) {
+            _authState.value = AuthState.Error("Password must be at least 8 characters with letters and numbers.")
+            return
+        }
+        if (trimmedName.isBlank() || trimmedName.length > 100) {
+            _authState.value = AuthState.Error("Please enter a valid name (max 100 characters).")
             return
         }
         _authState.value = AuthState.Loading
         viewModelScope.launch {
             try {
-                val result = auth?.createUserWithEmailAndPassword(email, pass)?.await()
+                val result = auth?.createUserWithEmailAndPassword(trimmedEmail, pass)?.await()
                 result?.user?.let { user ->
                     val profile = hashMapOf(
                         "id" to user.uid,
-                        "email" to email,
-                        "full_name" to fullName,
+                        "email" to trimmedEmail,
+                        "full_name" to trimmedName,
                         "created_at" to System.currentTimeMillis()
                     )
                     db?.collection("profiles")?.document(user.uid)?.set(profile)?.await()
@@ -134,6 +164,43 @@ class AuthViewModel : ViewModel() {
                 }
             }
         } catch (_: Exception) { }
+    }
+
+    private val _deleteState = MutableStateFlow<DeleteAccountState>(DeleteAccountState.Idle)
+    val deleteState: StateFlow<DeleteAccountState> = _deleteState.asStateFlow()
+
+    fun deleteAccount(password: String? = null) {
+        val user = auth?.currentUser ?: run {
+            _deleteState.value = DeleteAccountState.Error("No user signed in.")
+            return
+        }
+        val uid = user.uid
+        _deleteState.value = DeleteAccountState.Loading
+        viewModelScope.launch {
+            try {
+                if (password != null && user.email != null) {
+                    val credential = EmailAuthProvider.getCredential(user.email!!, password)
+                    user.reauthenticate(credential).await()
+                }
+                val shiftsQuery = db?.collection("shifts")?.whereEqualTo("userId", uid)?.get()?.await()
+                shiftsQuery?.documents?.forEach { it.reference.delete().await() }
+                val jobsQuery = db?.collection("jobs")?.whereEqualTo("userId", uid)?.get()?.await()
+                jobsQuery?.documents?.forEach { it.reference.delete().await() }
+                db?.collection("profiles")?.document(uid)?.delete()?.await()
+                db?.collection("settings")?.document(uid)?.delete()?.await()
+                user.delete().await()
+                _deleteState.value = DeleteAccountState.Success
+                _authState.value = AuthState.Idle
+            } catch (e: FirebaseAuthRecentLoginRequiredException) {
+                _deleteState.value = DeleteAccountState.NeedsReauth
+            } catch (e: Exception) {
+                _deleteState.value = DeleteAccountState.Error(e.message ?: "Failed to delete account.")
+            }
+        }
+    }
+
+    fun resetDeleteState() {
+        _deleteState.value = DeleteAccountState.Idle
     }
 
     fun logout() {
