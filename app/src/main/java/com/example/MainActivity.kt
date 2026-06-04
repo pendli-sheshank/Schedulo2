@@ -7,9 +7,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,17 +20,20 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.*
@@ -36,7 +42,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -155,11 +160,22 @@ fun DashboardScreen(
     val shifts by dashboardViewModel?.shifts?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
     val jobs by dashboardViewModel?.jobs?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
     val userEmail by authViewModel?.currentUserEmail?.collectAsState() ?: remember { mutableStateOf("") }
+    val userName by dashboardViewModel?.userName?.collectAsState() ?: remember { mutableStateOf("") }
     val isLoading by dashboardViewModel?.isLoading?.collectAsState() ?: remember { mutableStateOf(false) }
     val syncError by dashboardViewModel?.syncError?.collectAsState() ?: remember { mutableStateOf<String?>(null) }
-    val userInitials = remember(userEmail) {
-        val prefix = userEmail.substringBefore("@")
-        if (prefix.length >= 2) prefix.take(2).uppercase() else prefix.uppercase().ifEmpty { "U" }
+    val displayInitials = remember(userName, userEmail) {
+        if (userName.isNotBlank()) {
+            val parts = userName.trim().split(" ")
+            if (parts.size >= 2) "${parts.first().first()}${parts.last().first()}".uppercase()
+            else userName.take(2).uppercase()
+        } else {
+            val prefix = userEmail.substringBefore("@")
+            if (prefix.length >= 2) prefix.take(2).uppercase() else prefix.uppercase().ifEmpty { "U" }
+        }
+    }
+    val greetingName = remember(userName, userEmail) {
+        if (userName.isNotBlank()) userName.split(" ").firstOrNull() ?: "there"
+        else userEmail.substringBefore("@").ifEmpty { "there" }
     }
     val now = System.currentTimeMillis()
 
@@ -193,39 +209,34 @@ fun DashboardScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        // Top bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(PrimaryGreen),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
+            Column {
                 Text(
-                    text = "Schedulo",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
+                    text = "Hi, $greetingName",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.5).sp
                     ),
                     color = MaterialTheme.colorScheme.onBackground
                 )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = weekRangeLabel(weekOffset) + if (weekOffset == 0) " · This Week" else "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 IconButton(onClick = {
                     dashboardViewModel?.reset()
                     authViewModel?.logout()
@@ -234,131 +245,138 @@ fun DashboardScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ExitToApp,
                         contentDescription = "Logout",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(42.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outline)
-                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                        .background(
+                            Brush.linearGradient(listOf(PrimaryGreen, SecondaryGreen))
+                        )
                         .clickable { onNavigateToProfile() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(SecondaryGreen),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = userInitials,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
-                        )
-                    }
+                    Text(
+                        text = displayInitials,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = Color.White
+                    )
                 }
             }
         }
 
-        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { expanded = true }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        // Week filter chip
+        Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                onClick = { expanded = true }
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "FILTER",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryGreen,
-                        letterSpacing = 1.sp
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = weekRangeLabel(weekOffset) + if (weekOffset == 0) " (Current)" else "",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Icon(imageVector = Icons.Default.ArrowDropDown, contentDescription = "Select Week", tint = PrimaryGreen)
+                    Icon(
+                        Icons.Default.UnfoldMore,
+                        contentDescription = "Select Week",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    listOf(0, -1, -2, -3, -4).forEach { offset ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    weekRangeLabel(offset) + if (offset == 0) " (Current)" else "",
-                                    fontWeight = if (offset == weekOffset) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            onClick = {
-                                weekOffset = offset
-                                expanded = false
-                            }
-                        )
-                    }
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                listOf(0, -1, -2, -3, -4).forEach { offset ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                weekRangeLabel(offset) + if (offset == 0) " (Current)" else "",
+                                fontWeight = if (offset == weekOffset) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        onClick = {
+                            weekOffset = offset
+                            expanded = false
+                        },
+                        leadingIcon = if (offset == weekOffset) {
+                            { Icon(Icons.Default.Check, null, tint = PrimaryGreen, modifier = Modifier.size(18.dp)) }
+                        } else null
+                    )
                 }
             }
         }
 
+        // Error banner
         if (syncError != null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .padding(horizontal = 20.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.errorContainer)
-                    .padding(12.dp),
+                    .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = syncError ?: "", fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                Icon(imageVector = Icons.Default.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(16.dp).clickable { dashboardViewModel?.clearSyncError() })
+                Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(text = syncError ?: "", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                Icon(
+                    Icons.Default.Close, "Dismiss", tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { dashboardViewModel?.clearSyncError() }
+                )
             }
         }
 
         if (isLoading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), color = PrimaryGreen)
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(vertical = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { EarningsAndHoursCard(totalEarned, totalHours, onNavigateToPay) }
-            item {
-                Text(
-                    text = "My Employer Goals & Timesheets",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-            if (jobs.isEmpty()) {
+            item { EarningsAndHoursCard(totalEarned, totalHours, weekShifts.size, onNavigateToPay) }
+
+            if (jobs.isNotEmpty()) {
                 item {
                     Text(
-                        text = "Tip: Configure your Employer list in the JOBS tab to track weekly objectives.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        text = "Employer Goals",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
-            } else {
                 items(jobs) { job ->
                     JobGoalTrackerCard(job, shifts, weekOffset)
                 }
             }
+
             if (weekOffset == 0) {
                 item { UpcomingShiftsSection(shifts, onEditShift) }
             }
@@ -367,36 +385,110 @@ fun DashboardScreen(
 }
 
 @Composable
-fun EarningsAndHoursCard(totalEarned: Double, totalHours: Double, onNavigateToPay: () -> Unit = {}) {
+fun EarningsAndHoursCard(totalEarned: Double, totalHours: Double, shiftCount: Int, onNavigateToPay: () -> Unit = {}) {
     Card(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)),
-        colors = CardDefaults.cardColors(containerColor = PrimaryGreen)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text("TOTAL TRACKED PAY", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = Color.White.copy(alpha = 0.8f))
-            Spacer(modifier = Modifier.height(2.dp))
-            Text("$${"%.2f".format(totalEarned)}", fontSize = 40.sp, fontWeight = FontWeight.Light, color = Color.White)
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("TOTAL COMPLETED HOURS", fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f), letterSpacing = 1.sp)
-                    Text("${"%.1f".format(totalHours)} hrs", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.15f))
-                        .clickable { onNavigateToPay() }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(PrimaryGreen, Color(0xFF1B4332))
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                )
+                .padding(24.dp)
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Text("View Pay Details", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    Column {
+                        Text(
+                            "Weekly Earnings",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "$${"%.2f".format(totalEarned)}",
+                            fontSize = 36.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            letterSpacing = (-1).sp
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.15f),
+                        onClick = { onNavigateToPay() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Pay Details",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                null,
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatPill(
+                        label = "Hours",
+                        value = "${"%.1f".format(totalHours)}h",
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatPill(
+                        label = "Shifts",
+                        value = "$shiftCount",
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatPill(
+                        label = "Avg/Shift",
+                        value = if (shiftCount > 0) "$${"%.0f".format(totalEarned / shiftCount)}" else "$0",
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StatPill(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.1f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(label, fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f))
     }
 }
 
@@ -425,11 +517,17 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
         (actualValue / goalValue).coerceIn(0.0, 1.0)
     } else 0.0
 
-    val cycleFormat = remember { java.text.SimpleDateFormat("MMM dd", java.util.Locale.US) }
-    val cycleRangeStr = "${cycleFormat.format(java.util.Date(cycleStart))} – ${cycleFormat.format(java.util.Date(cycleEnd - 1000L))}"
+    val animatedProgress by animateFloatAsState(
+        targetValue = progressFraction.toFloat(),
+        animationSpec = tween(600),
+        label = "progress"
+    )
+
+    val accentColor = if (isGig) AccentOrange else AccentBlue
 
     Card(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
@@ -440,55 +538,117 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(if (isGig) AccentOrange else AccentBlue))
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(accentColor.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (isGig) Icons.Default.DeliveryDining else Icons.Default.Business,
+                            null,
+                            tint = accentColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text(job.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onBackground)
-                        Text("Cycle: $cycleRangeStr (${job.weeklyCycleStartDay ?: "Monday"} start)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            job.title,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            if (isGig) "Gig Work" else "$${job.defaultHourlyRate}/hr",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-                Box(
-                    modifier = Modifier.clip(CircleShape).background(if (isGig) AccentOrange.copy(alpha = 0.1f) else AccentBlue.copy(alpha = 0.1f)).padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(if (isGig) "Gig Work" else "Hourly", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (isGig) AccentOrange else AccentBlue)
-                }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("MY EARNINGS", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
-                    Text("$${"%.2f".format(earnings)}", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, color = PrimaryGreen))
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("TOTAL HOURS", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
-                    Text("${"%.1f".format(hours)} hrs", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground))
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Weekly Target (${job.goalType})", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    if (isHoursGoal) "${"%.1f".format(hours)} / ${"%.0f".format(goalValue)} hrs"
-                    else "$${"%.2f".format(earnings)} / $${"%.0f".format(goalValue)}",
-                    fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground
+                    "$${"%.2f".format(earnings)}",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = PrimaryGreen
                 )
             }
-            Spacer(modifier = Modifier.height(6.dp))
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                Column {
+                    Text("Hours", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${"%.1f".format(hours)}h",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                Column {
+                    Text("Shifts", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${shiftsForJob.size}",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                if (!isGig && overtimeHours > 0.0) {
+                    Column {
+                        Text("Overtime", fontSize = 11.sp, color = AccentOrange)
+                        Text(
+                            "${"%.1f".format(overtimeHours)}h (+$${"%.0f".format(overtimeEarnings)})",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AccentOrange
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Weekly ${job.goalType} Target",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    if (isHoursGoal) "${"%.1f".format(hours)}/${"%.0f".format(goalValue)}h"
+                    else "$${"%.0f".format(earnings)}/$${"%.0f".format(goalValue)}",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (progressFraction >= 1.0) PrimaryGreen else MaterialTheme.colorScheme.onBackground
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
-                progress = progressFraction.toFloat(),
-                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
-                color = PrimaryGreen, trackColor = MaterialTheme.colorScheme.surfaceVariant
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = if (progressFraction >= 1.0) PrimaryGreen else accentColor,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             if (progressFraction >= 1.0) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text("Goal achieved this week!", fontSize = 11.sp, color = PrimaryGreen, fontWeight = FontWeight.Bold)
-            }
-            if (!isGig && overtimeHours > 0.0) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Overtime: ${"%.1f".format(overtimeHours)} hrs (+$${"%.2f".format(overtimeEarnings)})",
-                    fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentOrange
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, null, tint = PrimaryGreen, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Goal achieved!", fontSize = 12.sp, color = PrimaryGreen, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
@@ -500,48 +660,103 @@ fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (Strin
     val upcomingShifts = shifts.filter { it.startTime >= now }.sortedBy { it.startTime }.take(5)
     val timeFormat = remember { java.text.SimpleDateFormat("EEE, MMM dd · h:mm a", java.util.Locale.US) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
-            .padding(16.dp)
-    ) {
-        Text("Upcoming Shifts", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+    Column(modifier = Modifier.padding(top = 4.dp)) {
+        Text(
+            "Upcoming Shifts",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onBackground
+        )
         Spacer(modifier = Modifier.height(12.dp))
 
         if (upcomingShifts.isEmpty()) {
-            Text("No upcoming shifts scheduled.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            upcomingShifts.forEach { shift ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onEditShift(shift.id) }
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                )
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.width(4.dp).height(36.dp).clip(RoundedCornerShape(2.dp))
-                            .background(if (shift.isGig) AccentOrange else AccentBlue)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (shift.isGig) "${shift.company} (Gig)" else shift.company,
-                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.EventAvailable,
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(32.dp)
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = timeFormat.format(java.util.Date(shift.startTime)),
-                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "No upcoming shifts",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Text("$${"%.2f".format(shift.totalEarned)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
                 }
-                if (shift != upcomingShifts.last()) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+            }
+        } else {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(modifier = Modifier.padding(4.dp)) {
+                    upcomingShifts.forEachIndexed { index, shift ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onEditShift(shift.id) }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        (if (shift.isGig) AccentOrange else AccentBlue).copy(alpha = 0.1f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (shift.isGig) Icons.Default.DeliveryDining else Icons.Default.Work,
+                                    null,
+                                    tint = if (shift.isGig) AccentOrange else AccentBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = shift.company,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Text(
+                                    text = timeFormat.format(java.util.Date(shift.startTime)),
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                "$${"%.2f".format(shift.totalEarned)}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryGreen
+                            )
+                        }
+                        if (index < upcomingShifts.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -550,36 +765,62 @@ fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (Strin
 
 @Composable
 fun BottomNavigationBar(currentRoute: String, onNavigate: (String) -> Unit) {
-    Column {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(80.dp)
-                .background(MaterialTheme.colorScheme.surface)
+                .navigationBarsPadding()
+                .height(64.dp)
                 .padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            NavBarItem(icon = Icons.Default.Home, label = "HOME", selected = currentRoute == "dashboard", onClick = { onNavigate("dashboard") })
-            NavBarItem(icon = Icons.Default.DateRange, label = "PLAN", selected = currentRoute == "plan", onClick = { onNavigate("plan") })
+            NavBarItem(icon = Icons.Default.Home, label = "Home", selected = currentRoute == "dashboard", onClick = { onNavigate("dashboard") })
+            NavBarItem(icon = Icons.Default.CalendarMonth, label = "Plan", selected = currentRoute == "plan", onClick = { onNavigate("plan") })
             Spacer(modifier = Modifier.width(56.dp))
-            NavBarItem(icon = Icons.Default.WorkOutline, label = "JOBS", selected = currentRoute == "jobs", onClick = { onNavigate("jobs") })
-            NavBarItem(icon = Icons.Default.AccountBalanceWallet, label = "PAY", selected = currentRoute == "pay", onClick = { onNavigate("pay") })
+            NavBarItem(icon = Icons.Default.WorkOutline, label = "Jobs", selected = currentRoute == "jobs", onClick = { onNavigate("jobs") })
+            NavBarItem(icon = Icons.Default.Wallet, label = "Pay", selected = currentRoute == "pay", onClick = { onNavigate("pay") })
         }
     }
 }
 
 @Composable
 fun NavBarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    val color = if (selected) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant
+    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+            .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(24.dp))
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color, letterSpacing = 1.sp)
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .then(
+                    if (selected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                    else Modifier
+                )
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(22.dp))
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = color
+        )
     }
 }
 
@@ -587,20 +828,16 @@ fun NavBarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () 
 fun FabPlaceholder(onClick: () -> Unit = {}) {
     Box(
         modifier = Modifier
-            .offset(y = 20.dp)
+            .offset(y = 16.dp)
+            .shadow(8.dp, RoundedCornerShape(16.dp))
             .size(56.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(PrimaryGreen)
-            .border(4.dp, MaterialTheme.colorScheme.background, RoundedCornerShape(16.dp))
+            .background(
+                Brush.linearGradient(listOf(PrimaryGreen, Color(0xFF1B4332)))
+            )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Icon(imageVector = Icons.Default.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(32.dp))
+        Icon(imageVector = Icons.Default.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(28.dp))
     }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DashboardPreview() {
-    MyApplicationTheme { DashboardScreen() }
 }
