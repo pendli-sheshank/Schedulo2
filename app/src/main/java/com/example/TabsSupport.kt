@@ -124,35 +124,20 @@ fun PlanScreen(
     onEditShift: (String) -> Unit
 ) {
     val shifts by dashboardViewModel.shifts.collectAsState(initial = emptyList())
-    val jobs by dashboardViewModel.jobs.collectAsState(initial = emptyList())
     val isRefreshing by dashboardViewModel.isRefreshing.collectAsState()
     val now = System.currentTimeMillis()
 
-    var selectedTabIndex by remember { mutableStateOf(0) }
+    var viewMode by remember { mutableStateOf("Month") }
+    var selectedDate by remember {
+        mutableStateOf(Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis)
+    }
     var searchQuery by remember { mutableStateOf("") }
 
-    val weekFormat = remember { SimpleDateFormat("MMM dd", Locale.US) }
-    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
-    val dayFormat = remember { SimpleDateFormat("EEE, MMM dd", Locale.US) }
-
-    val upcomingShifts = shifts.filter { it.startTime >= now }.sortedBy { it.startTime }
-    val previousShifts = shifts.filter { it.startTime < now }.sortedByDescending { it.startTime }
-    val unfilteredShifts = if (selectedTabIndex == 0) upcomingShifts else previousShifts
-    val activeShifts = if (searchQuery.isBlank()) unfilteredShifts
-        else unfilteredShifts.filter { it.company.contains(searchQuery, ignoreCase = true) }
-
-    val weeklyGroups = remember(activeShifts) {
-        activeShifts.groupBy { shift ->
-            val cal = Calendar.getInstance()
-            cal.timeInMillis = shift.startTime
-            cal.firstDayOfWeek = Calendar.MONDAY
-            cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-            cal.set(Calendar.HOUR_OF_DAY, 0)
-            cal.set(Calendar.MINUTE, 0)
-            cal.set(Calendar.SECOND, 0)
-            cal.set(Calendar.MILLISECOND, 0)
-            cal.timeInMillis
-        }.toSortedMap(if (selectedTabIndex == 0) compareBy { it } else compareByDescending { it })
+    val filteredShifts = remember(shifts, searchQuery) {
+        if (searchQuery.isBlank()) shifts
+        else shifts.filter { it.company.contains(searchQuery, ignoreCase = true) }
     }
 
     PullToRefreshBox(
@@ -160,128 +145,647 @@ fun PlanScreen(
         onRefresh = { dashboardViewModel.refreshData() },
         modifier = modifier.fillMaxSize()
     ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Search by employer...", fontSize = 14.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
-            trailingIcon = if (searchQuery.isNotBlank()) {
-                { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, "Clear", modifier = Modifier.size(18.dp)) } }
-            } else null,
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PrimaryGreen,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Search bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search by employer...", fontSize = 14.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                trailingIcon = if (searchQuery.isNotBlank()) {
+                    { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, "Clear", modifier = Modifier.size(18.dp)) } }
+                } else null,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryGreen,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
             )
-        )
 
-        TabRow(
-            selectedTabIndex = selectedTabIndex,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = PrimaryGreen,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(12.dp))
-        ) {
-            Tab(
-                selected = selectedTabIndex == 0, onClick = { selectedTabIndex = 0 },
-                text = { Text("Upcoming (${upcomingShifts.size})", fontWeight = if (selectedTabIndex == 0) FontWeight.Bold else FontWeight.Normal) }
-            )
-            Tab(
-                selected = selectedTabIndex == 1, onClick = { selectedTabIndex = 1 },
-                text = { Text("Previous (${previousShifts.size})", fontWeight = if (selectedTabIndex == 1) FontWeight.Bold else FontWeight.Normal) }
-            )
-        }
-
-        if (activeShifts.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = if (selectedTabIndex == 0) Icons.Default.EventAvailable else Icons.Default.History,
-                        contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        if (selectedTabIndex == 0) "No upcoming shifts planned." else "No previous shifts recorded.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp
-                    )
+            // View mode toggle
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("Month", "Week", "Day").forEach { mode ->
+                    val selected = viewMode == mode
+                    Box(
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                            .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { viewMode = mode }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(mode, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
                 }
             }
-        } else {
-            LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                weeklyGroups.forEach { (weekStart, weekShifts) ->
-                    val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
-                    val weekRangeStr = "${weekFormat.format(Date(weekStart))} – ${weekFormat.format(Date(weekEnd - 1000L))}"
-                    val weekTotalHours = weekShifts.sumOf { it.durationHours }
-                    val weekTotalEarned = weekShifts.sumOf { it.totalEarned }
-                    val isCurrentWeek = now in weekStart until weekEnd
 
-                    item(key = "header_$weekStart") {
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isCurrentWeek) PrimaryGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.DateRange, null, tint = if (isCurrentWeek) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(weekRangeStr, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                                        Text("${weekShifts.size} shift${if (weekShifts.size != 1) "s" else ""} · ${"%.1f".format(weekTotalHours)} hrs",
-                                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("$${"%.2f".format(weekTotalEarned)}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
-                                    if (isCurrentWeek) { Text("This Week", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen) }
-                                }
-                            }
-                        }
+            when (viewMode) {
+                "Month" -> CalendarMonthView(
+                    selectedDate = selectedDate,
+                    onDateSelected = { selectedDate = it },
+                    shifts = filteredShifts,
+                    now = now,
+                    onEditShift = onEditShift,
+                    onSwitchToDay = { selectedDate = it; viewMode = "Day" }
+                )
+                "Week" -> CalendarWeekView(
+                    selectedDate = selectedDate,
+                    onDateChanged = { selectedDate = it },
+                    shifts = filteredShifts,
+                    now = now,
+                    onEditShift = onEditShift,
+                    onDayTap = { selectedDate = it; viewMode = "Day" }
+                )
+                "Day" -> CalendarDayView(
+                    selectedDate = selectedDate,
+                    onDateChanged = { selectedDate = it },
+                    shifts = filteredShifts,
+                    now = now,
+                    onEditShift = onEditShift
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarMonthView(
+    selectedDate: Long,
+    onDateSelected: (Long) -> Unit,
+    shifts: List<Shift>,
+    now: Long,
+    onEditShift: (String) -> Unit,
+    onSwitchToDay: (Long) -> Unit
+) {
+    val cal = remember(selectedDate) {
+        Calendar.getInstance().apply { timeInMillis = selectedDate }
+    }
+    val year = cal.get(Calendar.YEAR)
+    val month = cal.get(Calendar.MONTH)
+    val monthFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.US) }
+
+    val todayCal = remember { Calendar.getInstance() }
+    val todayYear = todayCal.get(Calendar.YEAR)
+    val todayMonth = todayCal.get(Calendar.MONTH)
+    val todayDay = todayCal.get(Calendar.DAY_OF_MONTH)
+
+    val selectedCal = Calendar.getInstance().apply { timeInMillis = selectedDate }
+    val selectedDay = selectedCal.get(Calendar.DAY_OF_MONTH)
+    val selectedMonth = selectedCal.get(Calendar.MONTH)
+    val selectedYear = selectedCal.get(Calendar.YEAR)
+
+    val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val firstDayOfMonth = Calendar.getInstance().apply {
+        set(year, month, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+    }
+    val startDayOfWeek = (firstDayOfMonth.get(Calendar.DAY_OF_WEEK) + 5) % 7
+
+    val shiftsByDay = remember(shifts, year, month) {
+        val monthStart = Calendar.getInstance().apply { set(year, month, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+        val monthEnd = Calendar.getInstance().apply { set(year, month, daysInMonth, 23, 59, 59) }.timeInMillis
+        shifts.filter { it.startTime in monthStart..monthEnd }.groupBy {
+            Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.DAY_OF_MONTH)
+        }
+    }
+
+    val selectedDayShifts = remember(shifts, selectedDate) {
+        val dayStart = Calendar.getInstance().apply {
+            timeInMillis = selectedDate
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val dayEnd = dayStart + 24 * 60 * 60 * 1000L
+        shifts.filter { it.startTime in dayStart until dayEnd }.sortedBy { it.startTime }
+    }
+
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
+    val dayLabelFormat = remember { SimpleDateFormat("EEEE, MMM dd", Locale.US) }
+
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        // Month navigation header
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = {
+                    val prev = Calendar.getInstance().apply { set(year, month, 1); add(Calendar.MONTH, -1) }
+                    onDateSelected(prev.timeInMillis)
+                }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous month", tint = MaterialTheme.colorScheme.onBackground) }
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(monthFormat.format(cal.time), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    val monthShiftCount = shiftsByDay.values.sumOf { it.size }
+                    val monthHours = shiftsByDay.values.flatten().sumOf { it.durationHours }
+                    Text("$monthShiftCount shifts · ${"%.0f".format(monthHours)} hrs", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                IconButton(onClick = {
+                    val next = Calendar.getInstance().apply { set(year, month, 1); add(Calendar.MONTH, 1) }
+                    onDateSelected(next.timeInMillis)
+                }) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next month", tint = MaterialTheme.colorScheme.onBackground) }
+            }
+        }
+
+        // Day-of-week headers
+        item {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Text(day, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
 
-                    items(weekShifts, key = { it.id }) { shift ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth().clickable { onEditShift(shift.id) },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                        ) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(modifier = Modifier.width(4.dp).height(44.dp).clip(RoundedCornerShape(2.dp)).background(if (shift.isGig) AccentOrange else AccentBlue))
-                                Spacer(modifier = Modifier.width(14.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(if (shift.isGig) "${shift.company} (Gig)" else shift.company, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(dayFormat.format(Date(shift.startTime)), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("${timeFormat.format(Date(shift.startTime))} → ${timeFormat.format(Date(shift.endTime))} · ${"%.1f".format(shift.durationHours)} hrs",
-                                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (shift.notes.isNotBlank()) {
-                                        Text(shift.notes.lines().first().take(60), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 1)
+        // Calendar grid
+        val totalCells = startDayOfWeek + daysInMonth
+        val rows = (totalCells + 6) / 7
+        items(rows) { row ->
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                for (col in 0..6) {
+                    val cellIndex = row * 7 + col
+                    val dayNum = cellIndex - startDayOfWeek + 1
+                    if (dayNum in 1..daysInMonth) {
+                        val isToday = year == todayYear && month == todayMonth && dayNum == todayDay
+                        val isSelected = year == selectedYear && month == selectedMonth && dayNum == selectedDay
+                        val dayShifts = shiftsByDay[dayNum]
+                        val hasShifts = dayShifts != null && dayShifts.isNotEmpty()
+                        val shiftCount = dayShifts?.size ?: 0
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .padding(1.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    when {
+                                        isSelected -> PrimaryGreen
+                                        isToday -> PrimaryGreen.copy(alpha = 0.12f)
+                                        else -> Color.Transparent
                                     }
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text("$${"%.2f".format(shift.totalEarned)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
-                                    if (shift.reminderBeforeMinutes > 0 && selectedTabIndex == 0) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(PrimaryGreen.copy(alpha = 0.1f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                            Text("${shift.reminderBeforeMinutes}m", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                                )
+                                .clickable {
+                                    val clickedDate = Calendar.getInstance().apply {
+                                        set(year, month, dayNum, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+                                    }.timeInMillis
+                                    onDateSelected(clickedDate)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    "$dayNum",
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = when {
+                                        isSelected -> Color.White
+                                        isToday -> PrimaryGreen
+                                        else -> MaterialTheme.colorScheme.onBackground
+                                    }
+                                )
+                                if (hasShifts) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        repeat(shiftCount.coerceAtMost(3)) {
+                                            Box(
+                                                modifier = Modifier.size(4.dp).clip(CircleShape)
+                                                    .background(if (isSelected) Color.White else PrimaryGreen)
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        // Divider
+        item {
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        }
+
+        // Selected day detail
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(dayLabelFormat.format(Date(selectedDate)), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                if (selectedDayShifts.isNotEmpty()) {
+                    TextButton(onClick = { onSwitchToDay(selectedDate) }) {
+                        Text("Full Day View", fontSize = 12.sp, color = PrimaryGreen)
+                    }
+                }
+            }
+        }
+
+        if (selectedDayShifts.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.EventAvailable, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(36.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("No shifts scheduled", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        } else {
+            items(selectedDayShifts, key = { it.id }) { shift ->
+                ShiftCard(shift = shift, timeFormat = timeFormat, now = now, onEditShift = onEditShift, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            }
+            item {
+                val totalHrs = selectedDayShifts.sumOf { it.durationHours }
+                val totalEarned = selectedDayShifts.sumOf { it.totalEarned }
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = PrimaryGreen.copy(alpha = 0.08f))
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("${selectedDayShifts.size} shift${if (selectedDayShifts.size != 1) "s" else ""} · ${"%.1f".format(totalHrs)} hrs",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
+                        Text("$${"%.2f".format(totalEarned)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                    }
+                }
+            }
+        }
+
+        item { Spacer(modifier = Modifier.height(80.dp)) }
+    }
+}
+
+@Composable
+private fun CalendarWeekView(
+    selectedDate: Long,
+    onDateChanged: (Long) -> Unit,
+    shifts: List<Shift>,
+    now: Long,
+    onEditShift: (String) -> Unit,
+    onDayTap: (Long) -> Unit
+) {
+    val weekStart = remember(selectedDate) {
+        Calendar.getInstance().apply {
+            timeInMillis = selectedDate
+            firstDayOfWeek = Calendar.MONDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
+
+    val weekFormat = remember { SimpleDateFormat("MMM dd", Locale.US) }
+    val dayNameFormat = remember { SimpleDateFormat("EEE", Locale.US) }
+    val dayNumFormat = remember { SimpleDateFormat("dd", Locale.US) }
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
+
+    val todayCal = remember { Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) } }
+    val todayMillis = todayCal.timeInMillis
+
+    val weekShifts = remember(shifts, weekStart) {
+        shifts.filter { it.startTime in weekStart until weekEnd }.sortedBy { it.startTime }
+    }
+    val weekTotalHours = weekShifts.sumOf { it.durationHours }
+    val weekTotalEarned = weekShifts.sumOf { it.totalEarned }
+
+    val daysList = remember(weekStart) {
+        (0..6).map { offset ->
+            val dayStart = weekStart + offset * 24 * 60 * 60 * 1000L
+            val dayEnd = dayStart + 24 * 60 * 60 * 1000L
+            dayStart to dayEnd
+        }
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+        // Week navigation
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { onDateChanged(selectedDate - 7 * 24 * 60 * 60 * 1000L) }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous week", tint = MaterialTheme.colorScheme.onBackground)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("${weekFormat.format(Date(weekStart))} – ${weekFormat.format(Date(weekEnd - 1000L))}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Text("${weekShifts.size} shifts · ${"%.1f".format(weekTotalHours)} hrs · $${"%.2f".format(weekTotalEarned)}",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = { onDateChanged(selectedDate + 7 * 24 * 60 * 60 * 1000L) }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next week", tint = MaterialTheme.colorScheme.onBackground)
+                }
+            }
+        }
+
+        // Day strip
+        item {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                daysList.forEach { (dayStart, _) ->
+                    val isToday = dayStart == todayMillis
+                    val dayShiftCount = weekShifts.count { it.startTime in dayStart until dayStart + 24 * 60 * 60 * 1000L }
+                    Box(
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                            .background(if (isToday) PrimaryGreen.copy(alpha = 0.12f) else Color.Transparent)
+                            .border(if (isToday) BorderStroke(1.5.dp, PrimaryGreen) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(10.dp))
+                            .clickable { onDayTap(dayStart) }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(dayNameFormat.format(Date(dayStart)), fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                                color = if (isToday) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(dayNumFormat.format(Date(dayStart)), fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                                color = if (isToday) PrimaryGreen else MaterialTheme.colorScheme.onBackground)
+                            if (dayShiftCount > 0) {
+                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(PrimaryGreen))
+                            } else {
+                                Spacer(modifier = Modifier.height(6.dp))
+                            }
+                        }
+                    }
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        }
+
+        // Day-by-day agenda
+        daysList.forEach { (dayStart, dayEnd) ->
+            val dayShifts = weekShifts.filter { it.startTime in dayStart until dayEnd }
+            val isToday = dayStart == todayMillis
+
+            if (dayShifts.isNotEmpty()) {
+                item(key = "day_header_$dayStart") {
+                    val fullDayFormat = SimpleDateFormat("EEEE, MMM dd", Locale.US)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(fullDayFormat.format(Date(dayStart)), fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                color = if (isToday) PrimaryGreen else MaterialTheme.colorScheme.onBackground)
+                            if (isToday) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(PrimaryGreen).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Text("TODAY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                }
+                            }
+                        }
+                        Text("$${"%.2f".format(dayShifts.sumOf { it.totalEarned })}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                    }
+                }
+                items(dayShifts, key = { it.id }) { shift ->
+                    ShiftCard(shift = shift, timeFormat = timeFormat, now = now, onEditShift = onEditShift, modifier = Modifier.padding(horizontal = 16.dp, vertical = 3.dp))
+                }
+            }
+        }
+
+        if (weekShifts.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.EventAvailable, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("No shifts this week", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun CalendarDayView(
+    selectedDate: Long,
+    onDateChanged: (Long) -> Unit,
+    shifts: List<Shift>,
+    now: Long,
+    onEditShift: (String) -> Unit
+) {
+    val dayStart = remember(selectedDate) {
+        Calendar.getInstance().apply {
+            timeInMillis = selectedDate
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val dayEnd = dayStart + 24 * 60 * 60 * 1000L
+
+    val fullDateFormat = remember { SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.US) }
+    val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
+
+    val todayMillis = remember {
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val isToday = dayStart == todayMillis
+
+    val dayShifts = remember(shifts, dayStart) {
+        shifts.filter { it.startTime in dayStart until dayEnd }.sortedBy { it.startTime }
+    }
+    val totalHours = dayShifts.sumOf { it.durationHours }
+    val totalEarned = dayShifts.sumOf { it.totalEarned }
+
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+        // Day navigation
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { onDateChanged(selectedDate - 24 * 60 * 60 * 1000L) }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous day", tint = MaterialTheme.colorScheme.onBackground)
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(fullDateFormat.format(Date(dayStart)), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                        if (isToday) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(PrimaryGreen).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                Text("TODAY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+                }
+                IconButton(onClick = { onDateChanged(selectedDate + 24 * 60 * 60 * 1000L) }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next day", tint = MaterialTheme.colorScheme.onBackground)
+                }
+            }
+        }
+
+        // Day summary card
+        if (dayShifts.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = PrimaryGreen.copy(alpha = 0.08f))
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${dayShifts.size}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                            Text("SHIFTS", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${"%.1f".format(totalHours)}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                            Text("HOURS", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("$${"%.2f".format(totalEarned)}", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                            Text("EARNED", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
+                        }
+                    }
+                }
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+            }
+        }
+
+        // Timeline view
+        if (dayShifts.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(64.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.EventAvailable, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("No shifts scheduled", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (dayStart >= now) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Tap + to add a shift", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        }
+                    }
+                }
+            }
+        } else {
+            items(dayShifts, key = { it.id }) { shift ->
+                DayViewShiftCard(shift = shift, timeFormat = timeFormat, now = now, onEditShift = onEditShift)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DayViewShiftCard(shift: Shift, timeFormat: SimpleDateFormat, now: Long, onEditShift: (String) -> Unit) {
+    val isActive = now in shift.startTime..shift.endTime
+    val isPast = shift.endTime < now
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clickable { onEditShift(shift.id) },
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                isActive -> PrimaryGreen.copy(alpha = 0.06f)
+                else -> MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = BorderStroke(
+            1.dp,
+            when {
+                isActive -> PrimaryGreen.copy(alpha = 0.4f)
+                else -> MaterialTheme.colorScheme.outline
+            }
+        )
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+            // Time column
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(70.dp)) {
+                Text(timeFormat.format(Date(shift.startTime)), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isPast) MaterialTheme.colorScheme.onSurfaceVariant else PrimaryGreen)
+                Box(modifier = Modifier.width(2.dp).height(16.dp).background(if (isPast) MaterialTheme.colorScheme.outline else PrimaryGreen.copy(alpha = 0.4f)))
+                Text(timeFormat.format(Date(shift.endTime)), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Shift details
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.width(4.dp).height(20.dp).clip(RoundedCornerShape(2.dp)).background(if (shift.isGig) AccentOrange else AccentBlue))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (shift.isGig) "${shift.company} (Gig)" else shift.company, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("${"%.1f".format(shift.durationHours)} hrs", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("$${"%.2f".format(shift.totalEarned)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                }
+                if (shift.notes.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(shift.notes, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 2)
+                }
+                if (isActive) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(PrimaryGreen).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                        Text("IN PROGRESS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+
+            // Reminder badge
+            if (shift.reminderBeforeMinutes > 0 && shift.startTime > now) {
+                Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(PrimaryGreen.copy(alpha = 0.1f)).padding(horizontal = 6.dp, vertical = 3.dp)) {
+                    Text("${shift.reminderBeforeMinutes}m", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShiftCard(shift: Shift, timeFormat: SimpleDateFormat, now: Long, onEditShift: (String) -> Unit, modifier: Modifier = Modifier) {
+    val isActive = now in shift.startTime..shift.endTime
+
+    Card(
+        modifier = modifier.fillMaxWidth().clickable { onEditShift(shift.id) },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isActive) PrimaryGreen.copy(alpha = 0.06f) else MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, if (isActive) PrimaryGreen.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.width(4.dp).height(44.dp).clip(RoundedCornerShape(2.dp)).background(if (shift.isGig) AccentOrange else AccentBlue))
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (shift.isGig) "${shift.company} (Gig)" else shift.company, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                    if (isActive) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(PrimaryGreen).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                            Text("LIVE", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text("${timeFormat.format(Date(shift.startTime))} → ${timeFormat.format(Date(shift.endTime))} · ${"%.1f".format(shift.durationHours)} hrs",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (shift.notes.isNotBlank()) {
+                    Text(shift.notes.lines().first().take(60), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 1)
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text("$${"%.2f".format(shift.totalEarned)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                if (shift.reminderBeforeMinutes > 0 && shift.startTime > now) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(PrimaryGreen.copy(alpha = 0.1f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                        Text("${shift.reminderBeforeMinutes}m", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                    }
+                }
+            }
+        }
     }
 }
 
