@@ -437,8 +437,9 @@ fun getCycleStartAndEndForShift(shift: Shift, jobs: List<Job>): Pair<Long, Long>
 }
 
 fun groupShiftsIntoCycles(shifts: List<Shift>, jobs: List<Job>, now: Long): List<WeeklyPayCycle> {
+    val nonGigShifts = shifts.filter { !it.isGig }
     val cyclesMap = mutableMapOf<Pair<Long, Long>, MutableList<Shift>>()
-    for (shift in shifts) {
+    for (shift in nonGigShifts) {
         val key = getCycleStartAndEndForShift(shift, jobs)
         cyclesMap.getOrPut(key) { mutableListOf() }.add(shift)
     }
@@ -461,6 +462,9 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
     val jobs by dashboardViewModel.jobs.collectAsState(initial = emptyList())
     val now = System.currentTimeMillis()
     val cycles = remember(shifts, jobs, now) { groupShiftsIntoCycles(shifts, jobs, now) }
+
+    val gigShifts = remember(shifts) { shifts.filter { it.isGig } }
+    val gigTotalEarned = gigShifts.sumOf { it.totalEarned }
 
     val totalPaid = shifts.filter { it.isPaid }.sumOf { it.totalEarned }
     val totalPendingHold = cycles.filter { it.status == PayCycleStatus.PENDING_HOLD }.sumOf { it.totalEarned }
@@ -505,7 +509,34 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
             Spacer(modifier = Modifier.height(24.dp))
         }
 
-        if (cycles.isEmpty()) {
+        if (gigShifts.isNotEmpty()) {
+            item {
+                Text("Gig Earnings (Direct Payout)", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = AccentOrange.copy(alpha = 0.08f)), shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, AccentOrange.copy(alpha = 0.3f))) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text("${gigShifts.size} Gig Shift${if (gigShifts.size == 1) "" else "s"}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Paid daily via direct payout", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("$${"%.2f".format(gigTotalEarned)}", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = AccentOrange)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(PrimaryGreen.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                    Text("PAID", fontSize = 10.sp, fontWeight = FontWeight.Black, color = PrimaryGreen)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+
+        if (cycles.isEmpty() && gigShifts.isEmpty()) {
             item {
                 Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)), shape = RoundedCornerShape(12.dp)) {
                     Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
@@ -514,7 +545,9 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                     }
                 }
             }
-        } else {
+        }
+
+        if (cycles.isNotEmpty()) {
             item { Text("Weekly Payroll Cycles", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground); Spacer(modifier = Modifier.height(12.dp)) }
             items(cycles) { cycle ->
                 val cycleRangeStr = "${cycleFormat.format(Date(cycle.startDate))} – ${cycleFormat.format(Date(cycle.endDate - 1000L))}"
