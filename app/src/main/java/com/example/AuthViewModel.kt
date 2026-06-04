@@ -20,6 +20,19 @@ sealed class AuthState {
     data class Error(val message: String) : AuthState()
 }
 
+sealed class PasswordChangeState {
+    object Idle : PasswordChangeState()
+    object Loading : PasswordChangeState()
+    object Success : PasswordChangeState()
+    data class Error(val message: String) : PasswordChangeState()
+}
+
+sealed class ResetState {
+    object Idle : ResetState()
+    object Sent : ResetState()
+    data class Error(val message: String) : ResetState()
+}
+
 sealed class DeleteAccountState {
     object Idle : DeleteAccountState()
     object Loading : DeleteAccountState()
@@ -201,6 +214,62 @@ class AuthViewModel : ViewModel() {
 
     fun resetDeleteState() {
         _deleteState.value = DeleteAccountState.Idle
+    }
+
+    private val _passwordChangeState = MutableStateFlow<PasswordChangeState>(PasswordChangeState.Idle)
+    val passwordChangeState: StateFlow<PasswordChangeState> = _passwordChangeState.asStateFlow()
+
+    fun changePassword(currentPassword: String, newPassword: String) {
+        val user = auth?.currentUser ?: run {
+            _passwordChangeState.value = PasswordChangeState.Error("No user signed in.")
+            return
+        }
+        val email = user.email ?: run {
+            _passwordChangeState.value = PasswordChangeState.Error("No email associated with account.")
+            return
+        }
+        if (newPassword.length < 8 || !newPassword.any { it.isLetter() } || !newPassword.any { it.isDigit() }) {
+            _passwordChangeState.value = PasswordChangeState.Error("New password must be at least 8 characters with letters and numbers.")
+            return
+        }
+        _passwordChangeState.value = PasswordChangeState.Loading
+        viewModelScope.launch {
+            try {
+                val credential = EmailAuthProvider.getCredential(email, currentPassword)
+                user.reauthenticate(credential).await()
+                user.updatePassword(newPassword).await()
+                _passwordChangeState.value = PasswordChangeState.Success
+            } catch (e: Exception) {
+                _passwordChangeState.value = PasswordChangeState.Error(e.message ?: "Failed to change password.")
+            }
+        }
+    }
+
+    fun resetPasswordChangeState() {
+        _passwordChangeState.value = PasswordChangeState.Idle
+    }
+
+    private val _resetState = MutableStateFlow<ResetState>(ResetState.Idle)
+    val resetState: StateFlow<ResetState> = _resetState.asStateFlow()
+
+    fun sendPasswordReset(email: String) {
+        val trimmedEmail = email.trim()
+        if (!Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
+            _resetState.value = ResetState.Error("Please enter a valid email address.")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                auth?.sendPasswordResetEmail(trimmedEmail)?.await()
+                _resetState.value = ResetState.Sent
+            } catch (e: Exception) {
+                _resetState.value = ResetState.Error(e.message ?: "Failed to send reset email.")
+            }
+        }
+    }
+
+    fun resetResetState() {
+        _resetState.value = ResetState.Idle
     }
 
     fun logout() {

@@ -58,6 +58,10 @@ fun LoginScreen(
         }
     }
 
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    var resetEmail by remember { mutableStateOf("") }
+    val resetState by viewModel.resetState.collectAsState()
+
     val emailError = if (email.isNotBlank() && !isValidEmail(email)) "Enter a valid email address" else null
     val isFormValid = isValidEmail(email) && password.length >= 6
     val isLoading = authState is AuthState.Loading
@@ -270,6 +274,10 @@ fun LoginScreen(
                             )
                         }
                     }
+
+                    TextButton(onClick = { resetEmail = email.trim(); showForgotPasswordDialog = true }) {
+                        Text("Forgot Password?", fontSize = 13.sp, color = PrimaryGreen, fontWeight = FontWeight.Medium)
+                    }
                 }
             }
 
@@ -293,6 +301,50 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(40.dp))
         }
+    }
+
+    if (showForgotPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = { showForgotPasswordDialog = false; viewModel.resetResetState() },
+            title = { Text("Reset Password", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    if (resetState is ResetState.Sent) {
+                        Text("Check your email for a password reset link.", color = PrimaryGreen, fontWeight = FontWeight.Medium)
+                    } else {
+                        Text("Enter your email address and we'll send you a link to reset your password.", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = resetEmail,
+                            onValueChange = { resetEmail = it },
+                            label = { Text("Email address") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        if (resetState is ResetState.Error) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text((resetState as ResetState.Error).message, color = Color(0xFFD32F2F), fontSize = 13.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (resetState is ResetState.Sent) {
+                    TextButton(onClick = { showForgotPasswordDialog = false; viewModel.resetResetState() }) { Text("Done") }
+                } else {
+                    Button(
+                        onClick = { viewModel.sendPasswordReset(resetEmail) },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                        enabled = resetEmail.isNotBlank()
+                    ) { Text("Send Reset Link") }
+                }
+            },
+            dismissButton = if (resetState !is ResetState.Sent) {
+                { TextButton(onClick = { showForgotPasswordDialog = false; viewModel.resetResetState() }) { Text("Cancel") } }
+            } else null,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
 

@@ -81,7 +81,8 @@ data class Shift(
     var isGig: Boolean = false,
     var customEarned: Double = 0.0,
     var reminderBeforeMinutes: Int = 30,
-    var isPaid: Boolean = false
+    var isPaid: Boolean = false,
+    var notes: String = ""
 ) {
     @get:com.google.firebase.firestore.Exclude
     val durationHours: Double
@@ -148,6 +149,12 @@ class DashboardViewModel : ViewModel() {
     private val _themeMode = MutableStateFlow("system")
     val themeMode = _themeMode.asStateFlow()
 
+    private val _remindersEnabled = MutableStateFlow(true)
+    val remindersEnabled = _remindersEnabled.asStateFlow()
+
+    private val _defaultReminderMinutes = MutableStateFlow(30)
+    val defaultReminderMinutes = _defaultReminderMinutes.asStateFlow()
+
     fun setThemeMode(mode: String) {
         _themeMode.value = mode
         val uid = auth?.currentUser?.uid ?: return
@@ -157,6 +164,22 @@ class DashboardViewModel : ViewModel() {
                 database.collection("settings").document(uid)
                     .set(mapOf("themeMode" to mode, "userId" to uid), com.google.firebase.firestore.SetOptions.merge())
             }
+    }
+
+    fun setRemindersEnabled(enabled: Boolean) {
+        _remindersEnabled.value = enabled
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        database.collection("settings").document(uid)
+            .set(mapOf("remindersEnabled" to enabled, "userId" to uid), com.google.firebase.firestore.SetOptions.merge())
+    }
+
+    fun setDefaultReminderMinutes(minutes: Int) {
+        _defaultReminderMinutes.value = minutes
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        database.collection("settings").document(uid)
+            .set(mapOf("defaultReminderMinutes" to minutes, "userId" to uid), com.google.firebase.firestore.SetOptions.merge())
     }
 
     private var loadedForUserId: String? = null
@@ -200,6 +223,8 @@ class DashboardViewModel : ViewModel() {
                 _defaultCompany.value = doc.getString("defaultCompany") ?: ""
                 _defaultRate.value = doc.getDouble("defaultRate") ?: 0.0
                 _themeMode.value = doc.getString("themeMode") ?: "system"
+                _remindersEnabled.value = doc.getBoolean("remindersEnabled") ?: true
+                _defaultReminderMinutes.value = doc.getLong("defaultReminderMinutes")?.toInt() ?: 30
             }
         }
         profileListenerRegistration?.remove()
@@ -405,10 +430,10 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun addShift(company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double) {
-        addShift(company, startTime, endTime, hourlyRate, false, 0.0, 30)
+        addShift(company, startTime, endTime, hourlyRate, false, 0.0, 30, "")
     }
 
-    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int) {
+    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "") {
         val uid = auth?.currentUser?.uid
         val database = db
         if (uid == null || database == null) {
@@ -427,7 +452,8 @@ class DashboardViewModel : ViewModel() {
             isGig = isGig,
             customEarned = customEarned,
             reminderBeforeMinutes = reminderBeforeMinutes,
-            isPaid = isGig
+            isPaid = isGig,
+            notes = notes
         )
         _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         database.collection("shifts").document(shift.id).set(shift)
@@ -437,10 +463,10 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun updateShift(shiftId: String, company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double) {
-        updateShift(shiftId, company, startTime, endTime, hourlyRate, false, 0.0, 30)
+        updateShift(shiftId, company, startTime, endTime, hourlyRate, false, 0.0, 30, "")
     }
 
-    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int) {
+    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "") {
         val shift = shifts.value.find { it.id == shiftId } ?: return
         val database = db
         if (database == null) {
@@ -456,7 +482,8 @@ class DashboardViewModel : ViewModel() {
             isGig = isGig,
             customEarned = customEarned,
             reminderBeforeMinutes = reminderBeforeMinutes,
-            isPaid = if (isGig) true else shift.isPaid
+            isPaid = if (isGig) true else shift.isPaid,
+            notes = notes
         )
         _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
         database.collection("shifts").document(shiftId).set(updated)
@@ -712,8 +739,12 @@ fun AddShiftScreen(
     var customEarnings by remember(existingShift) {
         mutableStateOf(existingShift?.customEarned?.toString() ?: "")
     }
-    var reminderMinutes by remember(existingShift) {
-        mutableStateOf(existingShift?.reminderBeforeMinutes ?: 30)
+    val defaultReminderMin by viewModel.defaultReminderMinutes.collectAsState()
+    var reminderMinutes by remember(existingShift, defaultReminderMin) {
+        mutableStateOf(existingShift?.reminderBeforeMinutes ?: defaultReminderMin)
+    }
+    var shiftNotes by remember(existingShift) {
+        mutableStateOf(existingShift?.notes ?: "")
     }
 
     var selectedDateMillis by remember { mutableStateOf(existingShift?.startTime ?: System.currentTimeMillis()) }
@@ -1002,6 +1033,18 @@ fun AddShiftScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = shiftNotes,
+                onValueChange = { if (it.length <= 1000) shiftNotes = it },
+                label = { Text("Notes (optional)") },
+                placeholder = { Text("Parking instructions, door code, etc.") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                minLines = 2,
+                maxLines = 4
+            )
+
             val previewCalStart = remember(selectedDateMillis, startHour, startMinute) {
                 Calendar.getInstance().apply { timeInMillis = selectedDateMillis; set(Calendar.HOUR_OF_DAY, startHour); set(Calendar.MINUTE, startMinute); set(Calendar.SECOND, 0) }.timeInMillis
             }
@@ -1055,18 +1098,21 @@ fun AddShiftScreen(
                     }
                     val hourly = if (isGig) 0.0 else (rate.toDoubleOrNull() ?: 0.0)
                     val earned = if (isGig) (customEarnings.toDoubleOrNull() ?: 0.0) else 0.0
+                    val trimmedNotes = shiftNotes.trim()
+                    val remindersOn = viewModel.remindersEnabled.value
+                    val effectiveReminder = if (remindersOn) reminderMinutes else 0
 
                     if (existingShift != null) {
-                        viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, reminderMinutes)
-                        if (reminderMinutes > 0) {
-                            NotificationHelper.scheduleReminder(context, Shift(id = existingShift.id, company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = reminderMinutes))
+                        viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes)
+                        if (effectiveReminder > 0) {
+                            NotificationHelper.scheduleReminder(context, Shift(id = existingShift.id, company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = effectiveReminder))
                         } else {
                             NotificationHelper.cancelReminder(context, existingShift.id)
                         }
                     } else {
-                        viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, reminderMinutes)
-                        if (reminderMinutes > 0) {
-                            NotificationHelper.scheduleReminder(context, Shift(company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = reminderMinutes))
+                        viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes)
+                        if (effectiveReminder > 0) {
+                            NotificationHelper.scheduleReminder(context, Shift(company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = effectiveReminder))
                         }
                         if (recurrence != "None") {
                             val weeks = recurrenceWeeks.toIntOrNull()?.coerceIn(1, 52) ?: 4
@@ -1079,9 +1125,9 @@ fun AddShiftScreen(
                             val totalOccurrences = if (recurrence == "Daily") weeks * 7 else weeks
                             for (i in 1..totalOccurrences) {
                                 val offsetMs = i.toLong() * dayIncrement * 24 * 60 * 60 * 1000L
-                                val recurShift = Shift(company = company, startTime = calStart.timeInMillis + offsetMs, endTime = finalEndTime + offsetMs, reminderBeforeMinutes = reminderMinutes)
-                                viewModel.addShift(company, calStart.timeInMillis + offsetMs, finalEndTime + offsetMs, hourly, isGig, earned, reminderMinutes)
-                                if (reminderMinutes > 0) NotificationHelper.scheduleReminder(context, recurShift)
+                                val recurShift = Shift(company = company, startTime = calStart.timeInMillis + offsetMs, endTime = finalEndTime + offsetMs, reminderBeforeMinutes = effectiveReminder)
+                                viewModel.addShift(company, calStart.timeInMillis + offsetMs, finalEndTime + offsetMs, hourly, isGig, earned, effectiveReminder, trimmedNotes)
+                                if (effectiveReminder > 0) NotificationHelper.scheduleReminder(context, recurShift)
                             }
                         }
                     }

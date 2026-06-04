@@ -11,6 +11,8 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 
 class ShiftReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -151,6 +153,24 @@ object NotificationHelper {
         } catch (_: SecurityException) {
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
         }
+    }
+
+    fun rescheduleAllReminders(context: Context) {
+        try {
+            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+            val db = FirebaseFirestore.getInstance()
+            db.collection("shifts").whereEqualTo("userId", uid).get()
+                .addOnSuccessListener { snapshot ->
+                    val now = System.currentTimeMillis()
+                    snapshot.documents.forEach { doc ->
+                        val shift = doc.toObject(Shift::class.java) ?: return@forEach
+                        val triggerTime = shift.startTime - shift.reminderBeforeMinutes * 60 * 1000L
+                        if (shift.reminderBeforeMinutes > 0 && triggerTime > now) {
+                            scheduleReminder(context, shift.copy(id = doc.id))
+                        }
+                    }
+                }
+        } catch (_: Exception) { }
     }
 
     fun cancelReminder(context: Context, shiftId: String) {
