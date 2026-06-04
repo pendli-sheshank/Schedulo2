@@ -569,11 +569,121 @@ class DashboardViewModel : ViewModel() {
             val hrs = shift.durationHours
             totalHours += hrs
             totalEarnings += shift.totalEarned
-            sb.appendLine("$day: $start – $end (${"%.0f".format(hrs)} hours)")
+            val line = "$day: $start – $end (${"%.1f".format(hrs)} hrs) $${"%.2f".format(shift.totalEarned)}"
+            sb.appendLine(line)
+            if (shift.notes.isNotBlank()) sb.appendLine("  Notes: ${shift.notes}")
         }
         sb.appendLine()
-        sb.appendLine("Total ${"%.0f".format(totalHours)} hours · $${"%.2f".format(totalEarnings)}")
+        sb.appendLine("Total ${"%.1f".format(totalHours)} hours · $${"%.2f".format(totalEarnings)}")
+        if (filtered.any { it.isPaid }) {
+            val paidCount = filtered.count { it.isPaid }
+            sb.appendLine("Paid: $paidCount/${filtered.size} shifts")
+        }
         return sb.toString()
+    }
+
+    fun generateCycleReport(cycleStart: Long, cycleEnd: Long, employer: String, job: Job?): String {
+        val filtered = _shifts.value.filter { shift ->
+            shift.startTime >= cycleStart && shift.startTime < cycleEnd &&
+            shift.company.equals(employer, ignoreCase = true)
+        }.sortedBy { it.startTime }
+
+        val sb = StringBuilder()
+        val weekFormat = SimpleDateFormat("MMM dd, yyyy", Locale.US)
+        val dayFormat = SimpleDateFormat("EEEE (M/dd)", Locale.US)
+        val timeFormat = SimpleDateFormat("h:mm a", Locale.US)
+        sb.appendLine("TIMESHEET REPORT")
+        sb.appendLine("Employer: $employer")
+        sb.appendLine("Pay Period: ${weekFormat.format(Date(cycleStart))} – ${weekFormat.format(Date(cycleEnd - 1000L))}")
+        if (job != null) sb.appendLine("Cycle Start Day: ${job.weeklyCycleStartDay ?: "Monday"}")
+        sb.appendLine("─".repeat(40))
+
+        var totalHours = 0.0
+        var totalEarnings = 0.0
+        for (shift in filtered) {
+            val day = dayFormat.format(Date(shift.startTime))
+            val start = timeFormat.format(Date(shift.startTime))
+            val end = timeFormat.format(Date(shift.endTime))
+            val hrs = shift.durationHours
+            totalHours += hrs
+            totalEarnings += shift.totalEarned
+            val status = if (shift.isPaid) " [PAID]" else ""
+            sb.appendLine("$day: $start – $end (${"%.1f".format(hrs)} hrs)$status")
+            if (shift.notes.isNotBlank()) sb.appendLine("  Notes: ${shift.notes}")
+        }
+
+        sb.appendLine("─".repeat(40))
+
+        if (job != null && !job.isGigWork) {
+            val (regular, overtime) = calculateEarningsWithOvertime(filtered, job)
+            val regularHours = totalHours.coerceAtMost(job.overtimeThresholdHours)
+            val overtimeHours = (totalHours - regularHours).coerceAtLeast(0.0)
+            sb.appendLine("Regular: ${"%.1f".format(regularHours)} hrs × $${"%.2f".format(job.defaultHourlyRate)} = $${"%.2f".format(regular)}")
+            if (overtimeHours > 0) {
+                sb.appendLine("Overtime: ${"%.1f".format(overtimeHours)} hrs × $${"%.2f".format(job.defaultHourlyRate * job.overtimeMultiplier)} = $${"%.2f".format(overtime)}")
+            }
+            sb.appendLine("TOTAL: ${"%.1f".format(totalHours)} hours · $${"%.2f".format(regular + overtime)}")
+        } else {
+            sb.appendLine("TOTAL: ${"%.1f".format(totalHours)} hours · $${"%.2f".format(totalEarnings)}")
+        }
+
+        val paidCount = filtered.count { it.isPaid }
+        sb.appendLine("Payment Status: $paidCount/${filtered.size} shifts paid")
+        return sb.toString()
+    }
+
+    fun generateCycleCsvReport(cycleStart: Long, cycleEnd: Long, employer: String, job: Job?): String {
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
+        val filtered = _shifts.value.filter { shift ->
+            shift.startTime >= cycleStart && shift.startTime < cycleEnd &&
+            shift.company.equals(employer, ignoreCase = true)
+        }.sortedBy { it.startTime }
+
+        val sb = StringBuilder()
+        sb.appendLine("Date,Company,Start,End,Hours,Rate,Earned,Gig,Paid,Notes")
+        filtered.forEach { s ->
+            val notes = s.notes.replace(",", ";").replace("\n", " ")
+            sb.appendLine("${dateFormat.format(Date(s.startTime))},${s.company},${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid},${notes}")
+        }
+        return sb.toString()
+    }
+
+    data class PayCycleOption(val cycleStart: Long, val cycleEnd: Long, val employer: String, val label: String, val shiftCount: Int, val isCurrent: Boolean)
+
+    fun getAvailablePayCycles(): List<PayCycleOption> {
+        val now = System.currentTimeMillis()
+        val weekFormat = SimpleDateFormat("MMM dd", Locale.US)
+        val allJobs = _jobs.value
+        val allShifts = _shifts.value
+
+        val cycles = mutableListOf<PayCycleOption>()
+
+        for (job in allJobs) {
+            val jobShifts = allShifts.filter { it.company.equals(job.title, ignoreCase = true) && !it.isGig }
+            if (jobShifts.isEmpty()) continue
+
+            val seenCycles = mutableSetOf<Long>()
+            for (shift in jobShifts) {
+                val (start, end) = getCycleStartAndEndForShift(shift, allJobs)
+                if (seenCycles.add(start)) {
+                    val shiftsInCycle = jobShifts.count { it.startTime >= start && it.startTime < end }
+                    val isCurrent = now in start until end
+                    val label = "${job.title}: ${weekFormat.format(Date(start))} – ${weekFormat.format(Date(end - 1000L))}" +
+                        if (isCurrent) " (Current)" else ""
+                    cycles.add(PayCycleOption(start, end, job.title, label, shiftsInCycle, isCurrent))
+                }
+            }
+
+            val currentCycleStart = job.getStartOfCurrentCycle(now)
+            val currentCycleEnd = currentCycleStart + 7L * 24 * 60 * 60 * 1000L
+            if (seenCycles.add(currentCycleStart)) {
+                val label = "${job.title}: ${weekFormat.format(Date(currentCycleStart))} – ${weekFormat.format(Date(currentCycleEnd - 1000L))} (Current)"
+                cycles.add(PayCycleOption(currentCycleStart, currentCycleEnd, job.title, label, 0, true))
+            }
+        }
+
+        return cycles.sortedWith(compareByDescending<PayCycleOption> { it.cycleStart }.thenBy { it.employer })
     }
 
     fun getAvailableWeeks(): List<Pair<Long, String>> {
@@ -686,9 +796,10 @@ class DashboardViewModel : ViewModel() {
         }.sortedBy { it.startTime }
 
         val sb = StringBuilder()
-        sb.appendLine("Date,Company,Start,End,Hours,Rate,Earned,Gig,Paid")
+        sb.appendLine("Date,Company,Start,End,Hours,Rate,Earned,Gig,Paid,Notes")
         filtered.forEach { s ->
-            sb.appendLine("${dateFormat.format(Date(s.startTime))},${s.company},${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid}")
+            val notes = s.notes.replace(",", ";").replace("\n", " ")
+            sb.appendLine("${dateFormat.format(Date(s.startTime))},${s.company},${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid},${notes}")
         }
         return sb.toString()
     }
