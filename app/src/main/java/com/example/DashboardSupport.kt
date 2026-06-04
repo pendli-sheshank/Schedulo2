@@ -405,7 +405,8 @@ class DashboardViewModel : ViewModel() {
             hourlyRate = hourlyRate,
             isGig = isGig,
             customEarned = customEarned,
-            reminderBeforeMinutes = reminderBeforeMinutes
+            reminderBeforeMinutes = reminderBeforeMinutes,
+            isPaid = isGig
         )
         val database = db
         if (database != null && uid != "local_user") {
@@ -433,7 +434,8 @@ class DashboardViewModel : ViewModel() {
             hourlyRate = hourlyRate,
             isGig = isGig,
             customEarned = customEarned,
-            reminderBeforeMinutes = reminderBeforeMinutes
+            reminderBeforeMinutes = reminderBeforeMinutes,
+            isPaid = if (isGig) true else shift.isPaid
         )
         val database = db
         if (database != null && shift.userId != "local_user") {
