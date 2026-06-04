@@ -1223,16 +1223,28 @@ fun ProfileScreen(
 fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> Unit) {
     val jobs by dashboardViewModel.jobs.collectAsState()
     val availableWeeks = remember { dashboardViewModel.getAvailableWeeks() }
+    val availableCycles = remember { dashboardViewModel.getAvailablePayCycles() }
     val context = LocalContext.current
 
+    var exportMode by remember { mutableStateOf(if (availableCycles.isNotEmpty()) "Pay Cycle" else "Calendar Week") }
     var selectedWeekIndex by remember { mutableStateOf(availableWeeks.indexOfFirst { it.second.contains("Current") }.coerceAtLeast(0)) }
+    var selectedCycleIndex by remember { mutableStateOf(availableCycles.indexOfFirst { it.isCurrent }.coerceAtLeast(0)) }
     var selectedEmployer by remember { mutableStateOf("All") }
     var exportFormat by remember { mutableStateOf("Text") }
     var weekExpanded by remember { mutableStateOf(false) }
+    var cycleExpanded by remember { mutableStateOf(false) }
     var employerExpanded by remember { mutableStateOf(false) }
 
-    val preview = remember(selectedWeekIndex, selectedEmployer, exportFormat) {
-        if (availableWeeks.isNotEmpty()) {
+    val preview = remember(exportMode, selectedWeekIndex, selectedCycleIndex, selectedEmployer, exportFormat) {
+        if (exportMode == "Pay Cycle" && availableCycles.isNotEmpty()) {
+            val cycle = availableCycles[selectedCycleIndex]
+            val job = jobs.firstOrNull { it.title.equals(cycle.employer, ignoreCase = true) }
+            if (exportFormat == "CSV") {
+                dashboardViewModel.generateCycleCsvReport(cycle.cycleStart, cycle.cycleEnd, cycle.employer, job)
+            } else {
+                dashboardViewModel.generateCycleReport(cycle.cycleStart, cycle.cycleEnd, cycle.employer, job)
+            }
+        } else if (availableWeeks.isNotEmpty()) {
             if (exportFormat == "CSV") {
                 dashboardViewModel.generateCsvReport(availableWeeks[selectedWeekIndex].first, selectedEmployer)
             } else {
@@ -1246,34 +1258,75 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
         title = { Text("Export Shift Report", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Week selector
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = if (availableWeeks.isNotEmpty()) availableWeeks[selectedWeekIndex].second else "",
-                        onValueChange = {}, readOnly = true, label = { Text("Week") },
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
-                    )
-                    Box(modifier = Modifier.matchParentSize().clickable { weekExpanded = true })
-                    DropdownMenu(expanded = weekExpanded, onDismissRequest = { weekExpanded = false }) {
-                        availableWeeks.forEachIndexed { index, (_, label) ->
-                            DropdownMenuItem(text = { Text(label) }, onClick = { selectedWeekIndex = index; weekExpanded = false })
+                // Export mode toggle
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Pay Cycle", "Calendar Week").forEach { mode ->
+                        val selected = exportMode == mode
+                        Box(
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { exportMode = mode }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(mode, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         }
                     }
                 }
 
-                // Employer selector
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = selectedEmployer, onValueChange = {}, readOnly = true, label = { Text("Employer") },
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
-                    )
-                    Box(modifier = Modifier.matchParentSize().clickable { employerExpanded = true })
-                    DropdownMenu(expanded = employerExpanded, onDismissRequest = { employerExpanded = false }) {
-                        DropdownMenuItem(text = { Text("All") }, onClick = { selectedEmployer = "All"; employerExpanded = false })
-                        jobs.forEach { job ->
-                            DropdownMenuItem(text = { Text(job.title) }, onClick = { selectedEmployer = job.title; employerExpanded = false })
+                if (exportMode == "Pay Cycle") {
+                    // Pay cycle selector
+                    if (availableCycles.isEmpty()) {
+                        Text("No pay cycles found. Add shifts to an employer first.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = availableCycles[selectedCycleIndex].label,
+                                onValueChange = {}, readOnly = true, label = { Text("Pay Cycle") },
+                                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                                trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
+                            )
+                            Box(modifier = Modifier.matchParentSize().clickable { cycleExpanded = true })
+                            DropdownMenu(expanded = cycleExpanded, onDismissRequest = { cycleExpanded = false }) {
+                                availableCycles.forEachIndexed { index, cycle ->
+                                    DropdownMenuItem(
+                                        text = { Text("${cycle.label} (${cycle.shiftCount} shifts)", fontSize = 13.sp) },
+                                        onClick = { selectedCycleIndex = index; cycleExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Calendar week selector
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = if (availableWeeks.isNotEmpty()) availableWeeks[selectedWeekIndex].second else "",
+                            onValueChange = {}, readOnly = true, label = { Text("Week") },
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
+                        )
+                        Box(modifier = Modifier.matchParentSize().clickable { weekExpanded = true })
+                        DropdownMenu(expanded = weekExpanded, onDismissRequest = { weekExpanded = false }) {
+                            availableWeeks.forEachIndexed { index, (_, label) ->
+                                DropdownMenuItem(text = { Text(label) }, onClick = { selectedWeekIndex = index; weekExpanded = false })
+                            }
+                        }
+                    }
+
+                    // Employer selector (only for calendar week mode)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = selectedEmployer, onValueChange = {}, readOnly = true, label = { Text("Employer") },
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
+                        )
+                        Box(modifier = Modifier.matchParentSize().clickable { employerExpanded = true })
+                        DropdownMenu(expanded = employerExpanded, onDismissRequest = { employerExpanded = false }) {
+                            DropdownMenuItem(text = { Text("All") }, onClick = { selectedEmployer = "All"; employerExpanded = false })
+                            jobs.forEach { job ->
+                                DropdownMenuItem(text = { Text(job.title) }, onClick = { selectedEmployer = job.title; employerExpanded = false })
+                            }
                         }
                     }
                 }
@@ -1297,8 +1350,9 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
                 // Preview
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-                    Text(preview.ifBlank { "No shifts for this selection." }, fontSize = 13.sp, modifier = Modifier.padding(12.dp),
-                        color = MaterialTheme.colorScheme.onBackground, style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+                    Text(preview.ifBlank { "No shifts for this selection." }, fontSize = 12.sp, modifier = Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.onBackground, style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                        lineHeight = 16.sp)
                 }
             }
         },
@@ -1312,7 +1366,9 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
                 }
                 context.startActivity(Intent.createChooser(sendIntent, "Share Report"))
                 onDismiss()
-            }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) { Text("Share") }
+            }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                enabled = preview.isNotBlank()
+            ) { Text("Share") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
