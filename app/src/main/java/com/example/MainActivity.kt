@@ -106,13 +106,13 @@ class MainActivity : ComponentActivity() {
                     composable("jobs") { MainLayout(navController, "jobs", authViewModel, dashboardViewModel) }
                     composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel) }
                     composable("profile") {
-                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") })
+                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") })
                     }
                     composable("insights") {
-                        InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { navController.popBackStack() })
+                        InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
                     }
                     composable("add_week_plan") {
-                        AddWeekPlanScreen(viewModel = dashboardViewModel, onBack = { navController.popBackStack() })
+                        AddWeekPlanScreen(viewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
                     }
                     composable(
                         route = "add_shift?shiftId={shiftId}",
@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
                         AddShiftScreen(
                             shiftId = shiftId,
                             viewModel = dashboardViewModel,
-                            onBack = { navController.popBackStack() }
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
                         )
                     }
                 }

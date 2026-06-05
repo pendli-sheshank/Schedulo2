@@ -710,11 +710,18 @@ class DashboardViewModel : ViewModel() {
         }.reversed()
     }
 
+    data class WeekDayEntry(val dayOffset: Int, val startH: Int, val startM: Int, val endH: Int, val endM: Int)
+
     fun addWeekPlan(company: String, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderMinutes: Int, weekStartMillis: Long, dayEntries: List<Triple<Int, Int, Int>>) {
+        addWeekPlanWithMinutes(company, hourlyRate, isGig, customEarned, reminderMinutes, weekStartMillis,
+            dayEntries.map { (d, s, e) -> WeekDayEntry(d, s, 0, e, 0) })
+    }
+
+    fun addWeekPlanWithMinutes(company: String, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderMinutes: Int, weekStartMillis: Long, dayEntries: List<WeekDayEntry>) {
         val existingShifts = _shifts.value
         val dayFormat = SimpleDateFormat("yyyyMMdd", Locale.US)
-        for ((dayOffset, startH, endH) in dayEntries) {
-            val dayMillis = weekStartMillis + dayOffset.toLong() * 24 * 60 * 60 * 1000L
+        for (entry in dayEntries) {
+            val dayMillis = weekStartMillis + entry.dayOffset.toLong() * 24 * 60 * 60 * 1000L
             val dateKey = dayFormat.format(Date(dayMillis))
             val alreadyExists = existingShifts.any {
                 it.company.equals(company, ignoreCase = true) &&
@@ -724,14 +731,14 @@ class DashboardViewModel : ViewModel() {
 
             val calStart = Calendar.getInstance().apply {
                 timeInMillis = dayMillis
-                set(Calendar.HOUR_OF_DAY, startH)
-                set(Calendar.MINUTE, 0)
+                set(Calendar.HOUR_OF_DAY, entry.startH)
+                set(Calendar.MINUTE, entry.startM)
                 set(Calendar.SECOND, 0)
             }
             val calEnd = Calendar.getInstance().apply {
                 timeInMillis = dayMillis
-                set(Calendar.HOUR_OF_DAY, endH)
-                set(Calendar.MINUTE, 0)
+                set(Calendar.HOUR_OF_DAY, entry.endH)
+                set(Calendar.MINUTE, entry.endM)
                 set(Calendar.SECOND, 0)
             }
             var endTime = calEnd.timeInMillis
