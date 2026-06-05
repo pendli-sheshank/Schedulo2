@@ -108,7 +108,8 @@ fun MainLayout(
             "plan" -> PlanScreen(
                 modifier = Modifier.padding(innerPadding),
                 dashboardViewModel = dashboardViewModel,
-                onEditShift = { id -> navController.navigate("add_shift?shiftId=$id") }
+                onEditShift = { id -> navController.navigate("add_shift?shiftId=$id") },
+                onAddShift = { navController.navigate("add_shift") }
             )
             "jobs" -> JobsScreen(modifier = Modifier.padding(innerPadding), dashboardViewModel = dashboardViewModel)
             "pay" -> PayScreen(modifier = Modifier.padding(innerPadding), dashboardViewModel = dashboardViewModel)
@@ -121,7 +122,8 @@ fun MainLayout(
 fun PlanScreen(
     modifier: Modifier = Modifier,
     dashboardViewModel: DashboardViewModel,
-    onEditShift: (String) -> Unit
+    onEditShift: (String) -> Unit,
+    onAddShift: () -> Unit = {}
 ) {
     val shifts by dashboardViewModel.shifts.collectAsState(initial = emptyList())
     val isRefreshing by dashboardViewModel.isRefreshing.collectAsState()
@@ -190,6 +192,7 @@ fun PlanScreen(
                     shifts = filteredShifts,
                     now = now,
                     onEditShift = onEditShift,
+                    onAddShift = onAddShift,
                     onSwitchToDay = { selectedDate = it; viewMode = "Day" }
                 )
                 "Week" -> CalendarWeekView(
@@ -198,6 +201,7 @@ fun PlanScreen(
                     shifts = filteredShifts,
                     now = now,
                     onEditShift = onEditShift,
+                    onAddShift = onAddShift,
                     onDayTap = { selectedDate = it; viewMode = "Day" }
                 )
                 "Day" -> CalendarDayView(
@@ -205,7 +209,8 @@ fun PlanScreen(
                     onDateChanged = { selectedDate = it },
                     shifts = filteredShifts,
                     now = now,
-                    onEditShift = onEditShift
+                    onEditShift = onEditShift,
+                    onAddShift = onAddShift
                 )
             }
         }
@@ -219,6 +224,7 @@ private fun CalendarMonthView(
     shifts: List<Shift>,
     now: Long,
     onEditShift: (String) -> Unit,
+    onAddShift: () -> Unit,
     onSwitchToDay: (Long) -> Unit
 ) {
     val cal = remember(selectedDate) {
@@ -397,6 +403,12 @@ private fun CalendarMonthView(
                         Icon(Icons.Default.EventAvailable, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(36.dp))
                         Spacer(modifier = Modifier.height(8.dp))
                         Text("No shifts scheduled", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextButton(onClick = onAddShift) {
+                            Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Shift", color = PrimaryGreen, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }
@@ -432,6 +444,7 @@ private fun CalendarWeekView(
     shifts: List<Shift>,
     now: Long,
     onEditShift: (String) -> Unit,
+    onAddShift: () -> Unit = {},
     onDayTap: (Long) -> Unit
 ) {
     val weekStart = remember(selectedDate) {
@@ -558,6 +571,12 @@ private fun CalendarWeekView(
                         Icon(Icons.Default.EventAvailable, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("No shifts this week", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextButton(onClick = onAddShift) {
+                            Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Shift", color = PrimaryGreen, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }
@@ -571,7 +590,8 @@ private fun CalendarDayView(
     onDateChanged: (Long) -> Unit,
     shifts: List<Shift>,
     now: Long,
-    onEditShift: (String) -> Unit
+    onEditShift: (String) -> Unit,
+    onAddShift: () -> Unit = {}
 ) {
     val dayStart = remember(selectedDate) {
         Calendar.getInstance().apply {
@@ -663,9 +683,11 @@ private fun CalendarDayView(
                         Icon(Icons.Default.EventAvailable, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("No shifts scheduled", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (dayStart >= now) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Tap + to add a shift", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextButton(onClick = onAddShift) {
+                            Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Add Shift", color = PrimaryGreen, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -1907,18 +1929,25 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
 
     var dayEnabled by remember { mutableStateOf(List(7) { it < 5 }) }
     var dayStartHours by remember { mutableStateOf(List(7) { 9 }) }
+    var dayStartMinutes by remember { mutableStateOf(List(7) { 0 }) }
     var dayEndHours by remember { mutableStateOf(List(7) { 17 }) }
+    var dayEndMinutes by remember { mutableStateOf(List(7) { 0 }) }
 
-    val weekStartMillis = remember {
+    var weekOffset by remember { mutableStateOf(0) }
+    val weekStartMillis = remember(weekOffset) {
         Calendar.getInstance().apply {
             firstDayOfWeek = Calendar.MONDAY
             set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            add(Calendar.WEEK_OF_YEAR, weekOffset)
         }.timeInMillis
     }
 
+    var showTimePickerForDay by remember { mutableStateOf(-1) }
+    var isStartTimePicker by remember { mutableStateOf(true) }
+
     val dayFormat = remember { SimpleDateFormat("M/dd", Locale.US) }
-    val duplicateDays = remember(shifts, selectedJob) {
+    val duplicateDays = remember(shifts, selectedJob, weekStartMillis) {
         if (selectedJob == null) emptySet()
         else {
             val dateFormat = SimpleDateFormat("yyyyMMdd", Locale.US)
@@ -1928,6 +1957,32 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
                 shifts.any { it.company.equals(selectedJob!!.title, ignoreCase = true) && dateFormat.format(Date(it.startTime)) == dateKey }
             }.toSet()
         }
+    }
+
+    if (showTimePickerForDay >= 0) {
+        val dayIndex = showTimePickerForDay
+        val initialHour = if (isStartTimePicker) dayStartHours[dayIndex] else dayEndHours[dayIndex]
+        val initialMinute = if (isStartTimePicker) dayStartMinutes[dayIndex] else dayEndMinutes[dayIndex]
+        val pickerState = rememberTimePickerState(initialHour = initialHour, initialMinute = initialMinute)
+        AlertDialog(
+            onDismissRequest = { showTimePickerForDay = -1 },
+            title = { Text(if (isStartTimePicker) "Start Time — ${daysOfWeek[dayIndex]}" else "End Time — ${daysOfWeek[dayIndex]}", fontWeight = FontWeight.Bold) },
+            text = { TimePicker(state = pickerState) },
+            confirmButton = {
+                Button(onClick = {
+                    if (isStartTimePicker) {
+                        dayStartHours = dayStartHours.toMutableList().also { it[dayIndex] = pickerState.hour }
+                        dayStartMinutes = dayStartMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
+                    } else {
+                        dayEndHours = dayEndHours.toMutableList().also { it[dayIndex] = pickerState.hour }
+                        dayEndMinutes = dayEndMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
+                    }
+                    showTimePickerForDay = -1
+                }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showTimePickerForDay = -1 }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
+        )
     }
 
     Scaffold(
@@ -1958,9 +2013,31 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-            Text("Week of ${dayFormat.format(Date(weekStartMillis))} – ${dayFormat.format(Date(weekStartMillis + 6L * 24 * 60 * 60 * 1000L))}",
-                fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Week selector with future weeks
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { if (weekOffset > 0) weekOffset-- }, enabled = weekOffset > 0) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous week",
+                        tint = if (weekOffset > 0) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("${dayFormat.format(Date(weekStartMillis))} – ${dayFormat.format(Date(weekStartMillis + 6L * 24 * 60 * 60 * 1000L))}",
+                        fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Text(
+                        when (weekOffset) { 0 -> "This Week"; 1 -> "Next Week"; else -> "In $weekOffset weeks" },
+                        fontSize = 12.sp, color = PrimaryGreen, fontWeight = FontWeight.SemiBold
+                    )
+                }
+                IconButton(onClick = { if (weekOffset < 12) weekOffset++ }, enabled = weekOffset < 12) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next week",
+                        tint = if (weekOffset < 12) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                }
+            }
             Spacer(modifier = Modifier.height(12.dp))
 
             daysOfWeek.forEachIndexed { index, dayName ->
@@ -1968,6 +2045,14 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
                 val dateStr = dayFormat.format(Date(dayMillis))
                 val hasDuplicate = index in duplicateDays
                 val enabled = dayEnabled[index]
+                val startTimeStr = String.format(Locale.US, "%d:%02d %s",
+                    if (dayStartHours[index] % 12 == 0) 12 else dayStartHours[index] % 12,
+                    dayStartMinutes[index],
+                    if (dayStartHours[index] < 12) "AM" else "PM")
+                val endTimeStr = String.format(Locale.US, "%d:%02d %s",
+                    if (dayEndHours[index] % 12 == 0) 12 else dayEndHours[index] % 12,
+                    dayEndMinutes[index],
+                    if (dayEndHours[index] < 12) "AM" else "PM")
 
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -1988,22 +2073,14 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
                         if (enabled && !hasDuplicate) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                OutlinedTextField(
-                                    value = "${dayStartHours[index]}:00", onValueChange = {
-                                        val h = it.replace(":00", "").toIntOrNull()?.coerceIn(0, 23)
-                                        if (h != null) dayStartHours = dayStartHours.toMutableList().also { list -> list[index] = h }
-                                    },
-                                    label = { Text("Start") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                                )
-                                OutlinedTextField(
-                                    value = "${dayEndHours[index]}:00", onValueChange = {
-                                        val h = it.replace(":00", "").toIntOrNull()?.coerceIn(0, 23)
-                                        if (h != null) dayEndHours = dayEndHours.toMutableList().also { list -> list[index] = h }
-                                    },
-                                    label = { Text("End") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                                )
+                                OutlinedButton(
+                                    onClick = { isStartTimePicker = true; showTimePickerForDay = index },
+                                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
+                                ) { Text("Start: $startTimeStr", fontSize = 13.sp) }
+                                OutlinedButton(
+                                    onClick = { isStartTimePicker = false; showTimePickerForDay = index },
+                                    modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
+                                ) { Text("End: $endTimeStr", fontSize = 13.sp) }
                             }
                         }
                     }
@@ -2014,18 +2091,20 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
 
             val totalDays = dayEnabled.count { it } - duplicateDays.count { dayEnabled[it] }
             val totalHours = (0..6).filter { dayEnabled[it] && it !in duplicateDays }.sumOf { i ->
-                val s = dayStartHours[i]; val e = dayEndHours[i]
-                if (e > s) e - s else 24 - s + e
+                val startMin = dayStartHours[i] * 60 + dayStartMinutes[i]
+                val endMin = dayEndHours[i] * 60 + dayEndMinutes[i]
+                val diff = if (endMin > startMin) endMin - startMin else 1440 - startMin + endMin
+                diff / 60.0
             }
-            Text("$totalDays days · $totalHours hours planned", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("$totalDays days · ${"%.1f".format(totalHours)} hours planned", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
                     val job = selectedJob ?: return@Button
                     val entries = (0..6).filter { dayEnabled[it] && it !in duplicateDays }
-                        .map { Triple(it, dayStartHours[it], dayEndHours[it]) }
-                    viewModel.addWeekPlan(
+                        .map { DashboardViewModel.WeekDayEntry(it, dayStartHours[it], dayStartMinutes[it], dayEndHours[it], dayEndMinutes[it]) }
+                    viewModel.addWeekPlanWithMinutes(
                         job.title, job.defaultHourlyRate, job.isGigWork,
                         0.0, 30, weekStartMillis, entries
                     )
