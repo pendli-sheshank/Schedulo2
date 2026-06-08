@@ -31,14 +31,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Decode keystore
-        run: echo "$KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > app/upload-keystore.jks
+        run: echo "$KEYSTORE_B64" | tr -d '\n\r ' | base64 -d > androidApp/upload-keystore.jks
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
 
       - name: Build release AAB
-        run: ./gradlew bundleRelease
+        run: ./gradlew :androidApp:bundleRelease
         env:
-          KEYSTORE_PATH: ${{ github.workspace }}/app/upload-keystore.jks
+          KEYSTORE_PATH: ${{ github.workspace }}/androidApp/upload-keystore.jks
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
@@ -46,12 +46,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-aab
-          path: app/build/outputs/bundle/release/app-release.aab
+          path: androidApp/build/outputs/bundle/release/androidApp-release.aab
 
       - name: Deploy to Play Store (Internal Testing)
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.schedulo2.app
-          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          releaseFiles: androidApp/build/outputs/bundle/release/androidApp-release.aab
           tracks: internal
