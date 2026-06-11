@@ -980,7 +980,9 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
 
 enum class PayCycleStatus { UPCOMING, PENDING_HOLD, DUE, PAID }
 
-data class WeeklyPayCycle(val startDate: Long, val endDate: Long, val shifts: List<Shift>, val totalEarned: Double, val status: PayCycleStatus)
+data class WeeklyPayCycle(val startDate: Long, val endDate: Long, val employer: String, val shifts: List<Shift>, val totalEarned: Double, val status: PayCycleStatus) {
+    val cycleKey: String get() = "${employer}_${startDate}"
+}
 
 fun getCycleStartAndEndForShift(shift: Shift, jobs: List<Job>): Pair<Long, Long> {
     val job = jobs.firstOrNull { it.title.lowercase(Locale.US) == shift.company.lowercase(Locale.US) }
@@ -999,21 +1001,22 @@ fun getCycleStartAndEndForShift(shift: Shift, jobs: List<Job>): Pair<Long, Long>
 
 fun groupShiftsIntoCycles(shifts: List<Shift>, jobs: List<Job>, now: Long): List<WeeklyPayCycle> {
     val nonGigShifts = shifts.filter { !it.isGig }
-    val cyclesMap = mutableMapOf<Pair<Long, Long>, MutableList<Shift>>()
+    val cyclesMap = mutableMapOf<Triple<Long, Long, String>, MutableList<Shift>>()
     for (shift in nonGigShifts) {
-        val key = getCycleStartAndEndForShift(shift, jobs)
+        val (start, end) = getCycleStartAndEndForShift(shift, jobs)
+        val key = Triple(start, end, shift.company)
         cyclesMap.getOrPut(key) { mutableListOf() }.add(shift)
     }
     val holdDays = 4L * 24 * 60 * 60 * 1000L
     return cyclesMap.map { (key, shiftList) ->
-        val (start, end) = key
+        val (start, end, employer) = key
         val holdEndMillis = end + holdDays
         val status = when {
             now < end -> PayCycleStatus.UPCOMING
             now in end until holdEndMillis -> PayCycleStatus.PENDING_HOLD
             else -> if (shiftList.isNotEmpty() && shiftList.all { it.isPaid }) PayCycleStatus.PAID else PayCycleStatus.DUE
         }
-        WeeklyPayCycle(start, end, shiftList.sortedBy { it.startTime }, shiftList.sumOf { it.totalEarned }, status)
+        WeeklyPayCycle(start, end, employer, shiftList.sortedBy { it.startTime }, shiftList.sumOf { it.totalEarned }, status)
     }.sortedByDescending { it.startDate }
 }
 
@@ -1021,13 +1024,15 @@ fun groupShiftsIntoCycles(shifts: List<Shift>, jobs: List<Job>, now: Long): List
 fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewModel) {
     val shifts by dashboardViewModel.shifts.collectAsState(initial = emptyList())
     val jobs by dashboardViewModel.jobs.collectAsState(initial = emptyList())
+    val allAdjustments by dashboardViewModel.payAdjustments.collectAsState(initial = emptyList())
     val now = System.currentTimeMillis()
     val cycles = remember(shifts, jobs, now) { groupShiftsIntoCycles(shifts, jobs, now) }
 
     val gigShifts = remember(shifts) { shifts.filter { it.isGig } }
     val gigTotalEarned = gigShifts.sumOf { it.totalEarned }
 
-    val totalPaid = shifts.filter { it.isPaid }.sumOf { it.totalEarned }
+    val totalAdjustments = allAdjustments.sumOf { adj -> if (adj.type == "Deduction" || adj.type == "Underpaid") -adj.amount else adj.amount }
+    val totalPaid = shifts.filter { it.isPaid }.sumOf { it.totalEarned } + totalAdjustments
     val totalPendingHold = cycles.filter { it.status == PayCycleStatus.PENDING_HOLD }.sumOf { it.totalEarned }
     val totalDue = cycles.filter { it.status == PayCycleStatus.DUE }.sumOf { cycle -> cycle.shifts.filter { !it.isPaid }.sumOf { it.totalEarned } }
     val upcomingEarned = cycles.filter { it.status == PayCycleStatus.UPCOMING }.sumOf { it.totalEarned }
@@ -1036,8 +1041,10 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
     val fullDateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.US) }
     val shiftTimeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
 
-    var expandedCycleStart by remember { mutableStateOf<Long?>(null) }
+    var expandedCycleKey by remember { mutableStateOf<String?>(null) }
     var cycleToConfirmPaid by remember { mutableStateOf<WeeklyPayCycle?>(null) }
+    var showAdjustmentForCycle by remember { mutableStateOf<WeeklyPayCycle?>(null) }
+    var adjustmentToDelete by remember { mutableStateOf<PayAdjustment?>(null) }
 
     LazyColumn(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
         item {
@@ -1116,10 +1123,16 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                 val payWindowEndMillis = holdEndMillis + 7L * 24 * 60 * 60 * 1000L
                 val payWindowStartStr = fullDateFormat.format(Date(holdEndMillis))
                 val payWindowEndStr = fullDateFormat.format(Date(payWindowEndMillis - 1000L))
-                val isExpanded = expandedCycleStart == cycle.startDate
+                val isExpanded = expandedCycleKey == cycle.cycleKey
+
+                val cycleAdjustments = allAdjustments.filter { it.cycleKey == cycle.cycleKey }
+                val adjustmentTotal = cycleAdjustments.sumOf { adj ->
+                    if (adj.type == "Deduction" || adj.type == "Underpaid") -adj.amount else adj.amount
+                }
+                val actualPay = cycle.totalEarned + adjustmentTotal
 
                 Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { expandedCycleStart = if (isExpanded) null else cycle.startDate },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).clickable { expandedCycleKey = if (isExpanded) null else cycle.cycleKey },
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(1.dp, when (cycle.status) {
                         PayCycleStatus.DUE -> PrimaryGreen.copy(alpha = 0.5f); PayCycleStatus.PENDING_HOLD -> AccentOrange.copy(alpha = 0.4f)
@@ -1129,12 +1142,20 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
+                                Text(cycle.employer, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(cycleRangeStr, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text("${cycle.shifts.size} Work Shift${if (cycle.shifts.size == 1) "" else "s"}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("$${"%.2f".format(cycle.totalEarned)}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = PrimaryGreen)
+                                if (adjustmentTotal != 0.0) {
+                                    val sign = if (adjustmentTotal > 0) "+" else ""
+                                    val adjColor = if (adjustmentTotal > 0) PrimaryGreen else Color(0xFFE53935)
+                                    Text("$sign$${"%.2f".format(adjustmentTotal)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = adjColor)
+                                    Text("Net: $${"%.2f".format(actualPay)}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(when (cycle.status) {
                                     PayCycleStatus.PAID -> PrimaryGreen.copy(alpha = 0.12f); PayCycleStatus.DUE -> PrimaryGreen.copy(alpha = 0.08f)
@@ -1181,6 +1202,79 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                             Button(onClick = { cycleToConfirmPaid = cycle }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
                                 shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().height(40.dp)) {
                                 Text("Mark Entire Week as Paid", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+
+                        // Adjustments summary (always visible)
+                        if (cycleAdjustments.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = AccentBlue.copy(alpha = 0.06f)),
+                                border = BorderStroke(1.dp, AccentBlue.copy(alpha = 0.2f))) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Receipt, null, tint = AccentBlue, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("${cycleAdjustments.size} Adjustment${if (cycleAdjustments.size != 1) "s" else ""}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AccentBlue)
+                                    }
+                                    cycleAdjustments.forEach { adj ->
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                                val typeIcon = when (adj.type) {
+                                                    "Bonus" -> Icons.Default.TrendingUp
+                                                    "Overpaid" -> Icons.Default.ArrowUpward
+                                                    "Underpaid" -> Icons.Default.ArrowDownward
+                                                    "Deduction" -> Icons.Default.RemoveCircleOutline
+                                                    else -> Icons.Default.SwapVert
+                                                }
+                                                val typeColor = when (adj.type) {
+                                                    "Bonus", "Overpaid" -> PrimaryGreen
+                                                    "Underpaid", "Deduction" -> Color(0xFFE53935)
+                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
+                                                Icon(typeIcon, null, tint = typeColor, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Column {
+                                                    Text(adj.type, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = typeColor)
+                                                    if (adj.notes.isNotBlank()) {
+                                                        Text(adj.notes, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                                    }
+                                                }
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val isNegative = adj.type == "Deduction" || adj.type == "Underpaid"
+                                                Text(
+                                                    "${if (isNegative) "-" else "+"}$${"%.2f".format(adj.amount)}",
+                                                    fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                                    color = if (isNegative) Color(0xFFE53935) else PrimaryGreen
+                                                )
+                                                if (isExpanded) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    IconButton(onClick = { adjustmentToDelete = adj }, modifier = Modifier.size(20.dp)) {
+                                                        Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Add Adjustment button (always visible for non-upcoming cycles)
+                        if (cycle.status != PayCycleStatus.UPCOMING) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { showAdjustmentForCycle = cycle },
+                                modifier = Modifier.fillMaxWidth().height(36.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, AccentBlue.copy(alpha = 0.4f)),
+                                contentPadding = PaddingValues(horizontal = 12.dp)
+                            ) {
+                                Icon(Icons.Default.Add, null, tint = AccentBlue, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Adjustment", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AccentBlue)
                             }
                         }
 
@@ -1240,6 +1334,147 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
             containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
         )
     }
+
+    if (showAdjustmentForCycle != null) {
+        AddAdjustmentDialog(
+            cycle = showAdjustmentForCycle!!,
+            onDismiss = { showAdjustmentForCycle = null },
+            onSave = { type, amount, notes ->
+                val cycle = showAdjustmentForCycle!!
+                dashboardViewModel.addPayAdjustment(cycle.cycleKey, cycle.employer, type, amount, notes)
+                showAdjustmentForCycle = null
+            }
+        )
+    }
+
+    if (adjustmentToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { adjustmentToDelete = null },
+            icon = { Icon(Icons.Default.Delete, null, tint = Color(0xFFE53935), modifier = Modifier.size(32.dp)) },
+            title = { Text("Delete Adjustment?", fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                val adj = adjustmentToDelete!!
+                Text("Remove ${adj.type} of $${"%.2f".format(adj.amount)}${if (adj.notes.isNotBlank()) " (${adj.notes})" else ""}?",
+                    fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            },
+            confirmButton = {
+                Button(onClick = { dashboardViewModel.deletePayAdjustment(adjustmentToDelete!!.id); adjustmentToDelete = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))) { Text("Delete", color = Color.White, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { adjustmentToDelete = null }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
+        )
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun AddAdjustmentDialog(cycle: WeeklyPayCycle, onDismiss: () -> Unit, onSave: (type: String, amount: Double, notes: String) -> Unit) {
+    val adjustmentTypes = listOf("Bonus", "Overpaid", "Underpaid", "Deduction", "Correction")
+    var selectedType by remember { mutableStateOf("Bonus") }
+    var amountStr by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var typeMenuExpanded by remember { mutableStateOf(false) }
+
+    val cycleFormat = remember { SimpleDateFormat("MMM dd", Locale.US) }
+    val cycleRange = "${cycleFormat.format(Date(cycle.startDate))} – ${cycleFormat.format(Date(cycle.endDate - 1000L))}"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Add Pay Adjustment", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("${cycle.employer} · $cycleRange", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                ExposedDropdownMenuBox(expanded = typeMenuExpanded, onExpandedChange = { typeMenuExpanded = it }) {
+                    OutlinedTextField(
+                        value = selectedType,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Type") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    ExposedDropdownMenu(expanded = typeMenuExpanded, onDismissRequest = { typeMenuExpanded = false }) {
+                        adjustmentTypes.forEach { type ->
+                            val desc = when (type) {
+                                "Bonus" -> "Extra pay (holiday, performance)"
+                                "Overpaid" -> "Paid more than expected"
+                                "Underpaid" -> "Paid less than expected"
+                                "Deduction" -> "Tax, uniform, penalty, etc."
+                                "Correction" -> "Employer corrected amount"
+                                else -> ""
+                            }
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(type, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        Text(desc, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = { selectedType = type; typeMenuExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = amountStr,
+                    onValueChange = { amountStr = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Amount ($)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    leadingIcon = { Text("$", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                )
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Notes (reason)") },
+                    placeholder = { Text("e.g., Holiday bonus, Short shift on Tuesday", fontSize = 13.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    minLines = 2,
+                    maxLines = 3
+                )
+
+                val isNegative = selectedType == "Deduction" || selectedType == "Underpaid"
+                val amount = amountStr.toDoubleOrNull() ?: 0.0
+                if (amount > 0) {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = if (isNegative) Color(0xFFE53935).copy(alpha = 0.08f) else PrimaryGreen.copy(alpha = 0.08f))) {
+                        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (isNegative) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, null,
+                                tint = if (isNegative) Color(0xFFE53935) else PrimaryGreen, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "This will ${if (isNegative) "subtract" else "add"} $${"%.2f".format(amount)} ${if (isNegative) "from" else "to"} this cycle's earnings",
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(selectedType, amountStr.toDoubleOrNull() ?: 0.0, notes) },
+                enabled = (amountStr.toDoubleOrNull() ?: 0.0) > 0,
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                shape = RoundedCornerShape(8.dp)
+            ) { Text("Save", color = Color.White, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
