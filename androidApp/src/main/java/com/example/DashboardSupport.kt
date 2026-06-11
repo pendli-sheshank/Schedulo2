@@ -130,7 +130,7 @@ class DashboardViewModel : ViewModel() {
     private val auth by lazy { try { FirebaseAuth.getInstance() } catch(e:Exception){null} }
     private val db by lazy { try { FirebaseFirestore.getInstance() } catch(e:Exception){null} }
 
-    private val _userId = MutableStateFlow(auth?.currentUser?.uid ?: "local_user")
+    private val _userId = MutableStateFlow(auth?.currentUser?.uid ?: "")
     val userId = _userId.asStateFlow()
 
     private val _shifts = MutableStateFlow<List<Shift>>(emptyList())
@@ -197,6 +197,7 @@ class DashboardViewModel : ViewModel() {
     }
 
     private var loadedForUserId: String? = null
+    private var hasSeededDefaults = false
     private var jobsListenerRegistration: ListenerRegistration? = null
     private var shiftsListenerRegistration: ListenerRegistration? = null
     private var profileListenerRegistration: ListenerRegistration? = null
@@ -321,17 +322,34 @@ class DashboardViewModel : ViewModel() {
                         doc.toObject(Job::class.java)?.copy(id = doc.id)
                     }
                     _jobs.value = list
-                    if (list.isEmpty() && !value.metadata.isFromCache && !value.metadata.hasPendingWrites()) {
-                        val defaultJobs = listOf(
-                            Job(title = "7-ELEVEN", isGigWork = false, defaultHourlyRate = 15.0, goalHours = 20.0, goalType = "Hours", weeklyCycleStartDay = "Friday"),
-                            Job(title = "Walmart", isGigWork = false, defaultHourlyRate = 17.5, goalHours = 25.0, goalType = "Hours", weeklyCycleStartDay = "Monday"),
-                            Job(title = "DoorDash", isGigWork = true, defaultHourlyRate = 0.0, goalHours = 200.0, goalType = "Earnings", weeklyCycleStartDay = "Monday")
-                        )
-                        for (j in defaultJobs) {
-                            j.userId = uid
-                            database.collection("jobs").document(j.id).set(j)
-                        }
+                    if (!hasSeededDefaults && list.isEmpty()) {
+                        hasSeededDefaults = true
+                        seedDefaultJobsIfEmpty()
                     }
+                }
+            }
+    }
+
+    fun seedDefaultJobsIfEmpty() {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        if (_jobs.value.isNotEmpty()) return
+        database.collection("jobs")
+            .whereEqualTo("userId", uid)
+            .get(com.google.firebase.firestore.Source.SERVER)
+            .addOnSuccessListener { snapshot ->
+                if (snapshot.isEmpty) {
+                    val defaultJobs = listOf(
+                        Job(title = "7-ELEVEN", isGigWork = false, defaultHourlyRate = 15.0, goalHours = 20.0, goalType = "Hours", weeklyCycleStartDay = "Friday"),
+                        Job(title = "Walmart", isGigWork = false, defaultHourlyRate = 17.5, goalHours = 25.0, goalType = "Hours", weeklyCycleStartDay = "Monday"),
+                        Job(title = "DoorDash", isGigWork = true, defaultHourlyRate = 0.0, goalHours = 200.0, goalType = "Earnings", weeklyCycleStartDay = "Monday")
+                    )
+                    val batch = database.batch()
+                    for (j in defaultJobs) {
+                        j.userId = uid
+                        batch.set(database.collection("jobs").document(j.id), j)
+                    }
+                    batch.commit()
                 }
             }
     }
@@ -343,7 +361,6 @@ class DashboardViewModel : ViewModel() {
             _syncError.value = "Please sign in to add employers."
             return
         }
-        _userId.value = uid
         val job = Job(
             id = java.util.UUID.randomUUID().toString(),
             userId = uid,
@@ -356,7 +373,6 @@ class DashboardViewModel : ViewModel() {
             overtimeThresholdHours = overtimeThresholdHours,
             overtimeMultiplier = overtimeMultiplier
         )
-        _jobs.value = _jobs.value + job
         database.collection("jobs").document(job.id).set(job)
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to save job: ${e.message}"
@@ -379,7 +395,6 @@ class DashboardViewModel : ViewModel() {
             overtimeThresholdHours = overtimeThresholdHours,
             overtimeMultiplier = overtimeMultiplier
         )
-        _jobs.value = _jobs.value.map { if (it.id == jobId) updated else it }
         database.collection("jobs").document(jobId).set(updated)
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to update job: ${e.message}"
@@ -391,7 +406,6 @@ class DashboardViewModel : ViewModel() {
             _syncError.value = "Please sign in to delete employers."
             return
         }
-        _jobs.value = _jobs.value.filter { it.id != jobId }
         database.collection("jobs").document(jobId).delete()
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to delete job: ${e.message}"
@@ -400,6 +414,7 @@ class DashboardViewModel : ViewModel() {
 
     fun reset() {
         loadedForUserId = null
+        hasSeededDefaults = false
         jobsListenerRegistration?.remove()
         jobsListenerRegistration = null
         shiftsListenerRegistration?.remove()
@@ -468,7 +483,6 @@ class DashboardViewModel : ViewModel() {
             _syncError.value = "Please sign in to save shifts."
             return
         }
-        _userId.value = uid
         val shift = Shift(
             id = java.util.UUID.randomUUID().toString(),
             userId = uid,
@@ -483,7 +497,6 @@ class DashboardViewModel : ViewModel() {
             isPaid = isGig,
             notes = notes
         )
-        _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         database.collection("shifts").document(shift.id).set(shift)
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to save shift: ${e.message}"
@@ -513,7 +526,6 @@ class DashboardViewModel : ViewModel() {
             isPaid = if (isGig) true else shift.isPaid,
             notes = notes
         )
-        _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
         database.collection("shifts").document(shiftId).set(updated)
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to update shift: ${e.message}"
@@ -526,7 +538,6 @@ class DashboardViewModel : ViewModel() {
             _syncError.value = "Please sign in to delete shifts."
             return
         }
-        _shifts.value = _shifts.value.filter { it.id != shiftId }
         database.collection("shifts").document(shiftId).delete()
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to delete shift: ${e.message}"
@@ -538,13 +549,10 @@ class DashboardViewModel : ViewModel() {
             _syncError.value = "Please sign in to update payment status."
             return
         }
-        val updatedShifts = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = isPaid) else it }
-        _shifts.value = updatedShifts
-        val updatedShift = updatedShifts.firstOrNull { it.id == shiftId } ?: return
-        database.collection("shifts").document(shiftId).set(updatedShift)
+        val shift = _shifts.value.firstOrNull { it.id == shiftId } ?: return
+        database.collection("shifts").document(shiftId).set(shift.copy(isPaid = isPaid))
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to update payment status: ${e.message}"
-                _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = !isPaid) else it }
             }
     }
 
@@ -554,22 +562,15 @@ class DashboardViewModel : ViewModel() {
             return
         }
         val shiftIdSet = shiftIds.toSet()
-        val updatedShifts = _shifts.value.map {
-            if (it.id in shiftIdSet) it.copy(isPaid = isPaid) else it
-        }
-        _shifts.value = updatedShifts
         val batch = database.batch()
-        val shiftsToWrite = updatedShifts.filter { it.id in shiftIdSet }
+        val shiftsToWrite = _shifts.value.filter { it.id in shiftIdSet }
         for (shift in shiftsToWrite) {
             val docRef = database.collection("shifts").document(shift.id)
-            batch.set(docRef, shift)
+            batch.set(docRef, shift.copy(isPaid = isPaid))
         }
         batch.commit()
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to mark cycle as paid: ${e.message}"
-                _shifts.value = _shifts.value.map {
-                    if (it.id in shiftIdSet) it.copy(isPaid = !isPaid) else it
-                }
             }
     }
 
@@ -870,7 +871,6 @@ class DashboardViewModel : ViewModel() {
             amount = amount,
             notes = notes
         )
-        _payAdjustments.value = _payAdjustments.value + adjustment
         database.collection("pay_adjustments").document(adjustment.id).set(adjustment)
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to save adjustment: ${e.message}"
@@ -879,7 +879,6 @@ class DashboardViewModel : ViewModel() {
 
     fun deletePayAdjustment(adjustmentId: String) {
         val database = db ?: return
-        _payAdjustments.value = _payAdjustments.value.filter { it.id != adjustmentId }
         database.collection("pay_adjustments").document(adjustmentId).delete()
             .addOnFailureListener { e ->
                 _syncError.value = "Failed to delete adjustment: ${e.message}"
