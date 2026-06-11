@@ -194,8 +194,15 @@ class DashboardViewModel : ViewModel() {
     fun refreshData() {
         _isRefreshing.value = true
         loadedForUserId = null
+        jobsListenerRegistration?.remove()
+        jobsListenerRegistration = null
+        shiftsListenerRegistration?.remove()
+        shiftsListenerRegistration = null
+        profileListenerRegistration?.remove()
+        profileListenerRegistration = null
+        settingsListenerRegistration?.remove()
+        settingsListenerRegistration = null
         loadShifts()
-        _isRefreshing.value = false
     }
 
     fun detectConflicts(startTime: Long, endTime: Long, excludeShiftId: String? = null): List<Shift> {
@@ -296,7 +303,8 @@ class DashboardViewModel : ViewModel() {
                     val list = value.documents.mapNotNull { doc ->
                         doc.toObject(Job::class.java)?.copy(id = doc.id)
                     }
-                    if (list.isEmpty() && !value.metadata.isFromCache) {
+                    _jobs.value = list
+                    if (list.isEmpty() && !value.metadata.isFromCache && !value.metadata.hasPendingWrites()) {
                         val defaultJobs = listOf(
                             Job(title = "7-ELEVEN", isGigWork = false, defaultHourlyRate = 15.0, goalHours = 20.0, goalType = "Hours", weeklyCycleStartDay = "Friday"),
                             Job(title = "Walmart", isGigWork = false, defaultHourlyRate = 17.5, goalHours = 25.0, goalType = "Hours", weeklyCycleStartDay = "Monday"),
@@ -306,8 +314,6 @@ class DashboardViewModel : ViewModel() {
                             j.userId = uid
                             database.collection("jobs").document(j.id).set(j)
                         }
-                    } else {
-                        _jobs.value = list
                     }
                 }
             }
@@ -416,6 +422,7 @@ class DashboardViewModel : ViewModel() {
             .whereEqualTo("userId", uid)
             .addSnapshotListener { value, error ->
                 _isLoading.value = false
+                _isRefreshing.value = false
                 if (error != null) {
                     _syncError.value = "Failed to load shifts: ${error.message}"
                     return@addSnapshotListener
