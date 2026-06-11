@@ -22,6 +22,7 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "My Application"
+rootProject.name = "Schedulo2"
 
-include(":app")
+include(":shared")
+include(":androidApp")

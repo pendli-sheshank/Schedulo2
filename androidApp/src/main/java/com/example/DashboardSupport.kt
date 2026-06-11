@@ -70,6 +70,17 @@ data class Job(
     }
 }
 
+data class PayAdjustment(
+    var id: String = java.util.UUID.randomUUID().toString(),
+    var userId: String = "",
+    var cycleKey: String = "",
+    var employer: String = "",
+    var type: String = "Bonus",
+    var amount: Double = 0.0,
+    var notes: String = "",
+    var createdAt: Long = System.currentTimeMillis()
+)
+
 data class Shift(
     var id: String = java.util.UUID.randomUUID().toString(),
     var userId: String = "",
@@ -140,6 +151,9 @@ class DashboardViewModel : ViewModel() {
     private val _memberSince = MutableStateFlow("")
     val memberSince = _memberSince.asStateFlow()
 
+    private val _payAdjustments = MutableStateFlow<List<PayAdjustment>>(emptyList())
+    val payAdjustments = _payAdjustments.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
@@ -187,6 +201,7 @@ class DashboardViewModel : ViewModel() {
     private var shiftsListenerRegistration: ListenerRegistration? = null
     private var profileListenerRegistration: ListenerRegistration? = null
     private var settingsListenerRegistration: ListenerRegistration? = null
+    private var adjustmentsListenerRegistration: ListenerRegistration? = null
     
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
@@ -194,8 +209,17 @@ class DashboardViewModel : ViewModel() {
     fun refreshData() {
         _isRefreshing.value = true
         loadedForUserId = null
+        jobsListenerRegistration?.remove()
+        jobsListenerRegistration = null
+        shiftsListenerRegistration?.remove()
+        shiftsListenerRegistration = null
+        profileListenerRegistration?.remove()
+        profileListenerRegistration = null
+        settingsListenerRegistration?.remove()
+        settingsListenerRegistration = null
+        adjustmentsListenerRegistration?.remove()
+        adjustmentsListenerRegistration = null
         loadShifts()
-        _isRefreshing.value = false
     }
 
     fun detectConflicts(startTime: Long, endTime: Long, excludeShiftId: String? = null): List<Shift> {
@@ -296,7 +320,8 @@ class DashboardViewModel : ViewModel() {
                     val list = value.documents.mapNotNull { doc ->
                         doc.toObject(Job::class.java)?.copy(id = doc.id)
                     }
-                    if (list.isEmpty() && !value.metadata.isFromCache) {
+                    _jobs.value = list
+                    if (list.isEmpty() && !value.metadata.isFromCache && !value.metadata.hasPendingWrites()) {
                         val defaultJobs = listOf(
                             Job(title = "7-ELEVEN", isGigWork = false, defaultHourlyRate = 15.0, goalHours = 20.0, goalType = "Hours", weeklyCycleStartDay = "Friday"),
                             Job(title = "Walmart", isGigWork = false, defaultHourlyRate = 17.5, goalHours = 25.0, goalType = "Hours", weeklyCycleStartDay = "Monday"),
@@ -306,8 +331,6 @@ class DashboardViewModel : ViewModel() {
                             j.userId = uid
                             database.collection("jobs").document(j.id).set(j)
                         }
-                    } else {
-                        _jobs.value = list
                     }
                 }
             }
@@ -385,8 +408,11 @@ class DashboardViewModel : ViewModel() {
         profileListenerRegistration = null
         settingsListenerRegistration?.remove()
         settingsListenerRegistration = null
+        adjustmentsListenerRegistration?.remove()
+        adjustmentsListenerRegistration = null
         _shifts.value = emptyList()
         _jobs.value = emptyList()
+        _payAdjustments.value = emptyList()
         _defaultCompany.value = ""
         _defaultRate.value = 0.0
         _userName.value = ""
@@ -410,12 +436,14 @@ class DashboardViewModel : ViewModel() {
         _syncError.value = null
         loadSettings()
         loadJobs()
+        loadPayAdjustments()
         _userId.value = uid
         shiftsListenerRegistration?.remove()
         shiftsListenerRegistration = database.collection("shifts")
             .whereEqualTo("userId", uid)
             .addSnapshotListener { value, error ->
                 _isLoading.value = false
+                _isRefreshing.value = false
                 if (error != null) {
                     _syncError.value = "Failed to load shifts: ${error.message}"
                     return@addSnapshotListener
@@ -811,12 +839,64 @@ class DashboardViewModel : ViewModel() {
         return sb.toString()
     }
 
+    private fun loadPayAdjustments() {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        adjustmentsListenerRegistration?.remove()
+        adjustmentsListenerRegistration = database.collection("pay_adjustments")
+            .whereEqualTo("userId", uid)
+            .addSnapshotListener { value, error ->
+                if (error != null) return@addSnapshotListener
+                if (value != null) {
+                    _payAdjustments.value = value.documents.mapNotNull { doc ->
+                        doc.toObject(PayAdjustment::class.java)?.copy(id = doc.id)
+                    }
+                }
+            }
+    }
+
+    fun addPayAdjustment(cycleKey: String, employer: String, type: String, amount: Double, notes: String) {
+        val uid = auth?.currentUser?.uid
+        val database = db
+        if (uid == null || database == null) {
+            _syncError.value = "Please sign in to add adjustments."
+            return
+        }
+        val adjustment = PayAdjustment(
+            userId = uid,
+            cycleKey = cycleKey,
+            employer = employer,
+            type = type,
+            amount = amount,
+            notes = notes
+        )
+        _payAdjustments.value = _payAdjustments.value + adjustment
+        database.collection("pay_adjustments").document(adjustment.id).set(adjustment)
+            .addOnFailureListener { e ->
+                _syncError.value = "Failed to save adjustment: ${e.message}"
+            }
+    }
+
+    fun deletePayAdjustment(adjustmentId: String) {
+        val database = db ?: return
+        _payAdjustments.value = _payAdjustments.value.filter { it.id != adjustmentId }
+        database.collection("pay_adjustments").document(adjustmentId).delete()
+            .addOnFailureListener { e ->
+                _syncError.value = "Failed to delete adjustment: ${e.message}"
+            }
+    }
+
+    fun getAdjustmentsForCycle(cycleKey: String): List<PayAdjustment> {
+        return _payAdjustments.value.filter { it.cycleKey == cycleKey }
+    }
+
     override fun onCleared() {
         super.onCleared()
         jobsListenerRegistration?.remove()
         shiftsListenerRegistration?.remove()
         profileListenerRegistration?.remove()
         settingsListenerRegistration?.remove()
+        adjustmentsListenerRegistration?.remove()
     }
 }
 

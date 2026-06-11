@@ -1,0 +1,61 @@
+name: Schedulo2
+options:
+  bundleIdPrefix: com.schedulo2
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+    CODE_SIGN_STYLE: Manual
+    SWIFT_VERSION: "5.9"
+
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    version: "11.0.0"
+
+targets:
+  Schedulo2:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Schedulo2
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.schedulo2.ios
+        INFOPLIST_FILE: Schedulo2/Info.plist
+        CODE_SIGN_IDENTITY: $(CODE_SIGN_IDENTITY)
+        PROVISIONING_PROFILE_SPECIFIER: $(PROVISIONING_PROFILE_SPECIFIER)
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(inherited)"
+          - "$(SRCROOT)/../shared/build/bin/iosArm64/releaseFramework"
+          - "$(SRCROOT)/../shared/build/bin/iosSimulatorArm64/releaseFramework"
+          - "$(SRCROOT)/../shared/build/bin/iosX64/releaseFramework"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-framework"
+          - "Shared"
+    dependencies:
+      - package: Firebase
+        products:
+          - FirebaseAuth
+          - FirebaseFirestore
+          - FirebaseCrashlytics
+    preBuildScripts:
+      - name: Build KMP Shared Framework
+        script: |
+          cd "$SRCROOT/.."
+          if [ "$ENABLE_PREVIEWS" = "YES" ]; then
+            echo "Skipping KMP build for SwiftUI previews"
+            exit 0
+          fi
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+        basedOnDependencyAnalysis: false
