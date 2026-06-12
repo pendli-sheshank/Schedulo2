@@ -373,8 +373,10 @@ class DashboardViewModel : ViewModel() {
             overtimeThresholdHours = overtimeThresholdHours,
             overtimeMultiplier = overtimeMultiplier
         )
+        _jobs.value = _jobs.value + job
         database.collection("jobs").document(job.id).set(job)
             .addOnFailureListener { e ->
+                _jobs.value = _jobs.value.filter { it.id != job.id }
                 _syncError.value = "Failed to save job: ${e.message}"
             }
     }
@@ -395,8 +397,11 @@ class DashboardViewModel : ViewModel() {
             overtimeThresholdHours = overtimeThresholdHours,
             overtimeMultiplier = overtimeMultiplier
         )
+        val previousJobs = _jobs.value
+        _jobs.value = _jobs.value.map { if (it.id == jobId) updated else it }
         database.collection("jobs").document(jobId).set(updated)
             .addOnFailureListener { e ->
+                _jobs.value = previousJobs
                 _syncError.value = "Failed to update job: ${e.message}"
             }
     }
@@ -406,8 +411,11 @@ class DashboardViewModel : ViewModel() {
             _syncError.value = "Please sign in to delete employers."
             return
         }
+        val previousJobs = _jobs.value
+        _jobs.value = _jobs.value.filter { it.id != jobId }
         database.collection("jobs").document(jobId).delete()
             .addOnFailureListener { e ->
+                _jobs.value = previousJobs
                 _syncError.value = "Failed to delete job: ${e.message}"
             }
     }
@@ -497,8 +505,10 @@ class DashboardViewModel : ViewModel() {
             isPaid = isGig,
             notes = notes
         )
+        _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         database.collection("shifts").document(shift.id).set(shift)
             .addOnFailureListener { e ->
+                _shifts.value = _shifts.value.filter { it.id != shift.id }
                 _syncError.value = "Failed to save shift: ${e.message}"
             }
     }
@@ -526,8 +536,11 @@ class DashboardViewModel : ViewModel() {
             isPaid = if (isGig) true else shift.isPaid,
             notes = notes
         )
+        val previousShifts = _shifts.value
+        _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
         database.collection("shifts").document(shiftId).set(updated)
             .addOnFailureListener { e ->
+                _shifts.value = previousShifts
                 _syncError.value = "Failed to update shift: ${e.message}"
             }
     }
@@ -538,8 +551,11 @@ class DashboardViewModel : ViewModel() {
             _syncError.value = "Please sign in to delete shifts."
             return
         }
+        val previousShifts = _shifts.value
+        _shifts.value = _shifts.value.filter { it.id != shiftId }
         database.collection("shifts").document(shiftId).delete()
             .addOnFailureListener { e ->
+                _shifts.value = previousShifts
                 _syncError.value = "Failed to delete shift: ${e.message}"
             }
     }
@@ -550,8 +566,11 @@ class DashboardViewModel : ViewModel() {
             return
         }
         val shift = _shifts.value.firstOrNull { it.id == shiftId } ?: return
+        val previousShifts = _shifts.value
+        _shifts.value = _shifts.value.map { if (it.id == shiftId) it.copy(isPaid = isPaid) else it }
         database.collection("shifts").document(shiftId).set(shift.copy(isPaid = isPaid))
             .addOnFailureListener { e ->
+                _shifts.value = previousShifts
                 _syncError.value = "Failed to update payment status: ${e.message}"
             }
     }
@@ -562,14 +581,17 @@ class DashboardViewModel : ViewModel() {
             return
         }
         val shiftIdSet = shiftIds.toSet()
+        val previousShifts = _shifts.value
+        _shifts.value = _shifts.value.map { if (it.id in shiftIdSet) it.copy(isPaid = isPaid) else it }
         val batch = database.batch()
-        val shiftsToWrite = _shifts.value.filter { it.id in shiftIdSet }
+        val shiftsToWrite = previousShifts.filter { it.id in shiftIdSet }
         for (shift in shiftsToWrite) {
             val docRef = database.collection("shifts").document(shift.id)
             batch.set(docRef, shift.copy(isPaid = isPaid))
         }
         batch.commit()
             .addOnFailureListener { e ->
+                _shifts.value = previousShifts
                 _syncError.value = "Failed to mark cycle as paid: ${e.message}"
             }
     }
@@ -871,16 +893,21 @@ class DashboardViewModel : ViewModel() {
             amount = amount,
             notes = notes
         )
+        _payAdjustments.value = _payAdjustments.value + adjustment
         database.collection("pay_adjustments").document(adjustment.id).set(adjustment)
             .addOnFailureListener { e ->
+                _payAdjustments.value = _payAdjustments.value.filter { it.id != adjustment.id }
                 _syncError.value = "Failed to save adjustment: ${e.message}"
             }
     }
 
     fun deletePayAdjustment(adjustmentId: String) {
         val database = db ?: return
+        val previousAdjustments = _payAdjustments.value
+        _payAdjustments.value = _payAdjustments.value.filter { it.id != adjustmentId }
         database.collection("pay_adjustments").document(adjustmentId).delete()
             .addOnFailureListener { e ->
+                _payAdjustments.value = previousAdjustments
                 _syncError.value = "Failed to delete adjustment: ${e.message}"
             }
     }
