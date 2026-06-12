@@ -74,5 +74,20 @@ service cloud.firestore {
         && request.resource.data.goalHours >= 0;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
+
+    // Pay Adjustments: users can only CRUD their own adjustments
+    match /pay_adjustments/{adjustmentId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.cycleKey is string
+        && request.resource.data.employer is string
+        && request.resource.data.type is string
+        && request.resource.data.amount is number;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
   }
 }
