@@ -16,7 +16,7 @@ class ScheduloApp : Application() {
         super.onCreate()
         FirebaseApp.initializeApp(this)
         try {
-            val firestore = FirebaseFirestore.getInstance()
+            val firestore = FirebaseFirestore.getInstance(FirebaseApp.getInstance(), "schedulo2")
             val cacheSettings = PersistentCacheSettings.newBuilder()
                 .setSizeBytes(100 * 1024 * 1024)
                 .build()

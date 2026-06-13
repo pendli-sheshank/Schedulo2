@@ -51,7 +51,7 @@ class AuthViewModel : ViewModel() {
     }
     private val db: FirebaseFirestore? by lazy {
         try {
-            FirebaseFirestore.getInstance()
+            FirebaseFirestore.getInstance(com.google.firebase.FirebaseApp.getInstance(), "schedulo2")
         } catch (e: Exception) {
             null
         }
