@@ -128,7 +128,7 @@ fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, D
 
 class DashboardViewModel : ViewModel() {
     private val auth by lazy { try { FirebaseAuth.getInstance() } catch(e:Exception){null} }
-    private val db by lazy { try { FirebaseFirestore.getInstance() } catch(e:Exception){null} }
+    private val db by lazy { try { FirebaseFirestore.getInstance(com.google.firebase.FirebaseApp.getInstance(), "schedulo2") } catch(e:Exception){null} }
 
     private val _userId = MutableStateFlow(auth?.currentUser?.uid ?: "")
     val userId = _userId.asStateFlow()
