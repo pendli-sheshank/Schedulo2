@@ -462,8 +462,7 @@ private fun CalendarWeekView(
     val dayNumFormat = remember { SimpleDateFormat("dd", Locale.US) }
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
 
-    val todayCal = remember { Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) } }
-    val todayMillis = todayCal.timeInMillis
+    val todayMillis = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
 
     val weekShifts = remember(shifts, weekStart) {
         shifts.filter { it.startTime in weekStart until weekEnd }.sortedBy { it.startTime }
@@ -604,11 +603,9 @@ private fun CalendarDayView(
     val fullDateFormat = remember { SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.US) }
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
 
-    val todayMillis = remember {
-        Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-    }
+    val todayMillis = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
     val isToday = dayStart == todayMillis
 
     val dayShifts = remember(shifts, dayStart) {
@@ -1031,7 +1028,9 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
     val gigShifts = remember(shifts) { shifts.filter { it.isGig } }
     val gigTotalEarned = gigShifts.sumOf { it.totalEarned }
 
-    val totalAdjustments = allAdjustments.sumOf { adj -> if (adj.type == "Deduction" || adj.type == "Underpaid") -adj.amount else adj.amount }
+    val cycleKeys = remember(cycles) { cycles.map { it.cycleKey }.toSet() }
+    val relevantAdjustments = remember(allAdjustments, cycleKeys) { allAdjustments.filter { it.cycleKey in cycleKeys } }
+    val totalAdjustments = relevantAdjustments.sumOf { adj -> if (adj.type == "Deduction" || adj.type == "Underpaid") -adj.amount else adj.amount }
     val totalPaid = shifts.filter { it.isPaid }.sumOf { it.totalEarned } + totalAdjustments
     val totalPendingHold = cycles.filter { it.status == PayCycleStatus.PENDING_HOLD }.sumOf { it.totalEarned }
     val totalDue = cycles.filter { it.status == PayCycleStatus.DUE }.sumOf { cycle -> cycle.shifts.filter { !it.isPaid }.sumOf { it.totalEarned } }
@@ -1152,7 +1151,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                                 Text("$${"%.2f".format(cycle.totalEarned)}", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = PrimaryGreen)
                                 if (adjustmentTotal != 0.0) {
                                     val sign = if (adjustmentTotal > 0) "+" else ""
-                                    val adjColor = if (adjustmentTotal > 0) PrimaryGreen else Color(0xFFE53935)
+                                    val adjColor = if (adjustmentTotal > 0) PrimaryGreen else MaterialTheme.colorScheme.error
                                     Text("$sign$${"%.2f".format(adjustmentTotal)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = adjColor)
                                     Text("Net: $${"%.2f".format(actualPay)}", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -1230,7 +1229,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                                                 }
                                                 val typeColor = when (adj.type) {
                                                     "Bonus", "Overpaid" -> PrimaryGreen
-                                                    "Underpaid", "Deduction" -> Color(0xFFE53935)
+                                                    "Underpaid", "Deduction" -> MaterialTheme.colorScheme.error
                                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                                 }
                                                 Icon(typeIcon, null, tint = typeColor, modifier = Modifier.size(14.dp))
@@ -1247,7 +1246,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                                                 Text(
                                                     "${if (isNegative) "-" else "+"}$${"%.2f".format(adj.amount)}",
                                                     fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                                                    color = if (isNegative) Color(0xFFE53935) else PrimaryGreen
+                                                    color = if (isNegative) MaterialTheme.colorScheme.error else PrimaryGreen
                                                 )
                                                 if (isExpanded) {
                                                     Spacer(modifier = Modifier.width(8.dp))
@@ -1350,7 +1349,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
     if (adjustmentToDelete != null) {
         AlertDialog(
             onDismissRequest = { adjustmentToDelete = null },
-            icon = { Icon(Icons.Default.Delete, null, tint = Color(0xFFE53935), modifier = Modifier.size(32.dp)) },
+            icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp)) },
             title = { Text("Delete Adjustment?", fontSize = 18.sp, fontWeight = FontWeight.Bold) },
             text = {
                 val adj = adjustmentToDelete!!
@@ -1359,7 +1358,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
             },
             confirmButton = {
                 Button(onClick = { dashboardViewModel.deletePayAdjustment(adjustmentToDelete!!.id); adjustmentToDelete = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))) { Text("Delete", color = Color.White, fontWeight = FontWeight.Bold) }
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Delete", color = Color.White, fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { adjustmentToDelete = null }) { Text("Cancel") } },
             containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
@@ -1449,10 +1448,10 @@ fun AddAdjustmentDialog(cycle: WeeklyPayCycle, onDismiss: () -> Unit, onSave: (t
                 val amount = amountStr.toDoubleOrNull() ?: 0.0
                 if (amount > 0) {
                     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = if (isNegative) Color(0xFFE53935).copy(alpha = 0.08f) else PrimaryGreen.copy(alpha = 0.08f))) {
+                        colors = CardDefaults.cardColors(containerColor = if (isNegative) MaterialTheme.colorScheme.error.copy(alpha = 0.08f) else PrimaryGreen.copy(alpha = 0.08f))) {
                         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (isNegative) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, null,
-                                tint = if (isNegative) Color(0xFFE53935) else PrimaryGreen, modifier = Modifier.size(16.dp))
+                                tint = if (isNegative) MaterialTheme.colorScheme.error else PrimaryGreen, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 "This will ${if (isNegative) "subtract" else "add"} $${"%.2f".format(amount)} ${if (isNegative) "from" else "to"} this cycle's earnings",
@@ -1988,8 +1987,8 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
     val context = LocalContext.current
 
     var exportMode by remember { mutableStateOf(if (availableCycles.isNotEmpty()) "Pay Cycle" else "Calendar Week") }
-    var selectedWeekIndex by remember { mutableStateOf(availableWeeks.indexOfFirst { it.second.contains("Current") }.coerceAtLeast(0)) }
-    var selectedCycleIndex by remember { mutableStateOf(availableCycles.indexOfFirst { it.isCurrent }.coerceAtLeast(0)) }
+    var selectedWeekIndex by remember { mutableStateOf(if (availableWeeks.isEmpty()) 0 else availableWeeks.indexOfFirst { it.second.contains("Current") }.coerceIn(0, availableWeeks.size - 1)) }
+    var selectedCycleIndex by remember { mutableStateOf(if (availableCycles.isEmpty()) 0 else availableCycles.indexOfFirst { it.isCurrent }.coerceIn(0, availableCycles.size - 1)) }
     var selectedEmployer by remember { mutableStateOf("All") }
     var exportFormat by remember { mutableStateOf("Text") }
     var weekExpanded by remember { mutableStateOf(false) }
@@ -1997,7 +1996,7 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
     var employerExpanded by remember { mutableStateOf(false) }
 
     val preview = remember(exportMode, selectedWeekIndex, selectedCycleIndex, selectedEmployer, exportFormat) {
-        if (exportMode == "Pay Cycle" && availableCycles.isNotEmpty()) {
+        if (exportMode == "Pay Cycle" && availableCycles.isNotEmpty() && selectedCycleIndex in availableCycles.indices) {
             val cycle = availableCycles[selectedCycleIndex]
             val job = jobs.firstOrNull { it.title.equals(cycle.employer, ignoreCase = true) }
             if (exportFormat == "CSV") {
@@ -2005,7 +2004,7 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
             } else {
                 dashboardViewModel.generateCycleReport(cycle.cycleStart, cycle.cycleEnd, cycle.employer, job)
             }
-        } else if (availableWeeks.isNotEmpty()) {
+        } else if (availableWeeks.isNotEmpty() && selectedWeekIndex in availableWeeks.indices) {
             if (exportFormat == "CSV") {
                 dashboardViewModel.generateCsvReport(availableWeeks[selectedWeekIndex].first, selectedEmployer)
             } else {

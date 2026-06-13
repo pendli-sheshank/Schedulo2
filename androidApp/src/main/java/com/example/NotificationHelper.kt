@@ -164,7 +164,7 @@ object NotificationHelper {
     fun rescheduleAllReminders(context: Context) {
         try {
             val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
-            val db = FirebaseFirestore.getInstance(com.google.firebase.FirebaseApp.getInstance(), "schedulo2")
+            val db = FirebaseFirestore.getInstance(com.google.firebase.FirebaseApp.getInstance(), FIRESTORE_DB_NAME)
             db.collection("shifts").whereEqualTo("userId", uid).get()
                 .addOnSuccessListener { snapshot ->
                     val now = System.currentTimeMillis()

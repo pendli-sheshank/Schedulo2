@@ -15,9 +15,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import com.example.ui.theme.PrimaryGreen
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import com.google.firebase.firestore.ListenerRegistration
+
+const val FIRESTORE_DB_NAME = "schedulo2"
 
 data class Job(
     var id: String = java.util.UUID.randomUUID().toString(),
@@ -128,7 +130,7 @@ fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, D
 
 class DashboardViewModel : ViewModel() {
     private val auth by lazy { try { FirebaseAuth.getInstance() } catch(e:Exception){null} }
-    private val db by lazy { try { FirebaseFirestore.getInstance(com.google.firebase.FirebaseApp.getInstance(), "schedulo2") } catch(e:Exception){null} }
+    private val db by lazy { try { FirebaseFirestore.getInstance(FirebaseApp.getInstance(), FIRESTORE_DB_NAME) } catch(e:Exception){null} }
 
     private val _userId = MutableStateFlow(auth?.currentUser?.uid ?: "")
     val userId = _userId.asStateFlow()
@@ -366,12 +368,12 @@ class DashboardViewModel : ViewModel() {
             userId = uid,
             title = title,
             isGigWork = isGigWork,
-            defaultHourlyRate = defaultHourlyRate,
-            goalHours = goalHours,
+            defaultHourlyRate = defaultHourlyRate.coerceAtLeast(0.0),
+            goalHours = goalHours.coerceAtLeast(0.0),
             goalType = goalType,
             weeklyCycleStartDay = weeklyCycleStartDay,
-            overtimeThresholdHours = overtimeThresholdHours,
-            overtimeMultiplier = overtimeMultiplier
+            overtimeThresholdHours = overtimeThresholdHours.coerceAtLeast(1.0),
+            overtimeMultiplier = overtimeMultiplier.coerceAtLeast(1.0)
         )
         _jobs.value = _jobs.value + job
         database.collection("jobs").document(job.id).set(job)
@@ -390,12 +392,12 @@ class DashboardViewModel : ViewModel() {
         val updated = job.copy(
             title = title,
             isGigWork = isGigWork,
-            defaultHourlyRate = defaultHourlyRate,
-            goalHours = goalHours,
+            defaultHourlyRate = defaultHourlyRate.coerceAtLeast(0.0),
+            goalHours = goalHours.coerceAtLeast(0.0),
             goalType = goalType,
             weeklyCycleStartDay = weeklyCycleStartDay,
-            overtimeThresholdHours = overtimeThresholdHours,
-            overtimeMultiplier = overtimeMultiplier
+            overtimeThresholdHours = overtimeThresholdHours.coerceAtLeast(1.0),
+            overtimeMultiplier = overtimeMultiplier.coerceAtLeast(1.0)
         )
         val previousJobs = _jobs.value
         _jobs.value = _jobs.value.map { if (it.id == jobId) updated else it }
@@ -498,9 +500,9 @@ class DashboardViewModel : ViewModel() {
             role = "",
             startTime = startTime,
             endTime = endTime,
-            hourlyRate = hourlyRate,
+            hourlyRate = hourlyRate.coerceAtLeast(0.0),
             isGig = isGig,
-            customEarned = customEarned,
+            customEarned = customEarned.coerceAtLeast(0.0),
             reminderBeforeMinutes = reminderBeforeMinutes,
             isPaid = isGig,
             notes = notes
@@ -694,10 +696,18 @@ class DashboardViewModel : ViewModel() {
         val sb = StringBuilder()
         sb.appendLine("Date,Company,Start,End,Hours,Rate,Earned,Gig,Paid,Notes")
         filtered.forEach { s ->
-            val notes = s.notes.replace(",", ";").replace("\n", " ")
-            sb.appendLine("${dateFormat.format(Date(s.startTime))},${s.company},${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid},${notes}")
+            val company = csvEscape(s.company)
+            val notes = csvEscape(s.notes)
+            sb.appendLine("${dateFormat.format(Date(s.startTime))},$company,${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid},$notes")
         }
         return sb.toString()
+    }
+
+    private fun csvEscape(value: String): String {
+        val cleaned = value.replace("\n", " ")
+        return if (cleaned.contains(",") || cleaned.contains("\"") || cleaned.startsWith("=") || cleaned.startsWith("+") || cleaned.startsWith("-") || cleaned.startsWith("@")) {
+            "\"${cleaned.replace("\"", "\"\"")}\""
+        } else cleaned
     }
 
     data class PayCycleOption(val cycleStart: Long, val cycleEnd: Long, val employer: String, val label: String, val shiftCount: Int, val isCurrent: Boolean)
@@ -856,8 +866,9 @@ class DashboardViewModel : ViewModel() {
         val sb = StringBuilder()
         sb.appendLine("Date,Company,Start,End,Hours,Rate,Earned,Gig,Paid,Notes")
         filtered.forEach { s ->
-            val notes = s.notes.replace(",", ";").replace("\n", " ")
-            sb.appendLine("${dateFormat.format(Date(s.startTime))},${s.company},${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid},${notes}")
+            val company = csvEscape(s.company)
+            val notes = csvEscape(s.notes)
+            sb.appendLine("${dateFormat.format(Date(s.startTime))},$company,${timeFormat.format(Date(s.startTime))},${timeFormat.format(Date(s.endTime))},${"%.2f".format(s.durationHours)},${s.hourlyRate},${"%.2f".format(s.totalEarned)},${s.isGig},${s.isPaid},$notes")
         }
         return sb.toString()
     }
@@ -869,7 +880,10 @@ class DashboardViewModel : ViewModel() {
         adjustmentsListenerRegistration = database.collection("pay_adjustments")
             .whereEqualTo("userId", uid)
             .addSnapshotListener { value, error ->
-                if (error != null) return@addSnapshotListener
+                if (error != null) {
+                    _syncError.value = "Failed to load pay adjustments: ${error.message}"
+                    return@addSnapshotListener
+                }
                 if (value != null) {
                     _payAdjustments.value = value.documents.mapNotNull { doc ->
                         doc.toObject(PayAdjustment::class.java)?.copy(id = doc.id)
@@ -1347,10 +1361,15 @@ fun AddShiftScreen(
                                 else -> 0
                             }
                             val totalOccurrences = if (recurrence == "Daily") weeks * 7 else weeks
+                            val shiftDuration = finalEndTime - calStart.timeInMillis
                             for (i in 1..totalOccurrences) {
-                                val offsetMs = i.toLong() * dayIncrement * 24 * 60 * 60 * 1000L
-                                val recurShift = Shift(company = company, startTime = calStart.timeInMillis + offsetMs, endTime = finalEndTime + offsetMs, reminderBeforeMinutes = effectiveReminder)
-                                viewModel.addShift(company, calStart.timeInMillis + offsetMs, finalEndTime + offsetMs, hourly, isGig, earned, effectiveReminder, trimmedNotes)
+                                val recurStart = Calendar.getInstance().apply {
+                                    timeInMillis = calStart.timeInMillis
+                                    add(Calendar.DAY_OF_YEAR, i * dayIncrement)
+                                }.timeInMillis
+                                val recurEnd = recurStart + shiftDuration
+                                val recurShift = Shift(company = company, startTime = recurStart, endTime = recurEnd, reminderBeforeMinutes = effectiveReminder)
+                                viewModel.addShift(company, recurStart, recurEnd, hourly, isGig, earned, effectiveReminder, trimmedNotes)
                                 if (effectiveReminder > 0) NotificationHelper.scheduleReminder(context, recurShift)
                             }
                         }

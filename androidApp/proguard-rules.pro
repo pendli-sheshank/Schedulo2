@@ -1,6 +1,7 @@
 # Keep Firestore model classes (uses reflection for deserialization)
 -keep class com.example.Job { *; }
 -keep class com.example.Shift { *; }
+-keep class com.example.PayAdjustment { *; }
 -keep class com.example.AlarmRescheduleReceiver { *; }
 
 # Keep Firestore @Exclude annotations
