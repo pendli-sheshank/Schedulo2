@@ -2160,19 +2160,33 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
     var selectedJob by remember(jobs) { mutableStateOf(jobs.firstOrNull()) }
     var expandedCompany by remember { mutableStateOf(false) }
 
-    val daysOfWeek = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
+    val jobCycleStartDay = remember(selectedJob) {
+        when (selectedJob?.weeklyCycleStartDay?.lowercase(Locale.US)) {
+            "sunday" -> Calendar.SUNDAY; "tuesday" -> Calendar.TUESDAY
+            "wednesday" -> Calendar.WEDNESDAY; "thursday" -> Calendar.THURSDAY
+            "friday" -> Calendar.FRIDAY; "saturday" -> Calendar.SATURDAY
+            else -> Calendar.MONDAY
+        }
+    }
 
-    var dayEnabled by remember { mutableStateOf(List(7) { it < 5 }) }
+    val daysOfWeek = remember(jobCycleStartDay) {
+        val allDays = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        val calDayOrder = listOf(Calendar.SUNDAY, Calendar.MONDAY, Calendar.TUESDAY, Calendar.WEDNESDAY, Calendar.THURSDAY, Calendar.FRIDAY, Calendar.SATURDAY)
+        val startIndex = calDayOrder.indexOf(jobCycleStartDay)
+        (0 until 7).map { allDays[(startIndex + it) % 7] }
+    }
+
+    var dayEnabled by remember(selectedJob) { mutableStateOf(List(7) { it < 5 }) }
     var dayStartHours by remember { mutableStateOf(List(7) { 9 }) }
     var dayStartMinutes by remember { mutableStateOf(List(7) { 0 }) }
     var dayEndHours by remember { mutableStateOf(List(7) { 17 }) }
     var dayEndMinutes by remember { mutableStateOf(List(7) { 0 }) }
 
     var weekOffset by remember { mutableStateOf(0) }
-    val weekStartMillis = remember(weekOffset) {
+    val weekStartMillis = remember(weekOffset, jobCycleStartDay) {
         Calendar.getInstance().apply {
-            firstDayOfWeek = Calendar.MONDAY
-            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            firstDayOfWeek = jobCycleStartDay
+            set(Calendar.DAY_OF_WEEK, jobCycleStartDay)
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             add(Calendar.WEEK_OF_YEAR, weekOffset)
         }.timeInMillis
@@ -2250,22 +2264,29 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Week selector with future weeks
+            // Week selector with past and future weeks
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { if (weekOffset > 0) weekOffset-- }, enabled = weekOffset > 0) {
+                IconButton(onClick = { if (weekOffset > -3) weekOffset-- }, enabled = weekOffset > -3) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous week",
-                        tint = if (weekOffset > 0) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                        tint = if (weekOffset > -3) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("${dayFormat.format(Date(weekStartMillis))} – ${dayFormat.format(Date(weekStartMillis + 6L * 24 * 60 * 60 * 1000L))}",
                         fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    val cycleDay = selectedJob?.weeklyCycleStartDay ?: "Monday"
                     Text(
-                        when (weekOffset) { 0 -> "This Week"; 1 -> "Next Week"; else -> "In $weekOffset weeks" },
-                        fontSize = 12.sp, color = PrimaryGreen, fontWeight = FontWeight.SemiBold
+                        when {
+                            weekOffset == 0 -> "Current Cycle ($cycleDay start)"
+                            weekOffset == 1 -> "Next Week"
+                            weekOffset == -1 -> "Last Week"
+                            weekOffset < -1 -> "${-weekOffset} weeks ago"
+                            else -> "In $weekOffset weeks"
+                        },
+                        fontSize = 12.sp, color = if (weekOffset < 0) AccentOrange else PrimaryGreen, fontWeight = FontWeight.SemiBold
                     )
                 }
                 IconButton(onClick = { if (weekOffset < 12) weekOffset++ }, enabled = weekOffset < 12) {
