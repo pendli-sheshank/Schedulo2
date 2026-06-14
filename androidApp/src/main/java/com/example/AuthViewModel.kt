@@ -51,7 +51,7 @@ class AuthViewModel : ViewModel() {
     }
     private val db: FirebaseFirestore? by lazy {
         try {
-            FirebaseFirestore.getInstance(com.google.firebase.FirebaseApp.getInstance(), "schedulo2")
+            FirebaseFirestore.getInstance(com.google.firebase.FirebaseApp.getInstance(), FIRESTORE_DB_NAME)
         } catch (e: Exception) {
             null
         }
@@ -199,6 +199,8 @@ class AuthViewModel : ViewModel() {
                 shiftsQuery?.documents?.forEach { it.reference.delete().await() }
                 val jobsQuery = db?.collection("jobs")?.whereEqualTo("userId", uid)?.get()?.await()
                 jobsQuery?.documents?.forEach { it.reference.delete().await() }
+                val adjustmentsQuery = db?.collection("pay_adjustments")?.whereEqualTo("userId", uid)?.get()?.await()
+                adjustmentsQuery?.documents?.forEach { it.reference.delete().await() }
                 db?.collection("profiles")?.document(uid)?.delete()?.await()
                 db?.collection("settings")?.document(uid)?.delete()?.await()
                 user.delete().await()

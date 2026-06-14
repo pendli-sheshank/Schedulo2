@@ -86,7 +86,11 @@ service cloud.firestore {
         && request.resource.data.amount is number;
       allow update: if request.auth != null
         && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.cycleKey is string
+        && request.resource.data.employer is string
+        && request.resource.data.type is string
+        && request.resource.data.amount is number;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
   }
