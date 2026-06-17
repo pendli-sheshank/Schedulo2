@@ -190,15 +190,23 @@ final class DashboardViewModel: ObservableObject {
     }
 
     func toggleShiftPaidStatus(shiftId: String, isPaid: Bool) {
-        shifts = shifts.map { $0.id == shiftId ? {
-            var s = $0; s.isPaid = isPaid; return s
-        }() : $0 }
+        shifts = shifts.map { shift in
+            guard shift.id == shiftId else { return shift }
+            var updated = shift
+            updated.isPaid = isPaid
+            return updated
+        }
         service.toggleShiftPaid(shiftId, isPaid: isPaid, allShifts: shifts)
     }
 
     func markCycleAsPaid(shiftIds: [String], isPaid: Bool) {
         let idSet = Set(shiftIds)
-        shifts = shifts.map { idSet.contains($0.id) ? { var s = $0; s.isPaid = isPaid; return s }() : $0 }
+        shifts = shifts.map { shift in
+            guard idSet.contains(shift.id) else { return shift }
+            var updated = shift
+            updated.isPaid = isPaid
+            return updated
+        }
         service.markCycleAsPaid(shiftIds: shiftIds, isPaid: isPaid, allShifts: shifts)
     }
 
