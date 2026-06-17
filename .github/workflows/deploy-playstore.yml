@@ -35,10 +35,13 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
 
+      - name: Calculate version code
+        run: echo "VERSION_CODE=$(( ${{ github.run_number }} + 100 ))" >> $GITHUB_ENV
+
       - name: Build release AAB
         run: ./gradlew :androidApp:bundleRelease
         env:
-          VERSION_CODE: ${{ github.run_number + 100 }}
+          VERSION_CODE: ${{ env.VERSION_CODE }}
           KEYSTORE_PATH: ${{ github.workspace }}/androidApp/upload-keystore.jks
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
