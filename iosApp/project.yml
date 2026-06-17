@@ -9,7 +9,7 @@ options:
 settings:
   base:
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "5"
     SWIFT_VERSION: "5.9"
 
 packages:
@@ -30,6 +30,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.schedulo2.ios
         INFOPLIST_FILE: Schedulo2/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         DEVELOPMENT_TEAM: INJECT_DEVELOPMENT_TEAM
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: Apple Distribution
