@@ -22,7 +22,18 @@ jobs:
       - name: Select Xcode version
         run: |
           sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
-          xcodebuild -downloadPlatform iOS || true
+          sudo xcodebuild -license accept
+          sudo xcodebuild -runFirstLaunch
+          echo "=== Available SDKs before platform install ==="
+          xcodebuild -showsdks
+          echo "=== Downloading iOS platform ==="
+          xcodebuild -downloadPlatform iOS || {
+            echo "Download attempt 1 failed, retrying..."
+            sleep 5
+            xcodebuild -downloadPlatform iOS
+          }
+          echo "=== Available SDKs after platform install ==="
+          xcodebuild -showsdks
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -102,7 +113,6 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -archivePath $RUNNER_TEMP/Schedulo2.xcarchive \
-            -destination "generic/platform=iOS" \
             -clonedSourcePackagesDirPath $RUNNER_TEMP/spm-cache \
             COMPILER_INDEX_STORE_ENABLE=NO
 
