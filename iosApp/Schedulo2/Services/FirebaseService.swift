@@ -105,7 +105,7 @@ final class FirebaseService {
     static let shared = FirebaseService()
 
     private let auth = Auth.auth()
-    private let db = Firestore.firestore()
+    private let db = Firestore.firestore(database: "schedulo2")
 
     // MARK: Combine publishers for real-time data
     let shiftsSubject = CurrentValueSubject<[Shift], Never>([])
