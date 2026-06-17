@@ -37,7 +37,7 @@ struct WeekPlanView: View {
             let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart)!
             let exists = dashboardViewModel.shifts.contains {
                 $0.company.lowercased() == job.title.lowercased() &&
-                $0.startTime >= dayStart && $0.startTime < dayEnd
+                $0.startDate >= dayStart && $0.startDate < dayEnd
             }
             if exists { result.insert(i) }
         }
@@ -240,8 +240,8 @@ struct WeekPlanView: View {
 
             dashboardViewModel.addShift(
                 company: job.title,
-                startTime: actualStart,
-                endTime: actualEnd,
+                startTime: Int64(actualStart.timeIntervalSince1970 * 1000),
+                endTime: Int64(actualEnd.timeIntervalSince1970 * 1000),
                 hourlyRate: job.defaultHourlyRate,
                 isGig: job.isGigWork,
                 customEarned: 0.0,

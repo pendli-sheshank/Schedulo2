@@ -53,11 +53,11 @@ struct DashboardView: View {
     private var weekShifts: [Shift] {
         let start = weekStart(for: weekOffset)
         let end = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? start
-        return dashboardViewModel.shifts.filter { $0.startTime >= start && $0.startTime < end }
+        return dashboardViewModel.shifts.filter { $0.startDate >= start && $0.startDate < end }
     }
 
     private var completedWeekShifts: [Shift] {
-        weekShifts.filter { $0.startTime < Date() }
+        weekShifts.filter { $0.startDate < Date() }
     }
 
     var body: some View {
@@ -301,7 +301,7 @@ struct DashboardView: View {
     private var upcomingShiftsSection: some View {
         let now = Date()
         let upcoming = dashboardViewModel.shifts
-            .filter { $0.startTime >= now }
+            .filter { $0.startDate >= now }
             .sorted { $0.startTime < $1.startTime }
             .prefix(5)
 
@@ -347,7 +347,7 @@ struct DashboardView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(shift.company)
                                         .font(.system(size: 14, weight: .semibold))
-                                    Text(timeFormat.string(from: shift.startTime))
+                                    Text(timeFormat.string(from: shift.startDate))
                                         .font(.system(size: 12))
                                         .foregroundColor(.secondary)
                                 }
@@ -391,7 +391,7 @@ struct JobGoalTrackerCard: View {
     var weekOffset: Int = 0
 
     private var cycleStart: Date {
-        let base = job.getStartOfCurrentCycle()
+        let base = Date(timeIntervalSince1970: Double(job.getStartOfCurrentCycle()) / 1000.0)
         return Calendar.current.date(byAdding: .weekOfYear, value: weekOffset, to: base) ?? base
     }
 
@@ -403,9 +403,9 @@ struct JobGoalTrackerCard: View {
         let now = Date()
         return shifts.filter {
             $0.company.lowercased() == job.title.lowercased() &&
-            $0.startTime >= cycleStart &&
-            $0.startTime < cycleEnd &&
-            $0.startTime < now
+            $0.startDate >= cycleStart &&
+            $0.startDate < cycleEnd &&
+            $0.startDate < now
         }
     }
 

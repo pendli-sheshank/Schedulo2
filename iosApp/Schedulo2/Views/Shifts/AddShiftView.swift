@@ -35,7 +35,11 @@ struct AddShiftView: View {
         if actualEnd <= actualStart {
             actualEnd = actualEnd.addingTimeInterval(86400)
         }
-        return dashboardViewModel.detectConflicts(startTime: actualStart, endTime: actualEnd, excludeShiftId: existingShift?.id)
+        return dashboardViewModel.detectConflicts(
+            startTime: Int64(actualStart.timeIntervalSince1970 * 1000),
+            endTime: Int64(actualEnd.timeIntervalSince1970 * 1000),
+            excludeShiftId: existingShift?.id
+        )
     }
 
     var body: some View {
@@ -253,7 +257,7 @@ struct AddShiftView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Color(red: 0.573, green: 0.251, blue: 0.055))
                 ForEach(conflicts, id: \.id) { conflict in
-                    Text("\(conflict.company): \(timeFmt.string(from: conflict.startTime)) - \(timeFmt.string(from: conflict.endTime))")
+                    Text("\(conflict.company): \(timeFmt.string(from: conflict.startDate)) - \(timeFmt.string(from: conflict.endDate))")
                         .font(.system(size: 12))
                         .foregroundColor(Color(red: 0.573, green: 0.251, blue: 0.055))
                 }
@@ -279,9 +283,9 @@ struct AddShiftView: View {
             isGig = shift.isGig
             rateStr = String(format: "%.2f", shift.hourlyRate)
             customEarningsStr = String(format: "%.2f", shift.customEarned)
-            selectedDate = shift.startTime
-            startTime = shift.startTime
-            endTime = shift.endTime
+            selectedDate = shift.startDate
+            startTime = shift.startDate
+            endTime = shift.endDate
             reminderMinutes = shift.reminderBeforeMinutes
             shiftNotes = shift.notes
 
@@ -310,6 +314,9 @@ struct AddShiftView: View {
             actualEnd = actualEnd.addingTimeInterval(86400)
         }
 
+        let startMs = Int64(actualStart.timeIntervalSince1970 * 1000)
+        let endMs = Int64(actualEnd.timeIntervalSince1970 * 1000)
+
         let hourly = isGig ? 0.0 : (Double(rateStr) ?? 0.0)
         let earned = isGig ? (Double(customEarningsStr) ?? 0.0) : 0.0
         let effectiveReminder = dashboardViewModel.remindersEnabled ? reminderMinutes : 0
@@ -318,8 +325,8 @@ struct AddShiftView: View {
             dashboardViewModel.updateShift(
                 shiftId: shift.id,
                 company: company,
-                startTime: actualStart,
-                endTime: actualEnd,
+                startTime: startMs,
+                endTime: endMs,
                 hourlyRate: hourly,
                 isGig: isGig,
                 customEarned: earned,
@@ -329,8 +336,8 @@ struct AddShiftView: View {
         } else {
             dashboardViewModel.addShift(
                 company: company,
-                startTime: actualStart,
-                endTime: actualEnd,
+                startTime: startMs,
+                endTime: endMs,
                 hourlyRate: hourly,
                 isGig: isGig,
                 customEarned: earned,
@@ -355,8 +362,8 @@ struct AddShiftView: View {
                     let offset = TimeInterval(i * dayIncrement * 86400)
                     dashboardViewModel.addShift(
                         company: company,
-                        startTime: actualStart.addingTimeInterval(offset),
-                        endTime: actualEnd.addingTimeInterval(offset),
+                        startTime: Int64(actualStart.addingTimeInterval(offset).timeIntervalSince1970 * 1000),
+                        endTime: Int64(actualEnd.addingTimeInterval(offset).timeIntervalSince1970 * 1000),
                         hourlyRate: hourly,
                         isGig: isGig,
                         customEarned: earned,

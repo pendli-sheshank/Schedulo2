@@ -112,7 +112,7 @@ struct ShiftCard: View {
 
     private var isActive: Bool {
         let now = Date()
-        return now >= shift.startTime && now <= shift.endTime
+        return now >= shift.startDate && now <= shift.endDate
     }
 
     var body: some View {
@@ -136,7 +136,7 @@ struct ShiftCard: View {
                         }
                     }
 
-                    Text("\(Self.timeFormat.string(from: shift.startTime)) -> \(Self.timeFormat.string(from: shift.endTime)) - \(String(format: "%.1f", shift.durationHours)) hrs")
+                    Text("\(Self.timeFormat.string(from: shift.startDate)) -> \(Self.timeFormat.string(from: shift.endDate)) - \(String(format: "%.1f", shift.durationHours)) hrs")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
 
@@ -155,7 +155,7 @@ struct ShiftCard: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.primaryGreen)
 
-                    if shift.reminderBeforeMinutes > 0 && shift.startTime > Date() {
+                    if shift.reminderBeforeMinutes > 0 && shift.startDate > Date() {
                         Text("\(shift.reminderBeforeMinutes)m")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.primaryGreen)
@@ -228,13 +228,13 @@ private struct CalendarMonthView: View {
     private func shiftsFor(day: Int) -> [Shift] {
         let dayStart = dateFor(day: day)
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
-        return shifts.filter { $0.startTime >= dayStart && $0.startTime < dayEnd }
+        return shifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
     }
 
     private var selectedDayShifts: [Shift] {
         let dayStart = calendar.startOfDay(for: selectedDate)
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
-        return shifts.filter { $0.startTime >= dayStart && $0.startTime < dayEnd }.sorted { $0.startTime < $1.startTime }
+        return shifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.sorted { $0.startTime < $1.startTime }
     }
 
     var body: some View {
@@ -419,7 +419,7 @@ private struct CalendarWeekView: View {
     }
 
     private var weekShifts: [Shift] {
-        shifts.filter { $0.startTime >= weekStart && $0.startTime < weekEnd }.sorted { $0.startTime < $1.startTime }
+        shifts.filter { $0.startDate >= weekStart && $0.startDate < weekEnd }.sorted { $0.startTime < $1.startTime }
     }
 
     private var daysList: [(Date, Date)] {
@@ -465,7 +465,7 @@ private struct CalendarWeekView: View {
                 HStack(spacing: 4) {
                     ForEach(daysList, id: \.0) { dayStart, _ in
                         let isToday = calendar.isDateInToday(dayStart)
-                        let shiftCount = weekShifts.filter { $0.startTime >= dayStart && $0.startTime < calendar.date(byAdding: .day, value: 1, to: dayStart)! }.count
+                        let shiftCount = weekShifts.filter { $0.startDate >= dayStart && $0.startDate < calendar.date(byAdding: .day, value: 1, to: dayStart)! }.count
 
                         Button(action: { onDayTap(dayStart) }) {
                             VStack(spacing: 4) {
@@ -524,7 +524,7 @@ private struct CalendarWeekView: View {
                     .padding(48)
                 } else {
                     ForEach(daysList, id: \.0) { dayStart, dayEnd in
-                        let dayShifts = weekShifts.filter { $0.startTime >= dayStart && $0.startTime < dayEnd }
+                        let dayShifts = weekShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
                         if !dayShifts.isEmpty {
                             let isToday = calendar.isDateInToday(dayStart)
                             HStack {
@@ -585,7 +585,7 @@ private struct CalendarDayView: View {
     private var dayEnd: Date { calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart }
 
     private var dayShifts: [Shift] {
-        shifts.filter { $0.startTime >= dayStart && $0.startTime < dayEnd }.sorted { $0.startTime < $1.startTime }
+        shifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.sorted { $0.startTime < $1.startTime }
     }
 
     private var isToday: Bool { calendar.isDateInToday(selectedDate) }
@@ -717,23 +717,23 @@ private struct DayViewShiftCard: View {
 
     private var isActive: Bool {
         let now = Date()
-        return now >= shift.startTime && now <= shift.endTime
+        return now >= shift.startDate && now <= shift.endDate
     }
 
-    private var isPast: Bool { shift.endTime < Date() }
+    private var isPast: Bool { shift.endDate < Date() }
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 // Time column
                 VStack(spacing: 4) {
-                    Text(Self.timeFormat.string(from: shift.startTime))
+                    Text(Self.timeFormat.string(from: shift.startDate))
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(isPast ? .secondary : .primaryGreen)
                     Rectangle()
                         .fill(isPast ? Color(UIColor.separator) : Color.primaryGreen.opacity(0.4))
                         .frame(width: 2, height: 16)
-                    Text(Self.timeFormat.string(from: shift.endTime))
+                    Text(Self.timeFormat.string(from: shift.endDate))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
                 }
@@ -773,7 +773,7 @@ private struct DayViewShiftCard: View {
 
                 Spacer()
 
-                if shift.reminderBeforeMinutes > 0 && shift.startTime > Date() {
+                if shift.reminderBeforeMinutes > 0 && shift.startDate > Date() {
                     Text("\(shift.reminderBeforeMinutes)m")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.primaryGreen)
