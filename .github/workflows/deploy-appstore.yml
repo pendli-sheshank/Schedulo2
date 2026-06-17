@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
 
 env:
-  XCODE_VERSION: "15.4"
+  XCODE_VERSION: "16.2"
   SCHEME: "Schedulo2"
   BUNDLE_ID: "com.schedulo2.ios"
 
 jobs:
   build-and-deploy:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
