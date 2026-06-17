@@ -44,6 +44,14 @@ jobs:
         env:
           GOOGLE_SERVICE_PLIST_B64: ${{ secrets.IOS_GOOGLE_SERVICE_PLIST_BASE64 }}
 
+      - name: Inject signing configuration
+        env:
+          DEVELOPMENT_TEAM: ${{ secrets.IOS_TEAM_ID }}
+          PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+        run: |
+          sed -i '' "s/INJECT_DEVELOPMENT_TEAM/$DEVELOPMENT_TEAM/g" iosApp/project.yml
+          sed -i '' "s/INJECT_PROVISIONING_PROFILE/$PROVISIONING_PROFILE_NAME/g" iosApp/project.yml
+
       - name: Generate Xcode project
         working-directory: iosApp
         run: xcodegen generate
@@ -87,9 +95,6 @@ jobs:
 
       - name: Build archive
         working-directory: iosApp
-        env:
-          DEVELOPMENT_TEAM: ${{ secrets.IOS_TEAM_ID }}
-          PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
         run: |
           xcodebuild archive \
             -project Schedulo2.xcodeproj \
@@ -99,13 +104,7 @@ jobs:
             -archivePath $RUNNER_TEMP/Schedulo2.xcarchive \
             -destination "generic/platform=iOS" \
             -clonedSourcePackagesDirPath $RUNNER_TEMP/spm-cache \
-            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-            CODE_SIGN_STYLE="Manual" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_SPECIFIER" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            -skipPackageSignatureValidation \
-            CODE_SIGNING_ALLOWED_FOR_APPS_ONLY=YES
+            COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Prepare ExportOptions.plist
         env:
