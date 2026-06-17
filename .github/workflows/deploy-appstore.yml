@@ -20,7 +20,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+        run: |
+          sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+          xcodebuild -downloadPlatform iOS
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -90,6 +92,7 @@ jobs:
           CODE_SIGN_IDENTITY: "Apple Distribution"
           PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
         run: |
+          set -o pipefail
           xcodebuild archive \
             -project Schedulo2.xcodeproj \
             -scheme "$SCHEME" \
@@ -102,7 +105,7 @@ jobs:
             CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
             PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_SPECIFIER" \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            | xcpretty
+            | xcpretty || { echo "::error::xcodebuild archive failed"; exit 1; }
 
       - name: Prepare ExportOptions.plist
         env:
