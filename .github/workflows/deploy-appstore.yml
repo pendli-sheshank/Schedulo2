@@ -130,12 +130,12 @@ jobs:
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Schedulo2.xcarchive \
             -exportPath $RUNNER_TEMP/export \
             -exportOptionsPlist iosApp/ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -keychain "$KEYCHAIN_PATH"
+            -allowProvisioningUpdates
 
       - name: Upload IPA as artifact
         uses: actions/upload-artifact@v4
