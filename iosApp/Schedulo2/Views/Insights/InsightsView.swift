@@ -6,7 +6,7 @@ struct InsightsView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var completedShifts: [Shift] {
-        dashboardViewModel.shifts.filter { $0.startTime < Date() }
+        dashboardViewModel.shifts.filter { $0.startDate < Date() }
     }
 
     private var totalEarnings: Double {
@@ -224,7 +224,7 @@ struct InsightsView: View {
             let weekStart = cal.date(byAdding: .weekOfYear, value: -offset, to: thisMonday)!
             let weekEnd = cal.date(byAdding: .day, value: 7, to: weekStart)!
 
-            let weekShifts = completedShifts.filter { $0.startTime >= weekStart && $0.startTime < weekEnd }
+            let weekShifts = completedShifts.filter { $0.startDate >= weekStart && $0.startDate < weekEnd }
 
             return WeekSummaryData(
                 weekStart: weekStart,

@@ -45,6 +45,35 @@ final class AuthViewModel: ObservableObject {
     private let service = FirebaseService.shared
     private var cancellables = Set<AnyCancellable>()
 
+    // MARK: - Derived UI State
+
+    var isAuthenticated: Bool {
+        authState == .authenticated
+    }
+
+    var isLoading: Bool {
+        authState == .loading || passwordChangeState == .loading || deleteState == .loading
+    }
+
+    var errorMessage: String? {
+        if case .error(let message) = authState { return message }
+        return nil
+    }
+
+    var resetErrorMessage: String? {
+        if case .error(let message) = resetState { return message }
+        return nil
+    }
+
+    var passwordChangeError: String? {
+        if case .error(let message) = passwordChangeState { return message }
+        return nil
+    }
+
+    var passwordChangeSuccess: Bool {
+        passwordChangeState == .success
+    }
+
     init() {
         // Set initial state
         if let user = service.currentUser {
@@ -135,7 +164,7 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - Delete Account
 
-    func deleteAccount(password: String) {
+    func deleteAccount(password: String?) {
         deleteState = .loading
         Task {
             do {

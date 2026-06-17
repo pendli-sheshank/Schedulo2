@@ -122,7 +122,7 @@ struct PayView: View {
         } message: {
             if let cycle = cycleToConfirmPaid {
                 let fmt = DateFormatter()
-                fmt.dateFormat = "MMM dd"
+                let _ = (fmt.dateFormat = "MMM dd")
                 Text("Mark the week of \(fmt.string(from: cycle.startDate)) - \(fmt.string(from: cycle.endDate.addingTimeInterval(-1))) ($\(String(format: "%.2f", cycle.totalEarned))) as Paid?")
             }
         }
@@ -329,10 +329,10 @@ struct PayView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(shift.company)
                     .font(.system(size: 14, weight: .semibold))
-                Text(dayFmt.string(from: shift.startTime))
+                Text(dayFmt.string(from: shift.startDate))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary.opacity(0.7))
-                Text("\(timeFmt.string(from: shift.startTime)) -> \(timeFmt.string(from: shift.endTime)) - \(String(format: "%.1f", shift.durationHours)) hrs")
+                Text("\(timeFmt.string(from: shift.startDate)) -> \(timeFmt.string(from: shift.endDate)) - \(String(format: "%.1f", shift.durationHours)) hrs")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
@@ -393,7 +393,7 @@ struct PayView: View {
             report += "Pay Period: \(fmt.string(from: cycle.startDate)) - \(fmt.string(from: cycle.endDate.addingTimeInterval(-1)))\n"
             for shift in cycle.shifts {
                 let status = shift.isPaid ? "[PAID]" : ""
-                report += "\(dayFmt.string(from: shift.startTime)): \(timeFmt.string(from: shift.startTime)) - \(timeFmt.string(from: shift.endTime)) (\(String(format: "%.1f", shift.durationHours)) hrs) $\(String(format: "%.2f", shift.totalEarned)) \(status)\n"
+                report += "\(dayFmt.string(from: shift.startDate)): \(timeFmt.string(from: shift.startDate)) - \(timeFmt.string(from: shift.endDate)) (\(String(format: "%.1f", shift.durationHours)) hrs) $\(String(format: "%.2f", shift.totalEarned)) \(status)\n"
             }
             report += "Total: \(String(format: "%.1f", cycle.shifts.reduce(0) { $0 + $1.durationHours })) hours - $\(String(format: "%.2f", cycle.totalEarned))\n"
             report += "Paid: \(cycle.shifts.filter { $0.isPaid }.count)/\(cycle.shifts.count) shifts\n\n"
@@ -445,7 +445,7 @@ struct PayView: View {
         let job = jobs.first { $0.title.lowercased() == shift.company.lowercased() }
         let startDay = job?.weeklyCycleStartDay ?? "Monday"
         let cal = Calendar.current
-        var date = cal.startOfDay(for: shift.startTime)
+        var date = cal.startOfDay(for: shift.startDate)
 
         let targetWeekday = weekdayNumber(for: startDay)
 

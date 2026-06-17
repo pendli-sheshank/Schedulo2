@@ -37,7 +37,7 @@ struct Shift: Identifiable, Codable, Equatable {
     }
 }
 
-struct Job: Identifiable, Codable, Equatable {
+struct Job: Identifiable, Codable, Equatable, Hashable {
     var id: String = UUID().uuidString
     var userId: String = ""
     var title: String = ""
@@ -166,15 +166,19 @@ final class FirebaseService {
         try auth.signOut()
     }
 
-    func deleteAccount(password: String) async throws {
-        guard let user = auth.currentUser, let email = user.email else {
+    func deleteAccount(password: String?) async throws {
+        guard let user = auth.currentUser else {
             throw NSError(domain: "FirebaseService", code: -1, userInfo: [NSLocalizedDescriptionKey: "No user signed in."])
         }
         let uid = user.uid
 
-        // Re-authenticate
-        let credential = EmailAuthProvider.credential(withEmail: email, password: password)
-        try await user.reauthenticate(with: credential)
+        // Re-authenticate when a password is supplied. Firebase requires a recent
+        // login to delete an account; the first (password-less) attempt surfaces
+        // requiresRecentLogin so the UI can prompt for the password.
+        if let password = password, let email = user.email {
+            let credential = EmailAuthProvider.credential(withEmail: email, password: password)
+            try await user.reauthenticate(with: credential)
+        }
 
         // Delete user data
         let shiftsSnap = try await db.collection("shifts").whereField("userId", isEqualTo: uid).getDocuments()

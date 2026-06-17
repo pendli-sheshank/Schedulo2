@@ -40,7 +40,7 @@ struct ProfileView: View {
     }
 
     private var completedShifts: [Shift] {
-        dashboardViewModel.shifts.filter { $0.startTime < Date() }
+        dashboardViewModel.shifts.filter { $0.startDate < Date() }
     }
 
     var body: some View {
@@ -107,7 +107,7 @@ struct ProfileView: View {
             Button("Save") {
                 let trimmed = editNameValue.trimmingCharacters(in: .whitespaces)
                 if !trimmed.isEmpty {
-                    dashboardViewModel.updateUserName(newName: trimmed)
+                    dashboardViewModel.updateUserName(trimmed)
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -254,7 +254,7 @@ struct ProfileView: View {
             HStack(spacing: 8) {
                 ForEach([("light", "Light"), ("dark", "Dark"), ("system", "System")], id: \.0) { mode, label in
                     let selected = dashboardViewModel.themeMode == mode
-                    Button(action: { dashboardViewModel.setThemeMode(mode: mode) }) {
+                    Button(action: { dashboardViewModel.setThemeMode(mode) }) {
                         Text(label)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(selected ? .white : .primary)
@@ -287,7 +287,7 @@ struct ProfileView: View {
 
             Toggle("Enable Shift Reminders", isOn: Binding(
                 get: { dashboardViewModel.remindersEnabled },
-                set: { dashboardViewModel.setRemindersEnabled(enabled: $0) }
+                set: { dashboardViewModel.setRemindersEnabled($0) }
             ))
             .tint(.primaryGreen)
 
@@ -299,7 +299,7 @@ struct ProfileView: View {
                 HStack(spacing: 8) {
                     ForEach([(15, "15m"), (30, "30m"), (60, "1h"), (120, "2h")], id: \.0) { minutes, label in
                         let selected = dashboardViewModel.defaultReminderMinutes == minutes
-                        Button(action: { dashboardViewModel.setDefaultReminderMinutes(minutes: minutes) }) {
+                        Button(action: { dashboardViewModel.setDefaultReminderMinutes(minutes) }) {
                             Text(label)
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(selected ? .white : .primary)

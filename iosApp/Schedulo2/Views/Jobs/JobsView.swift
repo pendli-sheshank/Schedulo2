@@ -82,14 +82,14 @@ struct JobsView: View {
     // MARK: - Job Card
 
     private func jobCard(_ job: Job) -> some View {
-        let cycleStart = job.getStartOfCurrentCycle()
+        let cycleStart = Date(timeIntervalSince1970: Double(job.getStartOfCurrentCycle()) / 1000.0)
         let cycleEnd = Calendar.current.date(byAdding: .day, value: 7, to: cycleStart)!
         let now = Date()
         let jobShifts = dashboardViewModel.shifts.filter {
             $0.company.lowercased() == job.title.lowercased() &&
-            $0.startTime >= cycleStart &&
-            $0.startTime < cycleEnd &&
-            $0.startTime < now
+            $0.startDate >= cycleStart &&
+            $0.startDate < cycleEnd &&
+            $0.startDate < now
         }
 
         return Button(action: { populateForm(job); showDialog = true }) {
