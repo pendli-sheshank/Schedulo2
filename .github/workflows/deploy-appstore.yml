@@ -155,7 +155,18 @@ jobs:
           API_KEY_P8_BASE64: ${{ secrets.IOS_APPSTORE_API_KEY_P8_BASE64 }}
         run: |
           mkdir -p ~/private_keys
-          echo "$API_KEY_P8_BASE64" | base64 -d > ~/private_keys/AuthKey_${API_KEY_ID}.p8
+          printf '%s' "$API_KEY_P8_BASE64" | base64 -d > ~/private_keys/AuthKey_${API_KEY_ID}.p8
+          echo "=== Validating API key file ==="
+          KEY_FILE=~/private_keys/AuthKey_${API_KEY_ID}.p8
+          file "$KEY_FILE"
+          wc -c "$KEY_FILE"
+          head -1 "$KEY_FILE"
+          tail -1 "$KEY_FILE"
+          if ! head -1 "$KEY_FILE" | grep -q "BEGIN PRIVATE KEY"; then
+            echo "::warning::API key does not start with BEGIN PRIVATE KEY header"
+            echo "First bytes (hex):"
+            xxd "$KEY_FILE" | head -3
+          fi
 
       - name: Upload to TestFlight
         env:
@@ -166,7 +177,8 @@ jobs:
             --type ios \
             --file "$RUNNER_TEMP/export/Schedulo2.ipa" \
             --apiKey "$API_KEY_ID" \
-            --apiIssuer "$ISSUER_ID"
+            --apiIssuer "$ISSUER_ID" \
+            --apiKeyPath ~/private_keys
 
       - name: Clean up keychain
         if: always()
