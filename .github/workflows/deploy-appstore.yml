@@ -162,27 +162,11 @@ jobs:
           API_KEY_ID: ${{ secrets.IOS_APPSTORE_API_KEY_ID }}
           ISSUER_ID: ${{ secrets.IOS_APPSTORE_ISSUER_ID }}
         run: |
-          xcrun notarytool store-credentials "appstore" \
-            --key ~/private_keys/AuthKey_${API_KEY_ID}.p8 \
-            --key-id "$API_KEY_ID" \
-            --issuer "$ISSUER_ID" 2>/dev/null || true
-
-          xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/Schedulo2.xcarchive \
-            -exportPath $RUNNER_TEMP/testflight \
-            -exportOptionsPlist iosApp/ExportOptions.plist \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${API_KEY_ID}.p8 \
-            -authenticationKeyID "$API_KEY_ID" \
-            -authenticationKeyIssuerID "$ISSUER_ID" \
-            2>&1 || {
-              echo "xcodebuild upload failed, falling back to xcrun altool..."
-              xcrun altool --upload-app \
-                --type ios \
-                --file "$RUNNER_TEMP/export/Schedulo2.ipa" \
-                --apiKey "$API_KEY_ID" \
-                --apiIssuer "$ISSUER_ID"
-            }
+          xcrun altool --upload-app \
+            --type ios \
+            --file "$RUNNER_TEMP/export/Schedulo2.ipa" \
+            --apiKey "$API_KEY_ID" \
+            --apiIssuer "$ISSUER_ID"
 
       - name: Clean up keychain
         if: always()
