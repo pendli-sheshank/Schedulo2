@@ -26,17 +26,12 @@ jobs:
           sudo xcodebuild -runFirstLaunch
           echo "=== Available SDKs before platform install ==="
           xcodebuild -showsdks
-          echo "=== Checking iOS platform ==="
-          if xcodebuild -showsdks 2>/dev/null | grep -q iphoneos; then
-            echo "iOS SDK already available, skipping download"
-          else
-            echo "Downloading iOS platform..."
-            for i in 1 2 3; do
-              xcodebuild -downloadPlatform iOS && break
-              echo "Download attempt $i failed, retrying in $((i * 5))s..."
-              sleep $((i * 5))
-            done
-          fi
+          echo "=== Downloading iOS platform ==="
+          for i in 1 2 3; do
+            xcodebuild -downloadPlatform iOS && break
+            echo "Download attempt $i failed, retrying in $((i * 10))s..."
+            sleep $((i * 10))
+          done
           echo "=== Available SDKs after platform install ==="
           xcodebuild -showsdks
 
