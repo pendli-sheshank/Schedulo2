@@ -68,13 +68,17 @@ jobs:
         env:
           GOOGLE_SERVICE_PLIST_B64: ${{ secrets.IOS_GOOGLE_SERVICE_PLIST_BASE64 }}
 
-      - name: Inject signing configuration
+      - name: Inject signing configuration and build number
         env:
           DEVELOPMENT_TEAM: ${{ secrets.IOS_TEAM_ID }}
           PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          VERSION_CODE: ${{ github.run_number }}
         run: |
           sed -i '' "s/INJECT_DEVELOPMENT_TEAM/$DEVELOPMENT_TEAM/g" iosApp/project.yml
           sed -i '' "s/INJECT_PROVISIONING_PROFILE/$PROVISIONING_PROFILE_NAME/g" iosApp/project.yml
+          BUILD_NUMBER=$(( VERSION_CODE + 100 ))
+          sed -i '' "s/CURRENT_PROJECT_VERSION: \"[0-9]*\"/CURRENT_PROJECT_VERSION: \"$BUILD_NUMBER\"/" iosApp/project.yml
+          echo "Build number set to: $BUILD_NUMBER"
 
       - name: Generate Xcode project
         working-directory: iosApp
