@@ -301,8 +301,7 @@ private struct CalendarMonthView: View {
                                             }
                                         }
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .aspectRatio(1, contentMode: .fit)
+                                    .frame(maxWidth: .infinity, minHeight: 48)
                                     .background(
                                         RoundedRectangle(cornerRadius: 8)
                                             .fill(isSelected ? Color.primaryGreen : isToday ? Color.primaryGreen.opacity(0.12) : Color.clear)
@@ -310,7 +309,7 @@ private struct CalendarMonthView: View {
                                 }
                                 .buttonStyle(.plain)
                             } else {
-                                Spacer().frame(maxWidth: .infinity).aspectRatio(1, contentMode: .fit)
+                                Spacer().frame(maxWidth: .infinity, minHeight: 48)
                             }
                         }
                     }
