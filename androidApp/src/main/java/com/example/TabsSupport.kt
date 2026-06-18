@@ -1486,7 +1486,8 @@ fun ProfileScreen(
     dashboardViewModel: DashboardViewModel,
     authViewModel: AuthViewModel? = null,
     onBack: () -> Unit,
-    onNavigateToInsights: () -> Unit = {}
+    onNavigateToInsights: () -> Unit = {},
+    onNavigateToTeam: () -> Unit = {}
 ) {
     val currentCompany by dashboardViewModel.defaultCompany.collectAsState()
     val currentRate by dashboardViewModel.defaultRate.collectAsState()
@@ -1901,6 +1902,25 @@ fun ProfileScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Earnings Insights", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
                         Text("Charts, trends & analytics", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onNavigateToTeam() },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Groups, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Team Management", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                        Text("Create teams, assign shifts & invite members", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }

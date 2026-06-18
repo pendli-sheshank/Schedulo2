@@ -68,6 +68,9 @@ class AuthViewModel : ViewModel() {
     private val _currentUserEmail = MutableStateFlow(auth?.currentUser?.email ?: "")
     val currentUserEmail: StateFlow<String> = _currentUserEmail.asStateFlow()
 
+    private val _currentUserId = MutableStateFlow(auth?.currentUser?.uid ?: "")
+    val currentUserId: StateFlow<String> = _currentUserId.asStateFlow()
+
     private var authStateListener: FirebaseAuth.AuthStateListener? = null
 
     init {
@@ -80,9 +83,11 @@ class AuthViewModel : ViewModel() {
                     val user = fireAuth.currentUser
                     if (user != null) {
                         _currentUserEmail.value = user.email ?: ""
+                        _currentUserId.value = user.uid
                         _authState.value = AuthState.Authenticated
                     } else {
                         _currentUserEmail.value = ""
+                        _currentUserId.value = ""
                         if (_authState.value is AuthState.Authenticated) {
                             _authState.value = AuthState.Idle
                         }
