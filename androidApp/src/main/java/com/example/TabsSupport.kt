@@ -1644,6 +1644,37 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Biometric Login toggle
+            val context = LocalContext.current
+            val biometricAvailable = remember { authViewModel?.isBiometricAvailable(context) == true }
+            if (biometricAvailable) {
+                val biometricOn by authViewModel?.biometricEnabled?.collectAsState() ?: remember { mutableStateOf(false) }
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Fingerprint, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Biometric Login", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                            Text("Use fingerprint or face to sign in", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = biometricOn,
+                            onCheckedChange = { authViewModel?.setBiometricEnabled(context, it) },
+                            colors = SwitchDefaults.colors(checkedTrackColor = PrimaryGreen)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Notification Preferences card
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),

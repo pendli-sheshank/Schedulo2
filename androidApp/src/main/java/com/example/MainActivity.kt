@@ -70,6 +70,11 @@ class MainActivity : ComponentActivity() {
             val dashboardViewModel: DashboardViewModel = viewModel()
             val themeMode by dashboardViewModel.themeMode.collectAsState()
 
+            // Initialize biometric preference from SharedPreferences
+            LaunchedEffect(Unit) {
+                authViewModel.initBiometricPreference(this@MainActivity)
+            }
+
             MyApplicationTheme(themeMode = themeMode) {
                 val startDestination = remember {
                     if (authState is AuthState.Authenticated) "dashboard" else "login"

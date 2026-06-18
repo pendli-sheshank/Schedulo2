@@ -1,4 +1,5 @@
 import SwiftUI
+import LocalAuthentication
 
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -58,6 +59,11 @@ struct ProfileView: View {
 
                     // Notifications
                     notificationsCard
+
+                    // Biometric Login
+                    if authViewModel.biometricAvailable {
+                        biometricCard
+                    }
 
                     // Change Password
                     changePasswordCard
@@ -313,6 +319,42 @@ struct ProfileView: View {
                     }
                 }
             }
+        }
+        .padding(16)
+        .background(settingsCardBackground)
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Biometric Card
+
+    private var biometricCard: some View {
+        let biometryLabel = authViewModel.biometryType == .faceID ? "Face ID" : "Touch ID"
+        let biometryIcon = authViewModel.biometryType == .faceID ? "faceid" : "touchid"
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: biometryIcon)
+                    .foregroundColor(.primaryGreen)
+                    .font(.system(size: 16))
+                Text("Biometric Login")
+                    .font(.system(size: 16, weight: .bold))
+            }
+
+            Toggle("Use \(biometryLabel) to sign in", isOn: Binding(
+                get: { authViewModel.biometricEnabled },
+                set: { newValue in
+                    if newValue {
+                        authViewModel.enableBiometric { _ in }
+                    } else {
+                        authViewModel.disableBiometric()
+                    }
+                }
+            ))
+            .tint(.primaryGreen)
+
+            Text("Quickly sign in using \(biometryLabel) instead of your password")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
         }
         .padding(16)
         .background(settingsCardBackground)

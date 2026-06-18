@@ -1,5 +1,10 @@
 package com.example
 
+import android.content.Context
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.EmailAuthProvider
@@ -281,6 +286,59 @@ class AuthViewModel : ViewModel() {
         } catch (e: Exception) {
             _authState.value = AuthState.Error("Failed to logout")
         }
+    }
+
+    // --- Biometric Login ---
+
+    private val _biometricEnabled = MutableStateFlow(false)
+    val biometricEnabled: StateFlow<Boolean> = _biometricEnabled.asStateFlow()
+
+    fun initBiometricPreference(context: Context) {
+        val prefs = context.getSharedPreferences("schedulo_prefs", Context.MODE_PRIVATE)
+        _biometricEnabled.value = prefs.getBoolean("biometric_enabled", false)
+    }
+
+    fun setBiometricEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences("schedulo_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("biometric_enabled", enabled).apply()
+        _biometricEnabled.value = enabled
+    }
+
+    fun isBiometricAvailable(context: Context): Boolean {
+        val biometricManager = BiometricManager.from(context)
+        return biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    fun showBiometricPrompt(activity: FragmentActivity, onSuccess: () -> Unit) {
+        val executor = ContextCompat.getMainExecutor(activity)
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                super.onAuthenticationSucceeded(result)
+                onSuccess()
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                super.onAuthenticationError(errorCode, errString)
+                if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                    errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                    _authState.value = AuthState.Error("Biometric error: $errString")
+                }
+            }
+
+            override fun onAuthenticationFailed() {
+                super.onAuthenticationFailed()
+                // Individual attempt failed; the system will allow retries automatically
+            }
+        }
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Biometric Login")
+            .setSubtitle("Use your fingerprint or face to sign in")
+            .setNegativeButtonText("Use password")
+            .build()
+
+        BiometricPrompt(activity, executor, callback).authenticate(promptInfo)
     }
 
     override fun onCleared() {
