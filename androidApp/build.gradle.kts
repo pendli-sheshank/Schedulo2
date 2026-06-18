@@ -110,6 +110,8 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  implementation("androidx.glance:glance-appwidget:1.1.0")
+  implementation("androidx.glance:glance-material3:1.1.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import com.example.widget.WidgetDataProvider
 import com.google.firebase.firestore.ListenerRegistration
 
 const val FIRESTORE_DB_NAME = "schedulo2"
@@ -131,6 +132,12 @@ fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, D
 class DashboardViewModel : ViewModel() {
     private val auth by lazy { try { FirebaseAuth.getInstance() } catch(e:Exception){null} }
     private val db by lazy { try { FirebaseFirestore.getInstance(FirebaseApp.getInstance(), FIRESTORE_DB_NAME) } catch(e:Exception){null} }
+
+    private var appContext: android.content.Context? = null
+
+    fun setAppContext(context: android.content.Context) {
+        appContext = context.applicationContext
+    }
 
     private val _userId = MutableStateFlow(auth?.currentUser?.uid ?: "")
     val userId = _userId.asStateFlow()
@@ -478,6 +485,9 @@ class DashboardViewModel : ViewModel() {
                         doc.toObject(Shift::class.java)?.copy(id = doc.id)
                     }.sortedByDescending { it.startTime }
                     _shifts.value = list
+                    appContext?.let { ctx ->
+                        try { WidgetDataProvider.updateWidgetData(ctx, list) } catch (_: Exception) {}
+                    }
                 }
             }
     }
