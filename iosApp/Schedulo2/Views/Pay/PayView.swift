@@ -245,30 +245,30 @@ struct PayView: View {
         }()
 
         return VStack(alignment: .leading, spacing: 0) {
-            Button(action: { withAnimation { expandedCycleStart = isExpanded ? nil : cycle.startDate } }) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(rangeStr)
-                            .font(.system(size: 16, weight: .bold))
-                        Text("\(cycle.shifts.count) Work Shift\(cycle.shifts.count == 1 ? "" : "s")")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("$\(cycle.totalEarned, specifier: "%.2f")")
-                            .font(.system(size: 18, weight: .heavy))
-                            .foregroundColor(.primaryGreen)
-                        Text(statusLabel)
-                            .font(.system(size: 10, weight: .black))
-                            .foregroundColor(statusColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(statusColor.opacity(0.12)))
-                    }
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rangeStr)
+                        .font(.system(size: 16, weight: .bold))
+                    Text("\(cycle.shifts.count) Work Shift\(cycle.shifts.count == 1 ? "" : "s")")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
                 }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("$\(cycle.totalEarned, specifier: "%.2f")")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundColor(.primaryGreen)
+                    Text(statusLabel)
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundColor(statusColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(statusColor.opacity(0.12)))
+                }
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
             }
-            .buttonStyle(.plain)
 
             // Mark as paid
             if cycle.status == .due {
@@ -317,6 +317,10 @@ struct PayView: View {
                         )
                 )
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation { expandedCycleStart = isExpanded ? nil : cycle.startDate }
+        }
     }
 
     private func shiftDetailRow(_ shift: Shift, cycle: PayCycleInfo) -> some View {
