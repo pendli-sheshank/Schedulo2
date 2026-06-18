@@ -64,6 +64,12 @@ struct NextShiftWidgetView: View {
     var entry: ShiftEntry
     @Environment(\.widgetFamily) var family
 
+    private static let timeFormatter: DateFormatter = {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "h:mm a"
+        return fmt
+    }()
+
     var body: some View {
         switch family {
         case .systemSmall:
@@ -104,9 +110,7 @@ struct NextShiftWidgetView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(Color(red: 0.133, green: 0.329, blue: 0.243))
 
-                let fmt = DateFormatter()
-                let _ = fmt.dateFormat = "h:mm a"
-                Text(fmt.string(from: start))
+                Text(Self.timeFormatter.string(from: start))
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             } else {
@@ -177,11 +181,12 @@ struct NextShiftWidgetView: View {
 }
 
 extension View {
+    @ViewBuilder
     func widgetBackground() -> some View {
         if #available(iOSApplicationExtension 17.0, *) {
-            return self.containerBackground(.fill, for: .widget)
+            self.containerBackground(.fill, for: .widget)
         } else {
-            return self.background(Color(UIColor.systemBackground))
+            self.background(Color(UIColor.systemBackground))
         }
     }
 }
