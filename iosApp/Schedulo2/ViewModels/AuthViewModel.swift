@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import FirebaseAuth
+import LocalAuthentication
 
 // MARK: - State Enums
 
@@ -41,6 +42,11 @@ final class AuthViewModel: ObservableObject {
     @Published var passwordChangeState: PasswordChangeState = .idle
     @Published var resetState: ResetState = .idle
     @Published var deleteState: DeleteAccountState = .idle
+    @Published var biometricAvailable: Bool = false
+    @Published var biometricEnabled: Bool {
+        didSet { UserDefaults.standard.set(biometricEnabled, forKey: "biometricEnabled") }
+    }
+    @Published var shouldPromptBiometric: Bool = false
 
     private let service = FirebaseService.shared
     private var cancellables = Set<AnyCancellable>()
@@ -74,7 +80,16 @@ final class AuthViewModel: ObservableObject {
         passwordChangeState == .success
     }
 
+    var biometryType: LABiometryType {
+        let context = LAContext()
+        _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+        return context.biometryType
+    }
+
     init() {
+        biometricEnabled = UserDefaults.standard.bool(forKey: "biometricEnabled")
+        checkBiometricAvailability()
+
         // Set initial state
         if let user = service.currentUser {
             currentUserEmail = user.email ?? ""
@@ -113,6 +128,9 @@ final class AuthViewModel: ObservableObject {
                 try await service.signIn(email: trimmed, password: password)
                 authState = .authenticated
                 currentUserEmail = service.currentUser?.email ?? trimmed
+                if biometricAvailable && !biometricEnabled {
+                    shouldPromptBiometric = true
+                }
             } catch {
                 authState = .error(error.localizedDescription)
             }
@@ -229,6 +247,55 @@ final class AuthViewModel: ObservableObject {
 
     func resetResetState() {
         resetState = .idle
+    }
+
+    // MARK: - Biometric Authentication
+
+    func checkBiometricAvailability() {
+        let context = LAContext()
+        var error: NSError?
+        biometricAvailable = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    }
+
+    func authenticateWithBiometric() {
+        let context = LAContext()
+        let reason = "Log in to Schedulo"
+
+        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
+            DispatchQueue.main.async {
+                if success {
+                    // Biometric succeeded — restore the existing Firebase session
+                    if let user = self.service.currentUser {
+                        self.currentUserEmail = user.email ?? ""
+                        self.authState = .authenticated
+                    } else {
+                        self.authState = .error("No saved session. Please sign in with email and password.")
+                    }
+                } else {
+                    if let laError = error as? LAError, laError.code != .userCancel {
+                        self.authState = .error("Biometric authentication failed.")
+                    }
+                }
+            }
+        }
+    }
+
+    func enableBiometric(completion: @escaping (Bool) -> Void) {
+        let context = LAContext()
+        let reason = "Confirm your identity to enable biometric login"
+
+        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, _ in
+            DispatchQueue.main.async {
+                if success {
+                    self.biometricEnabled = true
+                }
+                completion(success)
+            }
+        }
+    }
+
+    func disableBiometric() {
+        biometricEnabled = false
     }
 
     // MARK: - Helpers

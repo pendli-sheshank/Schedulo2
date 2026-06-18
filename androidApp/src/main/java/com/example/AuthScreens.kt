@@ -1,5 +1,6 @@
 package com.example
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +28,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.util.Patterns
+import androidx.compose.ui.platform.LocalContext
+import androidx.fragment.app.FragmentActivity
 import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.SecondaryGreen
 
@@ -277,6 +280,46 @@ fun LoginScreen(
 
                     TextButton(onClick = { resetEmail = email.trim(); showForgotPasswordDialog = true }) {
                         Text("Forgot Password?", fontSize = 13.sp, color = PrimaryGreen, fontWeight = FontWeight.Medium)
+                    }
+
+                    // Biometric login button
+                    val context = LocalContext.current
+                    val biometricAvailable = remember { viewModel.isBiometricAvailable(context) }
+                    val biometricEnabled by viewModel.biometricEnabled.collectAsState()
+
+                    if (biometricAvailable && biometricEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = {
+                                val activity = context as? FragmentActivity
+                                if (activity != null) {
+                                    viewModel.showBiometricPrompt(activity) {
+                                        onNavigateToDashboard()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, PrimaryGreen)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fingerprint,
+                                contentDescription = "Biometric Login",
+                                tint = PrimaryGreen,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Sign in with Biometrics",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryGreen
+                            )
+                        }
                     }
                 }
             }

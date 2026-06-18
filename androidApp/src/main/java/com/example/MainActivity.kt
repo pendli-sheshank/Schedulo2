@@ -68,7 +68,14 @@ class MainActivity : ComponentActivity() {
             val authViewModel: AuthViewModel = viewModel()
             val authState by authViewModel.authState.collectAsState()
             val dashboardViewModel: DashboardViewModel = viewModel()
+            val teamViewModel: TeamViewModel = viewModel()
+            dashboardViewModel.setAppContext(this@MainActivity)
             val themeMode by dashboardViewModel.themeMode.collectAsState()
+
+            // Initialize biometric preference from SharedPreferences
+            LaunchedEffect(Unit) {
+                authViewModel.initBiometricPreference(this@MainActivity)
+            }
 
             MyApplicationTheme(themeMode = themeMode) {
                 val startDestination = remember {
@@ -106,7 +113,10 @@ class MainActivity : ComponentActivity() {
                     composable("jobs") { MainLayout(navController, "jobs", authViewModel, dashboardViewModel) }
                     composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel) }
                     composable("profile") {
-                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") })
+                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") }, onNavigateToTeam = { navController.navigate("team") })
+                    }
+                    composable("team") {
+                        TeamScreen(teamViewModel = teamViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
                     }
                     composable("insights") {
                         InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })

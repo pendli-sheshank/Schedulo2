@@ -93,5 +93,57 @@ service cloud.firestore {
         && request.resource.data.amount is number;
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
+
+    // Teams: owner can manage, members can read
+    match /teams/{teamId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.inviteCode is string;
+      allow update: if request.auth != null
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 100;
+      allow delete: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Team Members: managers can manage, members can read their own
+    match /team_members/{membershipId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.userId is string
+        && request.resource.data.teamId is string
+        && request.resource.data.role is string
+        && (request.resource.data.role == "manager" || request.resource.data.role == "member");
+      allow update: if request.auth != null
+        && request.resource.data.role is string
+        && (request.resource.data.role == "manager" || request.resource.data.role == "member");
+      allow delete: if request.auth != null;
+    }
+
+    // Team Shifts: managers can assign, members can read/accept/decline their own
+    match /team_shifts/{shiftId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.teamId is string
+        && request.resource.data.assignedTo is string
+        && request.resource.data.assignedBy == request.auth.uid
+        && request.resource.data.company is string
+        && request.resource.data.startTime is int
+        && request.resource.data.endTime is int
+        && request.resource.data.endTime > request.resource.data.startTime
+        && request.resource.data.status is string
+        && (request.resource.data.status == "assigned" || request.resource.data.status == "accepted" || request.resource.data.status == "declined");
+      allow update: if request.auth != null
+        && (resource.data.assignedBy == request.auth.uid || resource.data.assignedTo == request.auth.uid)
+        && request.resource.data.status is string
+        && (request.resource.data.status == "assigned" || request.resource.data.status == "accepted" || request.resource.data.status == "declined");
+      allow delete: if request.auth != null
+        && resource.data.assignedBy == request.auth.uid;
+    }
   }
 }

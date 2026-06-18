@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import com.example.widget.WidgetDataProvider
 import com.google.firebase.firestore.ListenerRegistration
 
 const val FIRESTORE_DB_NAME = "schedulo2"
@@ -131,6 +132,12 @@ fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, D
 class DashboardViewModel : ViewModel() {
     private val auth by lazy { try { FirebaseAuth.getInstance() } catch(e:Exception){null} }
     private val db by lazy { try { FirebaseFirestore.getInstance(FirebaseApp.getInstance(), FIRESTORE_DB_NAME) } catch(e:Exception){null} }
+
+    private var appContext: android.content.Context? = null
+
+    fun setAppContext(context: android.content.Context) {
+        appContext = context.applicationContext
+    }
 
     private val _userId = MutableStateFlow(auth?.currentUser?.uid ?: "")
     val userId = _userId.asStateFlow()
@@ -478,6 +485,9 @@ class DashboardViewModel : ViewModel() {
                         doc.toObject(Shift::class.java)?.copy(id = doc.id)
                     }.sortedByDescending { it.startTime }
                     _shifts.value = list
+                    appContext?.let { ctx ->
+                        try { WidgetDataProvider.updateWidgetData(ctx, list) } catch (_: Exception) {}
+                    }
                 }
             }
     }
@@ -486,7 +496,7 @@ class DashboardViewModel : ViewModel() {
         addShift(company, startTime, endTime, hourlyRate, false, 0.0, 30, "")
     }
 
-    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "") {
+    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", context: android.content.Context? = null) {
         val uid = auth?.currentUser?.uid
         val database = db
         if (uid == null || database == null) {
@@ -509,6 +519,11 @@ class DashboardViewModel : ViewModel() {
         )
         _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         database.collection("shifts").document(shift.id).set(shift)
+            .addOnSuccessListener {
+                if (context != null) {
+                    try { CalendarService.syncShiftToCalendar(context, shift) } catch (_: Exception) {}
+                }
+            }
             .addOnFailureListener { e ->
                 _shifts.value = _shifts.value.filter { it.id != shift.id }
                 _syncError.value = "Failed to save shift: ${e.message}"
@@ -519,7 +534,7 @@ class DashboardViewModel : ViewModel() {
         updateShift(shiftId, company, startTime, endTime, hourlyRate, false, 0.0, 30, "")
     }
 
-    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "") {
+    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", context: android.content.Context? = null) {
         val shift = shifts.value.find { it.id == shiftId } ?: return
         val database = db
         if (database == null) {
@@ -541,13 +556,18 @@ class DashboardViewModel : ViewModel() {
         val previousShifts = _shifts.value
         _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
         database.collection("shifts").document(shiftId).set(updated)
+            .addOnSuccessListener {
+                if (context != null) {
+                    try { CalendarService.syncShiftToCalendar(context, updated) } catch (_: Exception) {}
+                }
+            }
             .addOnFailureListener { e ->
                 _shifts.value = previousShifts
                 _syncError.value = "Failed to update shift: ${e.message}"
             }
     }
 
-    fun deleteShift(shiftId: String) {
+    fun deleteShift(shiftId: String, context: android.content.Context? = null) {
         val database = db
         if (database == null) {
             _syncError.value = "Please sign in to delete shifts."
@@ -556,6 +576,11 @@ class DashboardViewModel : ViewModel() {
         val previousShifts = _shifts.value
         _shifts.value = _shifts.value.filter { it.id != shiftId }
         database.collection("shifts").document(shiftId).delete()
+            .addOnSuccessListener {
+                if (context != null) {
+                    try { CalendarService.removeShiftFromCalendar(context, shiftId) } catch (_: Exception) {}
+                }
+            }
             .addOnFailureListener { e ->
                 _shifts.value = previousShifts
                 _syncError.value = "Failed to delete shift: ${e.message}"
@@ -1076,7 +1101,7 @@ fun AddShiftScreen(
                 actions = {
                     if (existingShift != null) {
                         IconButton(onClick = { 
-                            viewModel.deleteShift(existingShift.id)
+                            viewModel.deleteShift(existingShift.id, context)
                             onBack()
                         }) {
                             Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
@@ -1341,14 +1366,14 @@ fun AddShiftScreen(
                     val effectiveReminder = if (remindersOn) reminderMinutes else 0
 
                     if (existingShift != null) {
-                        viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes)
+                        viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes, context)
                         if (effectiveReminder > 0) {
                             NotificationHelper.scheduleReminder(context, Shift(id = existingShift.id, company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = effectiveReminder))
                         } else {
                             NotificationHelper.cancelReminder(context, existingShift.id)
                         }
                     } else {
-                        viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes)
+                        viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes, context)
                         if (effectiveReminder > 0) {
                             NotificationHelper.scheduleReminder(context, Shift(company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = effectiveReminder))
                         }
@@ -1369,7 +1394,7 @@ fun AddShiftScreen(
                                 }.timeInMillis
                                 val recurEnd = recurStart + shiftDuration
                                 val recurShift = Shift(company = company, startTime = recurStart, endTime = recurEnd, reminderBeforeMinutes = effectiveReminder)
-                                viewModel.addShift(company, recurStart, recurEnd, hourly, isGig, earned, effectiveReminder, trimmedNotes)
+                                viewModel.addShift(company, recurStart, recurEnd, hourly, isGig, earned, effectiveReminder, trimmedNotes, context)
                                 if (effectiveReminder > 0) NotificationHelper.scheduleReminder(context, recurShift)
                             }
                         }

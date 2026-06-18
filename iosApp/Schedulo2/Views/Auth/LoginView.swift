@@ -1,4 +1,5 @@
 import SwiftUI
+import LocalAuthentication
 
 struct LoginView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -181,6 +182,32 @@ struct LoginView: View {
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.primaryGreen)
                             .padding(.top, 8)
+
+                            // Biometric Login
+                            if authViewModel.biometricAvailable && authViewModel.biometricEnabled {
+                                VStack(spacing: 8) {
+                                    Divider()
+                                        .padding(.vertical, 8)
+
+                                    Button(action: {
+                                        authViewModel.authenticateWithBiometric()
+                                    }) {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: authViewModel.biometryType == .faceID ? "faceid" : "touchid")
+                                                .font(.system(size: 22))
+                                            Text(authViewModel.biometryType == .faceID ? "Sign in with Face ID" : "Sign in with Touch ID")
+                                                .font(.system(size: 15, weight: .semibold))
+                                        }
+                                        .foregroundColor(.primaryGreen)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 48)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(Color.primaryGreen, lineWidth: 1.5)
+                                        )
+                                    }
+                                }
+                            }
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 32)
