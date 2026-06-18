@@ -14,27 +14,28 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            TabView(selection: $selectedTab) {
-                DashboardView(
-                    onEditShift: { id in editingShiftId = id; showAddShift = true },
-                    onNavigateToProfile: { showProfile = true }
-                )
-                .tag(0)
-
-                PlanView(
-                    onEditShift: { id in editingShiftId = id; showAddShift = true },
-                    onAddShift: { editingShiftId = nil; showAddShift = true }
-                )
-                .tag(1)
-
-                JobsView()
-                    .tag(2)
-
-                PayView()
-                    .tag(3)
+            Group {
+                switch selectedTab {
+                case 0:
+                    DashboardView(
+                        onEditShift: { id in editingShiftId = id; showAddShift = true },
+                        onNavigateToProfile: { showProfile = true }
+                    )
+                case 1:
+                    PlanView(
+                        onEditShift: { id in editingShiftId = id; showAddShift = true },
+                        onAddShift: { editingShiftId = nil; showAddShift = true }
+                    )
+                case 2:
+                    JobsView()
+                case 3:
+                    PayView()
+                default:
+                    EmptyView()
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom) {
-                // Custom tab bar
                 HStack {
                     TabBarButton(icon: "house.fill", label: "Home", isSelected: selectedTab == 0) {
                         selectedTab = 0
@@ -78,7 +79,7 @@ struct MainTabView: View {
                         .foregroundColor(.white)
                 }
             }
-            .offset(y: -16)
+            .padding(.bottom, 20)
             .confirmationDialog("Add Shift", isPresented: $showAddMenu) {
                 Button("Add Single Shift") {
                     editingShiftId = nil

@@ -7,7 +7,6 @@ struct PayView: View {
     @State private var expandedCycleStart: Date?
     @State private var cycleToConfirmPaid: PayCycleInfo?
     @State private var showExportSheet = false
-    @State private var exportText = ""
 
     private var cycles: [PayCycleInfo] {
         buildPayCycles()
@@ -84,7 +83,7 @@ struct PayView: View {
 
                 // Export button
                 if !dashboardViewModel.shifts.isEmpty {
-                    Button(action: { prepareExport() }) {
+                    Button(action: { showExportSheet = true }) {
                         HStack {
                             Image(systemName: "square.and.arrow.up")
                             Text("Export Report")
@@ -106,7 +105,8 @@ struct PayView: View {
             }
         }
         .sheet(isPresented: $showExportSheet) {
-            ShareSheet(activityItems: [exportText])
+            ExportReportView()
+                .environmentObject(dashboardViewModel)
         }
         .alert("Confirm Payment", isPresented: Binding(
             get: { cycleToConfirmPaid != nil },
@@ -378,33 +378,6 @@ struct PayView: View {
                 .fill(Color(UIColor.secondarySystemBackground).opacity(0.3))
         )
         .padding(.horizontal, 16)
-    }
-
-    // MARK: - Export
-
-    private func prepareExport() {
-        var report = "SCHEDULO PAY REPORT\n"
-        report += String(repeating: "-", count: 40) + "\n\n"
-
-        let timeFmt = DateFormatter()
-        timeFmt.dateFormat = "hh:mm a"
-        let dayFmt = DateFormatter()
-        dayFmt.dateFormat = "EEE, MMM dd"
-
-        for cycle in cycles {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "MMM dd, yyyy"
-            report += "Pay Period: \(fmt.string(from: cycle.startDate)) - \(fmt.string(from: cycle.endDate.addingTimeInterval(-1)))\n"
-            for shift in cycle.shifts {
-                let status = shift.isPaid ? "[PAID]" : ""
-                report += "\(dayFmt.string(from: shift.startDate)): \(timeFmt.string(from: shift.startDate)) - \(timeFmt.string(from: shift.endDate)) (\(String(format: "%.1f", shift.durationHours)) hrs) $\(String(format: "%.2f", shift.totalEarned)) \(status)\n"
-            }
-            report += "Total: \(String(format: "%.1f", cycle.shifts.reduce(0) { $0 + $1.durationHours })) hours - $\(String(format: "%.2f", cycle.totalEarned))\n"
-            report += "Paid: \(cycle.shifts.filter { $0.isPaid }.count)/\(cycle.shifts.count) shifts\n\n"
-        }
-
-        exportText = report
-        showExportSheet = true
     }
 
     // MARK: - Build Pay Cycles
