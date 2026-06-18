@@ -78,6 +78,7 @@ jobs:
           sed -i '' "s/INJECT_PROVISIONING_PROFILE/$PROVISIONING_PROFILE_NAME/g" iosApp/project.yml
           BUILD_NUMBER=$(( VERSION_CODE + 100 ))
           sed -i '' "s/CURRENT_PROJECT_VERSION: \"[0-9]*\"/CURRENT_PROJECT_VERSION: \"$BUILD_NUMBER\"/" iosApp/project.yml
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
           echo "Build number set to: $BUILD_NUMBER"
 
       - name: Generate Xcode project
@@ -130,6 +131,7 @@ jobs:
       - name: Build archive
         working-directory: iosApp
         run: |
+          echo "Building with CURRENT_PROJECT_VERSION=${{ env.BUILD_NUMBER }}"
           xcodebuild archive \
             -project Schedulo2.xcodeproj \
             -scheme "$SCHEME" \
@@ -138,7 +140,8 @@ jobs:
             -destination generic/platform=iOS \
             -archivePath $RUNNER_TEMP/Schedulo2.xcarchive \
             -clonedSourcePackagesDirPath $RUNNER_TEMP/spm-cache \
-            COMPILER_INDEX_STORE_ENABLE=NO
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CURRENT_PROJECT_VERSION=${{ env.BUILD_NUMBER }}
 
       - name: Prepare ExportOptions.plist
         env:
@@ -191,12 +194,17 @@ jobs:
           API_KEY_ID: ${{ secrets.IOS_APPSTORE_API_KEY_ID }}
           ISSUER_ID: ${{ secrets.IOS_APPSTORE_ISSUER_ID }}
         run: |
+          set -o pipefail
           xcrun altool --upload-app \
             --type ios \
             --file "$RUNNER_TEMP/export/Schedulo2.ipa" \
             --apiKey "$API_KEY_ID" \
             --apiIssuer "$ISSUER_ID" \
-            --apiKeyPath ~/private_keys
+            --apiKeyPath ~/private_keys 2>&1 | tee /tmp/altool-output.txt
+          if grep -q "ERROR:" /tmp/altool-output.txt; then
+            echo "::error::TestFlight upload failed - see altool output above"
+            exit 1
+          fi
 
       - name: Clean up keychain
         if: always()
