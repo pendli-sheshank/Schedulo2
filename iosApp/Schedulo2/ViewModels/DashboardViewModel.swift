@@ -164,6 +164,10 @@ final class DashboardViewModel: ObservableObject {
         )
         shifts = (shifts + [shift]).sorted { $0.startTime > $1.startTime }
         service.addShift(shift)
+
+        if CalendarService.shared.calendarSyncEnabled {
+            CalendarService.shared.syncShiftToCalendar(shift: shift)
+        }
     }
 
     func updateShift(shiftId: String, company: String, startTime: Int64, endTime: Int64, hourlyRate: Double, isGig: Bool, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "") {
@@ -182,11 +186,19 @@ final class DashboardViewModel: ObservableObject {
 
         shifts = shifts.map { $0.id == shiftId ? updated : $0 }.sorted { $0.startTime > $1.startTime }
         service.updateShift(updated)
+
+        if CalendarService.shared.calendarSyncEnabled {
+            CalendarService.shared.syncShiftToCalendar(shift: updated)
+        }
     }
 
     func deleteShift(shiftId: String) {
         shifts = shifts.filter { $0.id != shiftId }
         service.deleteShift(shiftId)
+
+        if CalendarService.shared.calendarSyncEnabled {
+            CalendarService.shared.removeShiftFromCalendar(shiftId: shiftId)
+        }
     }
 
     func toggleShiftPaidStatus(shiftId: String, isPaid: Bool) {

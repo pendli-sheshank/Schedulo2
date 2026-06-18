@@ -1,5 +1,6 @@
 import SwiftUI
 import LocalAuthentication
+import EventKit
 
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -17,6 +18,10 @@ struct ProfileView: View {
     @State private var showDeleteAccount = false
     @State private var showReauthDialog = false
     @State private var deletePassword = ""
+    @State private var showTeam = false
+
+    @ObservedObject private var calendarService = CalendarService.shared
+    @State private var availableCalendars: [EKCalendar] = []
 
     private var displayName: String {
         let name = dashboardViewModel.userName
@@ -65,8 +70,14 @@ struct ProfileView: View {
                         biometricCard
                     }
 
+                    // Calendar Sync
+                    calendarSyncCard
+
                     // Change Password
                     changePasswordCard
+
+                    // Team Management
+                    teamCard
 
                     // Insights
                     insightsCard
@@ -120,6 +131,10 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showChangePassword) {
             changePasswordSheet
+        }
+        .sheet(isPresented: $showTeam) {
+            TeamView()
+                .environmentObject(TeamViewModel())
         }
         .alert("Delete Account", isPresented: $showDeleteAccount) {
             Button("Delete", role: .destructive) {
@@ -361,6 +376,78 @@ struct ProfileView: View {
         .padding(.horizontal, 16)
     }
 
+    // MARK: - Calendar Sync Card
+
+    private var calendarSyncCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "calendar")
+                    .foregroundColor(.primaryGreen)
+                    .font(.system(size: 16))
+                Text("Calendar Sync")
+                    .font(.system(size: 16, weight: .bold))
+            }
+
+            Toggle("Sync shifts to calendar", isOn: Binding(
+                get: { calendarService.calendarSyncEnabled },
+                set: { newValue in
+                    if newValue {
+                        Task {
+                            let granted = await calendarService.requestAccess()
+                            await MainActor.run {
+                                if granted {
+                                    calendarService.calendarSyncEnabled = true
+                                    availableCalendars = calendarService.getAvailableCalendars()
+                                    calendarService.syncAllShifts(shifts: dashboardViewModel.shifts)
+                                } else {
+                                    calendarService.calendarSyncEnabled = false
+                                }
+                            }
+                        }
+                    } else {
+                        calendarService.removeAllSyncedEvents()
+                        calendarService.calendarSyncEnabled = false
+                    }
+                }
+            ))
+            .tint(.primaryGreen)
+
+            if calendarService.calendarSyncEnabled {
+                if !availableCalendars.isEmpty {
+                    Text("Sync to Calendar")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+
+                    Picker("Calendar", selection: Binding(
+                        get: { calendarService.selectedCalendarIdentifier ?? "" },
+                        set: { newValue in
+                            calendarService.selectedCalendarIdentifier = newValue.isEmpty ? nil : newValue
+                        }
+                    )) {
+                        Text("Default Calendar").tag("")
+                        ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                            Text(calendar.title).tag(calendar.calendarIdentifier)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.primaryGreen)
+                }
+            }
+
+            Text("Automatically add your shifts to the device calendar")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+        .padding(16)
+        .background(settingsCardBackground)
+        .padding(.horizontal, 16)
+        .onAppear {
+            if calendarService.calendarSyncEnabled {
+                availableCalendars = calendarService.getAvailableCalendars()
+            }
+        }
+    }
+
     // MARK: - Change Password Card
 
     private var changePasswordCard: some View {
@@ -389,6 +476,31 @@ struct ProfileView: View {
     }
 
     // MARK: - Insights Card
+
+    private var teamCard: some View {
+        Button(action: { showTeam = true }) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.3.fill")
+                    .foregroundColor(.primaryGreen)
+                    .font(.system(size: 16))
+                VStack(alignment: .leading) {
+                    Text("Team Management")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Create or join a team, assign shifts")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
+            .padding(16)
+            .background(settingsCardBackground)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+    }
 
     private var insightsCard: some View {
         Button(action: onNavigateToInsights) {

@@ -1,6 +1,10 @@
 package com.example
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1710,6 +1714,130 @@ fun ProfileScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(label, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Calendar Sync card
+            run {
+                var calendarSyncOn by remember { mutableStateOf(CalendarService.isCalendarSyncEnabled(context)) }
+                var availableCalendars by remember { mutableStateOf<List<CalendarInfo>>(emptyList()) }
+                var selectedCalendarId by remember { mutableStateOf(CalendarService.getSelectedCalendarId(context)) }
+                var calendarDropdownExpanded by remember { mutableStateOf(false) }
+
+                val calendarPermissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+                    val allGranted = permissions.values.all { it }
+                    if (allGranted) {
+                        CalendarService.setCalendarSyncEnabled(context, true)
+                        calendarSyncOn = true
+                        availableCalendars = CalendarService.getWritableCalendars(context)
+                        if (availableCalendars.isNotEmpty() && selectedCalendarId == -1L) {
+                            selectedCalendarId = availableCalendars.first().id
+                            CalendarService.setSelectedCalendarId(context, selectedCalendarId)
+                        }
+                        CalendarService.syncAllShifts(context, shifts)
+                    } else {
+                        calendarSyncOn = false
+                        CalendarService.setCalendarSyncEnabled(context, false)
+                    }
+                }
+
+                LaunchedEffect(calendarSyncOn) {
+                    if (calendarSyncOn) {
+                        availableCalendars = CalendarService.getWritableCalendars(context)
+                        if (selectedCalendarId == -1L && availableCalendars.isNotEmpty()) {
+                            selectedCalendarId = availableCalendars.first().id
+                            CalendarService.setSelectedCalendarId(context, selectedCalendarId)
+                        }
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CalendarMonth, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text("Calendar Sync", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                                    Text("Sync shifts to device calendar", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Switch(
+                                checked = calendarSyncOn,
+                                onCheckedChange = { enabled ->
+                                    if (enabled) {
+                                        val readGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                                        val writeGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                                        if (readGranted && writeGranted) {
+                                            CalendarService.setCalendarSyncEnabled(context, true)
+                                            calendarSyncOn = true
+                                            availableCalendars = CalendarService.getWritableCalendars(context)
+                                            if (availableCalendars.isNotEmpty() && selectedCalendarId == -1L) {
+                                                selectedCalendarId = availableCalendars.first().id
+                                                CalendarService.setSelectedCalendarId(context, selectedCalendarId)
+                                            }
+                                            CalendarService.syncAllShifts(context, shifts)
+                                        } else {
+                                            calendarPermissionLauncher.launch(
+                                                arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+                                            )
+                                        }
+                                    } else {
+                                        CalendarService.removeAllSyncedEvents(context)
+                                        CalendarService.setCalendarSyncEnabled(context, false)
+                                        calendarSyncOn = false
+                                        selectedCalendarId = -1L
+                                        CalendarService.setSelectedCalendarId(context, -1L)
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(checkedTrackColor = PrimaryGreen)
+                            )
+                        }
+                        if (calendarSyncOn && availableCalendars.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Select Calendar", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                val selectedName = availableCalendars.find { it.id == selectedCalendarId }?.name ?: "Select..."
+                                OutlinedTextField(
+                                    value = selectedName,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = calendarDropdownExpanded) }
+                                )
+                                Box(modifier = Modifier.matchParentSize().clickable { calendarDropdownExpanded = true })
+                                DropdownMenu(
+                                    expanded = calendarDropdownExpanded,
+                                    onDismissRequest = { calendarDropdownExpanded = false }
+                                ) {
+                                    availableCalendars.forEach { cal ->
+                                        DropdownMenuItem(
+                                            text = { Text(cal.name) },
+                                            onClick = {
+                                                selectedCalendarId = cal.id
+                                                CalendarService.setSelectedCalendarId(context, cal.id)
+                                                calendarDropdownExpanded = false
+                                                // Re-sync all shifts to new calendar
+                                                CalendarService.removeAllSyncedEvents(context)
+                                                CalendarService.syncAllShifts(context, shifts)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
