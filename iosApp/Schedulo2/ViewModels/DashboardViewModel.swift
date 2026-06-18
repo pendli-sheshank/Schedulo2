@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import WidgetKit
 
 // MARK: - Supporting Types
 
@@ -55,7 +56,10 @@ final class DashboardViewModel: ObservableObject {
         // Bind Combine subjects to @Published
         service.shiftsSubject
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] in self?.shifts = $0 }
+            .sink { [weak self] shifts in
+                self?.shifts = shifts
+                self?.updateWidgetData(shifts: shifts)
+            }
             .store(in: &cancellables)
 
         service.jobsSubject
@@ -139,6 +143,37 @@ final class DashboardViewModel: ObservableObject {
         isLoading = false
         syncError = nil
         themeMode = "system"
+    }
+
+    // MARK: - Widget Data
+
+    private func updateWidgetData(shifts: [Shift]) {
+        guard let defaults = UserDefaults(suiteName: "group.com.schedulo2.shared") else { return }
+        let now = Date()
+        let upcoming = shifts
+            .filter { $0.startDate > now }
+            .sorted { $0.startTime < $1.startTime }
+
+        if let next = upcoming.first {
+            defaults.set(next.company, forKey: "nextShiftCompany")
+            defaults.set(next.role, forKey: "nextShiftRole")
+            defaults.set(Int(next.startTime), forKey: "nextShiftStart")
+            defaults.set(Int(next.endTime), forKey: "nextShiftEnd")
+        } else {
+            defaults.removeObject(forKey: "nextShiftCompany")
+            defaults.removeObject(forKey: "nextShiftRole")
+            defaults.set(0, forKey: "nextShiftStart")
+            defaults.set(0, forKey: "nextShiftEnd")
+        }
+
+        let calendar = Calendar.current
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+        let weekShifts = shifts.filter { $0.startDate >= weekStart && $0.startDate <= now.addingTimeInterval(7 * 86400) }
+        defaults.set(weekShifts.reduce(0.0) { $0 + $1.totalEarned }, forKey: "weeklyEarnings")
+        defaults.set(weekShifts.reduce(0.0) { $0 + $1.durationHours }, forKey: "weeklyHours")
+        defaults.set(weekShifts.count, forKey: "weeklyShiftCount")
+
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: - Shift CRUD
