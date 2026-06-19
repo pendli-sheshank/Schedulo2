@@ -4,9 +4,10 @@
 
 **Track shifts. Manage earnings. Stay organized.**
 
-A modern Android app for shift workers to manage multiple jobs, track hours, monitor earnings, and stay on top of their schedules.
+A cross-platform app for shift workers to manage multiple jobs, track hours, monitor earnings, and coordinate with teams — available on both iOS and Android.
 
-[![Build & Deploy](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-playstore.yml/badge.svg)](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-playstore.yml)
+[![Build & Deploy Android](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-playstore.yml/badge.svg)](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-playstore.yml)
+[![Build & Deploy iOS](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-appstore.yml/badge.svg)](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-appstore.yml)
 
 </div>
 
@@ -17,7 +18,7 @@ A modern Android app for shift workers to manage multiple jobs, track hours, mon
 ### Shift Management
 - Add, edit, and delete shifts with date/time pickers
 - Set shift reminders (15m, 30m, 1hr before)
-- View upcoming and previous shifts in the Plan tab
+- View upcoming and previous shifts in the Plan tab with calendar views (month, week, day)
 - Support for both hourly and gig work shifts
 
 ### Multi-Job Support
@@ -25,29 +26,58 @@ A modern Android app for shift workers to manage multiple jobs, track hours, mon
 - Set hourly rates per job
 - Define weekly goals (hours or earnings targets)
 - Customizable weekly cycle start day per employer
+- Overtime tracking with configurable thresholds and multipliers
 
-### Earnings & Hours Tracking
+### Pay & Earnings
 - Real-time dashboard with total earnings and hours
 - Per-employer goal progress bars
-- Weekly cycle filtering (current week, last week, etc.)
-- Pay tracking with paid/unpaid status per shift
+- Pay cycle management with paid/unpaid status tracking
+- Payment window period display with countdown timers
+- Pay adjustments (Bonus, Overpaid, Underpaid, Deduction, Correction)
+- Export reports in Text or CSV format with employer/week/cycle filtering
 
-### Dashboard
-- Earnings summary card with total pay and hours
-- Employer goal tracker cards with progress indicators
-- Upcoming shifts preview (next 5 shifts)
-- Quick access to profile and shift management
+### Biometric Login
+- Face ID / Touch ID on iOS
+- Fingerprint / face unlock on Android
+- Auto-triggers on app launch when enabled
+- Convenience unlock with Firebase session persistence
 
-### Profile
-- User avatar with initials derived from account name
+### Calendar Integration
+- Sync shifts to native device calendar (Apple Calendar / Android Calendar)
+- Auto-sync on shift create, update, and delete
+- Choose which calendar to sync to
+- Toggle on/off from Profile settings
+
+### Home Screen Widgets
+- **iOS**: WidgetKit extension with small and medium sizes
+- **Android**: Glance widget
+- Shows next upcoming shift with company, role, and countdown
+- Displays weekly earnings and hours summary
+- Auto-updates when shift data changes
+
+### Team Management
+- **Create Teams**: Managers create a team and receive a unique 6-character invite code
+- **Join Teams**: Members enter the invite code to join from any device
+- **Assign Shifts**: Managers assign shifts to specific team members with company, role, time, and pay details
+- **Accept / Decline**: Members see assigned shifts and can accept or decline them
+- **Real-time Updates**: All team data syncs in real-time across devices via Firestore
+- **Roles**: Manager (full control) and Member (view + respond to assignments)
+
+### Earnings Insights
+- Charts and analytics for earnings trends over time
+- Weekly/monthly breakdowns
+- Per-employer analytics
+
+### Profile & Settings
+- User avatar with initials
 - Activity stats (total shifts, hours, earnings)
-- Employer overview card
-- Default shift settings (company and hourly rate)
-- Member since date from account creation
+- Theme selection (Light / Dark / System)
+- Notification preferences
+- Default shift settings
 
 ### Authentication
 - Firebase Authentication (email/password)
-- Modern login and signup screens with gradient design
+- Biometric login option (Face ID, Touch ID, Fingerprint)
 - Form validation and inline error banners
 - Secure session management with proper logout/data clearing
 
@@ -57,30 +87,56 @@ A modern Android app for shift workers to manage multiple jobs, track hours, mon
 
 | Layer | Technology |
 |-------|------------|
-| Language | Kotlin |
-| UI Framework | Jetpack Compose + Material 3 |
-| Architecture | MVVM (ViewModel + StateFlow) |
+| Shared Logic | Kotlin Multiplatform (KMP) |
+| iOS UI | SwiftUI |
+| Android UI | Jetpack Compose + Material 3 |
+| Architecture | MVVM |
 | Backend | Firebase Auth + Cloud Firestore |
-| Navigation | Jetpack Navigation Compose |
-| Build | Gradle (Kotlin DSL) + AGP 9.1 |
-| CI/CD | GitHub Actions → Google Play Store |
-| Min SDK | 24 (Android 7.0) |
-| Target SDK | 36 |
+| iOS Widgets | WidgetKit |
+| Android Widgets | Glance |
+| iOS Calendar | EventKit |
+| Android Calendar | CalendarContract |
+| iOS Biometric | LocalAuthentication (Face ID / Touch ID) |
+| Android Biometric | AndroidX Biometric |
+| iOS CI/CD | GitHub Actions → TestFlight |
+| Android CI/CD | GitHub Actions → Google Play Store |
 
 ---
 
 ## Project Structure
 
 ```
-app/src/main/java/com/example/
-├── MainActivity.kt          # Main activity, dashboard, navigation
-├── AuthViewModel.kt         # Authentication state management
-├── AuthScreens.kt           # Login and signup screens
-├── DashboardSupport.kt      # DashboardViewModel, Shift/Job models, AddShiftScreen
-├── TabsSupport.kt           # MainLayout, PlanScreen, JobsScreen, PayScreen, ProfileScreen
-└── ui/theme/
-    ├── Color.kt             # App color palette
-    └── Theme.kt             # Material 3 theme configuration
+Schedulo2/
+├── shared/                          # Kotlin Multiplatform shared module
+│   └── src/commonMain/kotlin/
+│       └── com/schedulo/shared/
+│           ├── model/               # Shift, Job, Team data models
+│           ├── logic/               # ShiftCalculator, InsightsCalculator
+│           └── utils/               # Validation, DesignTokens
+├── androidApp/                      # Android app (Jetpack Compose)
+│   └── src/main/java/com/example/
+│       ├── MainActivity.kt          # Navigation and app entry
+│       ├── AuthViewModel.kt         # Auth + biometric state
+│       ├── AuthScreens.kt           # Login and signup UI
+│       ├── DashboardSupport.kt      # Dashboard ViewModel, Shift/Job CRUD
+│       ├── TabsSupport.kt           # Plan, Jobs, Pay, Profile screens
+│       ├── TeamViewModel.kt         # Team management state
+│       ├── TeamSupport.kt           # Team UI screens
+│       ├── CalendarService.kt       # Native calendar sync
+│       └── widget/                  # Home screen widget (Glance)
+├── iosApp/                          # iOS app (SwiftUI)
+│   └── Schedulo2/
+│       ├── Services/                # FirebaseService, CalendarService
+│       ├── ViewModels/              # Auth, Dashboard, Team ViewModels
+│       └── Views/                   # SwiftUI views organized by feature
+│           ├── Auth/                # Login, Signup
+│           ├── Dashboard/           # Main tab view, Dashboard
+│           ├── Pay/                 # Pay view, Export reports
+│           ├── Plan/                # Calendar views
+│           ├── Team/                # Team management views
+│           └── Profile/             # Profile, Settings
+├── iosApp/ScheduloWidget/           # iOS widget extension (WidgetKit)
+└── firestore.rules                  # Firestore security rules
 ```
 
 ---
@@ -88,8 +144,8 @@ app/src/main/java/com/example/
 ## Getting Started
 
 ### Prerequisites
-- Android Studio or the Android SDK command-line tools
-- JDK 21
+- **Android**: Android Studio, JDK 21
+- **iOS**: Xcode 15+, macOS
 - A Firebase project with Authentication and Firestore enabled
 
 ### Setup
@@ -101,51 +157,80 @@ app/src/main/java/com/example/
    ```
 
 2. **Add Firebase configuration**
-   - Go to Firebase Console → Project Settings → Add Android app
-   - Register with package name `com.schedulo2.app`
-   - Download `google-services.json` and place it in the `app/` directory
+   - **Android**: Download `google-services.json` → place in `androidApp/`
+   - **iOS**: Download `GoogleService-Info.plist` → place in `iosApp/Schedulo2/`
 
 3. **Build and run**
    ```bash
-   ./gradlew assembleDebug
+   # Android
+   ./gradlew :androidApp:assembleDebug
+
+   # iOS
+   cd iosApp && xcodegen generate && open Schedulo2.xcodeproj
    ```
-   Or open in Android Studio and run on an emulator/device.
 
 ---
 
 ## CI/CD
 
-The project uses GitHub Actions for automated builds and deployment to Google Play Store.
-
-- **Trigger**: Every push to `main` or manual dispatch via the Actions tab
+### Android → Google Play Store
+- **Trigger**: Push to `main` or manual dispatch
 - **Pipeline**: Build signed AAB → Upload to Play Store internal testing track
-- **Artifacts**: The signed AAB is also saved as a downloadable artifact
+
+### iOS → TestFlight
+- **Trigger**: Push to `main` or manual dispatch
+- **Pipeline**: Build KMP framework → Generate Xcode project → Archive → Upload to TestFlight
+- **Build number**: Auto-incremented from `github.run_number + 100`
 
 ### Required GitHub Secrets
 
-| Secret | Description |
-|--------|-------------|
-| `KEYSTORE_BASE64` | Base64-encoded upload keystore (.jks) |
-| `STORE_PASSWORD` | Keystore store password |
-| `KEY_PASSWORD` | Keystore key password |
-| `PLAY_SERVICE_ACCOUNT_JSON` | Google Play service account JSON key |
+| Secret | Platform | Description |
+|--------|----------|-------------|
+| `KEYSTORE_BASE64` | Android | Base64-encoded upload keystore (.jks) |
+| `STORE_PASSWORD` | Android | Keystore store password |
+| `KEY_PASSWORD` | Android | Keystore key password |
+| `PLAY_SERVICE_ACCOUNT_JSON` | Android | Google Play service account JSON key |
+| `IOS_P12_CERTIFICATE_BASE64` | iOS | Base64-encoded distribution certificate |
+| `IOS_P12_PASSWORD` | iOS | Certificate password |
+| `IOS_PROVISIONING_PROFILE_BASE64` | iOS | Base64-encoded provisioning profile |
+| `IOS_PROVISIONING_PROFILE_NAME` | iOS | Profile specifier name |
+| `IOS_TEAM_ID` | iOS | Apple Developer Team ID |
+| `IOS_APPSTORE_API_KEY_ID` | iOS | App Store Connect API key ID |
+| `IOS_APPSTORE_API_KEY_P8_BASE64` | iOS | Base64-encoded .p8 API key |
+| `IOS_APPSTORE_ISSUER_ID` | iOS | App Store Connect issuer ID |
+| `IOS_GOOGLE_SERVICE_PLIST_BASE64` | iOS | Base64-encoded GoogleService-Info.plist |
+| `WIDGET_PROVISIONING_PROFILE` | iOS | Base64-encoded widget provisioning profile |
+| `IOS_WIDGET_PROVISIONING_PROFILE_NAME` | iOS | Widget profile specifier name |
+
+---
+
+## Team Management — How It Works
+
+1. **Manager creates a team** in the Profile → Team Management screen, giving it a name
+2. A **6-character invite code** is generated automatically (e.g., `X4K9PM`)
+3. **Manager shares the code** with team members (via text, chat, etc.)
+4. **Members join** by entering the invite code on their device
+5. **Manager assigns shifts** to specific members — setting company, role, date/time, and hourly rate
+6. **Members receive assignments** and can **Accept** or **Decline** each shift
+7. All data syncs in **real-time** across all team members' devices
+
+### Firestore Collections
+
+| Collection | Purpose |
+|------------|---------|
+| `teams` | Team metadata (name, owner, invite code, member count) |
+| `team_members` | Membership records (userId, teamId, role) |
+| `team_shifts` | Assigned shifts (assignedTo, assignedBy, status) |
 
 ---
 
 ## Upcoming Features
 
 - [ ] **Push Notifications** — Shift reminders via Firebase Cloud Messaging
-- [ ] **Dark Mode** — Full dark theme support
-- [ ] **Export Reports** — Export shift history and earnings as PDF/CSV
 - [ ] **Recurring Shifts** — Set up repeating shift schedules
-- [ ] **Overtime Tracking** — Auto-detect overtime hours with configurable thresholds
 - [ ] **Multi-Currency Support** — Track earnings in different currencies
 - [ ] **Shift Swap / Trade** — Request and manage shift swaps between coworkers
-- [ ] **Calendar Integration** — Sync shifts with Google Calendar
-- [ ] **Widgets** — Home screen widget showing next shift and weekly earnings
-- [ ] **Biometric Login** — Fingerprint/face unlock support
-- [ ] **Analytics Dashboard** — Charts and trends for earnings over time
-- [ ] **Team Features** — Shared schedules for managers and team members
+- [ ] **Google Calendar Sync** — Two-way sync with Google Calendar API
 
 ---
 
@@ -157,6 +242,6 @@ This project is proprietary. All rights reserved.
 
 <div align="center">
 
-**Built with Kotlin + Jetpack Compose**
+**Built with Kotlin Multiplatform + SwiftUI + Jetpack Compose**
 
 </div>

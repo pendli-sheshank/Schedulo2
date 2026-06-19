@@ -485,8 +485,9 @@ class DashboardViewModel : ViewModel() {
                         doc.toObject(Shift::class.java)?.copy(id = doc.id)
                     }.sortedByDescending { it.startTime }
                     _shifts.value = list
-                    appContext?.let { ctx ->
-                        try { WidgetDataProvider.updateWidgetData(ctx, list) } catch (_: Exception) {}
+                    val ctx = appContext ?: try { com.google.firebase.FirebaseApp.getInstance().applicationContext } catch (_: Exception) { null }
+                    ctx?.let { c ->
+                        try { WidgetDataProvider.updateWidgetData(c, list) } catch (_: Exception) {}
                     }
                 }
             }

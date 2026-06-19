@@ -9,6 +9,7 @@ struct ScheduloApp: App {
 
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var dashboardViewModel = DashboardViewModel()
+    @StateObject private var teamViewModel = TeamViewModel()
 
     init() {
         FirebaseApp.configure()
@@ -19,6 +20,7 @@ struct ScheduloApp: App {
             ContentView()
                 .environmentObject(authViewModel)
                 .environmentObject(dashboardViewModel)
+                .environmentObject(teamViewModel)
                 .preferredColorScheme(resolvedColorScheme)
                 .onReceive(dashboardViewModel.$themeMode) { mode in
                     themeMode = mode

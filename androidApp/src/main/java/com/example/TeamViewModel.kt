@@ -39,6 +39,7 @@ class TeamViewModel : ViewModel() {
     private val _userRole = MutableStateFlow("member")
     val userRole = _userRole.asStateFlow()
 
+    private var teamsListener: ListenerRegistration? = null
     private var membersListener: ListenerRegistration? = null
     private var shiftsListener: ListenerRegistration? = null
 
@@ -52,15 +53,21 @@ class TeamViewModel : ViewModel() {
         _isLoading.value = true
         _errorMessage.value = null
 
-        database.collection("team_members")
+        teamsListener?.remove()
+        teamsListener = database.collection("team_members")
             .whereEqualTo("userId", uid)
-            .get()
-            .addOnSuccessListener { memberDocs ->
-                if (memberDocs.isEmpty) {
+            .addSnapshotListener { memberDocs, error ->
+                if (error != null) {
+                    _errorMessage.value = "Failed to load team memberships: ${error.message}"
+                    _isLoading.value = false
+                    return@addSnapshotListener
+                }
+
+                if (memberDocs == null || memberDocs.isEmpty) {
                     _teams.value = emptyList()
                     _currentTeam.value = null
                     _isLoading.value = false
-                    return@addOnSuccessListener
+                    return@addSnapshotListener
                 }
 
                 val teamIds = memberDocs.documents.mapNotNull { it.getString("teamId") }
@@ -68,7 +75,7 @@ class TeamViewModel : ViewModel() {
                     _teams.value = emptyList()
                     _currentTeam.value = null
                     _isLoading.value = false
-                    return@addOnSuccessListener
+                    return@addSnapshotListener
                 }
 
                 // Firestore whereIn supports max 30 items
@@ -113,10 +120,6 @@ class TeamViewModel : ViewModel() {
                             _isLoading.value = false
                         }
                 }
-            }
-            .addOnFailureListener { e ->
-                _errorMessage.value = "Failed to load team memberships: ${e.message}"
-                _isLoading.value = false
             }
     }
 
@@ -420,6 +423,7 @@ class TeamViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
+        teamsListener?.remove()
         membersListener?.remove()
         shiftsListener?.remove()
     }
