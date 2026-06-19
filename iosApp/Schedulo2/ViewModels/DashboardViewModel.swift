@@ -47,12 +47,15 @@ final class DashboardViewModel: ObservableObject {
     @Published var defaultReminderMinutes: Int = 30
     @Published var defaultCompany: String = ""
     @Published var defaultRate: Double = 0.0
+    @Published var payAdjustments: [PayAdjustment] = []
 
     private let service = FirebaseService.shared
     private var cancellables = Set<AnyCancellable>()
     private var loadedForUserId: String?
 
     init() {
+        updateWidgetData(shifts: [])
+
         // Bind Combine subjects to @Published
         service.shiftsSubject
             .receive(on: DispatchQueue.main)
@@ -91,6 +94,11 @@ final class DashboardViewModel: ObservableObject {
                 self.remindersEnabled = settings.remindersEnabled
                 self.defaultReminderMinutes = settings.defaultReminderMinutes
             }
+            .store(in: &cancellables)
+
+        service.payAdjustmentsSubject
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.payAdjustments = $0 }
             .store(in: &cancellables)
     }
 
@@ -136,6 +144,7 @@ final class DashboardViewModel: ObservableObject {
         service.removeAllListeners()
         shifts = []
         jobs = []
+        payAdjustments = []
         defaultCompany = ""
         defaultRate = 0.0
         userName = ""
@@ -143,6 +152,7 @@ final class DashboardViewModel: ObservableObject {
         isLoading = false
         syncError = nil
         themeMode = "system"
+        updateWidgetData(shifts: [])
     }
 
     // MARK: - Widget Data
@@ -255,6 +265,36 @@ final class DashboardViewModel: ObservableObject {
             return updated
         }
         service.markCycleAsPaid(shiftIds: shiftIds, isPaid: isPaid, allShifts: shifts)
+    }
+
+    // MARK: - Pay Adjustment CRUD
+
+    func addPayAdjustment(cycleKey: String, employer: String, type: String, amount: Double, notes: String) {
+        guard let uid = service.currentUserId else {
+            syncError = "Please sign in to add adjustments."
+            return
+        }
+        let adjustment = PayAdjustment(
+            id: UUID().uuidString,
+            userId: uid,
+            cycleKey: cycleKey,
+            employer: employer,
+            type: type,
+            amount: amount,
+            notes: notes,
+            createdAt: Int64(Date().timeIntervalSince1970 * 1000)
+        )
+        payAdjustments.append(adjustment)
+        service.addPayAdjustment(adjustment)
+    }
+
+    func deletePayAdjustment(_ adjustmentId: String) {
+        payAdjustments = payAdjustments.filter { $0.id != adjustmentId }
+        service.deletePayAdjustment(adjustmentId)
+    }
+
+    func getAdjustmentsForCycle(cycleKey: String) -> [PayAdjustment] {
+        payAdjustments.filter { $0.cycleKey == cycleKey }
     }
 
     // MARK: - Job CRUD
