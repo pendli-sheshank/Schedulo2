@@ -18,6 +18,7 @@ struct AddShiftView: View {
     @State private var shiftNotes = ""
     @State private var recurrence = "None"
     @State private var recurrenceWeeks = "4"
+    @State private var applyBonus = false
     @State private var initialized = false
 
     private var existingShift: Shift? {
@@ -86,6 +87,23 @@ struct AddShiftView: View {
                         TextField("0.00", text: $rateStr)
                             .keyboardType(.decimalPad)
                             .textFieldStyle(.roundedBorder)
+                    }
+                }
+
+                if !isGig, let job = selectedJob, job.bonusAmount > 0 {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(isOn: $applyBonus) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Apply Bonus: +$\(String(format: "%.2f", job.bonusAmount))")
+                                    .font(.system(size: 14, weight: .semibold))
+                                if !job.bonusReason.isEmpty {
+                                    Text(job.bonusReason)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .tint(.primaryGreen)
                     }
                 }
 
@@ -238,6 +256,7 @@ struct AddShiftView: View {
             company = job.title
             isGig = job.isGigWork
             rateStr = String(format: "%.2f", job.defaultHourlyRate)
+            applyBonus = false
         }
     }
 
@@ -288,6 +307,7 @@ struct AddShiftView: View {
             endTime = shift.endDate
             reminderMinutes = shift.reminderBeforeMinutes
             shiftNotes = shift.notes
+            applyBonus = shift.bonusApplied
 
             selectedJob = dashboardViewModel.jobs.first { $0.title.lowercased() == shift.company.lowercased() }
         } else {
@@ -320,6 +340,7 @@ struct AddShiftView: View {
         let hourly = isGig ? 0.0 : (Double(rateStr) ?? 0.0)
         let earned = isGig ? (Double(customEarningsStr) ?? 0.0) : 0.0
         let effectiveReminder = dashboardViewModel.remindersEnabled ? reminderMinutes : 0
+        let bonusAmt = applyBonus ? (selectedJob?.bonusAmount ?? 0.0) : 0.0
 
         if let shift = existingShift {
             dashboardViewModel.updateShift(
@@ -331,7 +352,9 @@ struct AddShiftView: View {
                 isGig: isGig,
                 customEarned: earned,
                 reminderBeforeMinutes: effectiveReminder,
-                notes: shiftNotes.trimmingCharacters(in: .whitespaces)
+                notes: shiftNotes.trimmingCharacters(in: .whitespaces),
+                bonusApplied: applyBonus,
+                bonusAmount: bonusAmt
             )
         } else {
             dashboardViewModel.addShift(
@@ -342,7 +365,9 @@ struct AddShiftView: View {
                 isGig: isGig,
                 customEarned: earned,
                 reminderBeforeMinutes: effectiveReminder,
-                notes: shiftNotes.trimmingCharacters(in: .whitespaces)
+                notes: shiftNotes.trimmingCharacters(in: .whitespaces),
+                bonusApplied: applyBonus,
+                bonusAmount: bonusAmt
             )
 
             // Handle recurrence
@@ -368,7 +393,9 @@ struct AddShiftView: View {
                         isGig: isGig,
                         customEarned: earned,
                         reminderBeforeMinutes: effectiveReminder,
-                        notes: shiftNotes.trimmingCharacters(in: .whitespaces)
+                        notes: shiftNotes.trimmingCharacters(in: .whitespaces),
+                        bonusApplied: applyBonus,
+                        bonusAmount: bonusAmt
                     )
                 }
             }

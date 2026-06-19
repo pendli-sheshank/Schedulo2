@@ -33,7 +33,7 @@ struct JoinTeamView: View {
                     teamViewModel.joinTeam(inviteCode: inviteCode.trimmingCharacters(in: .whitespacesAndNewlines))
                     dismiss()
                 }) {
-                    Text("Join Team")
+                    Text("Join Store Team")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -48,7 +48,7 @@ struct JoinTeamView: View {
                 Spacer()
             }
             .padding(16)
-            .navigationTitle("Join Team")
+            .navigationTitle("Join Store Team")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

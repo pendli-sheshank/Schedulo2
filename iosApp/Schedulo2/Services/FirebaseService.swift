@@ -18,6 +18,8 @@ struct Shift: Identifiable, Codable, Equatable {
     var reminderBeforeMinutes: Int = 30
     var isPaid: Bool = false
     var notes: String = ""
+    var bonusApplied: Bool = false
+    var bonusAmount: Double = 0.0
 
     var durationHours: Double {
         guard endTime > startTime else { return 0.0 }
@@ -25,7 +27,7 @@ struct Shift: Identifiable, Codable, Equatable {
     }
 
     var totalEarned: Double {
-        isGig ? customEarned : (durationHours * hourlyRate)
+        isGig ? customEarned : (durationHours * hourlyRate) + (bonusApplied ? bonusAmount : 0.0)
     }
 
     var startDate: Date {
@@ -48,6 +50,8 @@ struct Job: Identifiable, Codable, Equatable, Hashable {
     var weeklyCycleStartDay: String? = "Monday"
     var overtimeThresholdHours: Double = 40.0
     var overtimeMultiplier: Double = 1.5
+    var bonusAmount: Double = 0.0
+    var bonusReason: String = ""
 
     func getStartOfCurrentCycle(targetDate: Date = Date()) -> Int64 {
         let calendar = Calendar.current
@@ -323,7 +327,9 @@ final class FirebaseService {
                         customEarned: data["customEarned"] as? Double ?? 0.0,
                         reminderBeforeMinutes: data["reminderBeforeMinutes"] as? Int ?? 30,
                         isPaid: data["isPaid"] as? Bool ?? false,
-                        notes: data["notes"] as? String ?? ""
+                        notes: data["notes"] as? String ?? "",
+                        bonusApplied: data["bonusApplied"] as? Bool ?? false,
+                        bonusAmount: data["bonusAmount"] as? Double ?? 0.0
                     )
                 }.sorted { $0.startTime > $1.startTime }
                 self?.shiftsSubject.send(shifts)
@@ -376,7 +382,9 @@ final class FirebaseService {
             "customEarned": s.customEarned,
             "reminderBeforeMinutes": s.reminderBeforeMinutes,
             "isPaid": s.isPaid,
-            "notes": s.notes
+            "notes": s.notes,
+            "bonusApplied": s.bonusApplied,
+            "bonusAmount": s.bonusAmount
         ]
     }
 
@@ -402,7 +410,9 @@ final class FirebaseService {
                         goalType: data["goalType"] as? String ?? "Hours",
                         weeklyCycleStartDay: data["weeklyCycleStartDay"] as? String ?? "Monday",
                         overtimeThresholdHours: data["overtimeThresholdHours"] as? Double ?? 40.0,
-                        overtimeMultiplier: data["overtimeMultiplier"] as? Double ?? 1.5
+                        overtimeMultiplier: data["overtimeMultiplier"] as? Double ?? 1.5,
+                        bonusAmount: data["bonusAmount"] as? Double ?? 0.0,
+                        bonusReason: data["bonusReason"] as? String ?? ""
                     )
                 }
                 if jobs.isEmpty && !isFromCache {
@@ -449,7 +459,9 @@ final class FirebaseService {
             "goalType": j.goalType,
             "weeklyCycleStartDay": j.weeklyCycleStartDay ?? "Monday",
             "overtimeThresholdHours": j.overtimeThresholdHours,
-            "overtimeMultiplier": j.overtimeMultiplier
+            "overtimeMultiplier": j.overtimeMultiplier,
+            "bonusAmount": j.bonusAmount,
+            "bonusReason": j.bonusReason
         ]
     }
 

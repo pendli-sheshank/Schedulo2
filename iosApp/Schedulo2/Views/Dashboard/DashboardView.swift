@@ -6,6 +6,7 @@ struct DashboardView: View {
 
     var onEditShift: (String) -> Void = { _ in }
     var onNavigateToProfile: () -> Void = {}
+    var onNavigateToPay: () -> Void = {}
 
     @State private var weekOffset = 0
     @State private var showWeekPicker = false
@@ -214,7 +215,7 @@ struct DashboardView: View {
                         .tracking(-1)
                 }
                 Spacer()
-                Button(action: {}) {
+                Button(action: onNavigateToPay) {
                     HStack(spacing: 4) {
                         Text("Pay Details")
                             .font(.system(size: 12, weight: .semibold))

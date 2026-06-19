@@ -22,6 +22,12 @@ struct TeamMemberInfo: Identifiable, Equatable {
     var email: String = ""
 }
 
+struct ShiftTaskInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var title: String = ""
+    var isCompleted: Bool = false
+}
+
 struct TeamShiftInfo: Identifiable, Equatable {
     var id: String = UUID().uuidString
     var teamId: String = ""
@@ -34,6 +40,7 @@ struct TeamShiftInfo: Identifiable, Equatable {
     var hourlyRate: Double = 0.0
     var notes: String = ""
     var status: String = "assigned"
+    var tasks: [ShiftTaskInfo] = []
 
     var durationHours: Double {
         guard endTime > startTime else { return 0.0 }
@@ -162,6 +169,14 @@ final class TeamViewModel: ObservableObject {
                 guard let docs = snapshot?.documents else { return }
                 self?.teamShifts = docs.map { doc in
                     let data = doc.data()
+                    let tasksRaw = data["tasks"] as? [[String: Any]] ?? []
+                    let parsedTasks = tasksRaw.map { t in
+                        ShiftTaskInfo(
+                            id: t["id"] as? String ?? UUID().uuidString,
+                            title: t["title"] as? String ?? "",
+                            isCompleted: t["isCompleted"] as? Bool ?? false
+                        )
+                    }
                     return TeamShiftInfo(
                         id: doc.documentID,
                         teamId: data["teamId"] as? String ?? "",
@@ -173,7 +188,8 @@ final class TeamViewModel: ObservableObject {
                         endTime: (data["endTime"] as? NSNumber)?.int64Value ?? 0,
                         hourlyRate: data["hourlyRate"] as? Double ?? 0.0,
                         notes: data["notes"] as? String ?? "",
-                        status: data["status"] as? String ?? "assigned"
+                        status: data["status"] as? String ?? "assigned",
+                        tasks: parsedTasks
                     )
                 }.sorted { $0.startTime > $1.startTime }
             }
@@ -236,35 +252,53 @@ final class TeamViewModel: ObservableObject {
                 }
 
                 let teamId = doc.documentID
-                let memberData: [String: Any] = [
-                    "teamId": teamId,
-                    "userId": uid,
-                    "role": "member",
-                    "joinedAt": Int64(Date().timeIntervalSince1970 * 1000),
-                    "displayName": self?.currentUserEmail ?? "",
-                    "email": self?.currentUserEmail ?? ""
-                ]
 
-                let batch = self?.db.batch()
-                batch?.setData(memberData, forDocument: self?.db.collection("team_members").document(UUID().uuidString) ?? self!.db.collection("team_members").document())
-                batch?.updateData(["memberCount": FieldValue.increment(Int64(1))], forDocument: self?.db.collection("teams").document(teamId) ?? self!.db.collection("teams").document(teamId))
+                self?.db.collection("team_members")
+                    .whereField("teamId", isEqualTo: teamId)
+                    .whereField("userId", isEqualTo: uid)
+                    .getDocuments { existingSnapshot, _ in
+                        if let existingDocs = existingSnapshot?.documents, !existingDocs.isEmpty {
+                            DispatchQueue.main.async {
+                                self?.isLoading = false
+                                self?.errorMessage = "You are already a member of this team."
+                            }
+                            return
+                        }
 
-                batch?.commit { error in
-                    DispatchQueue.main.async {
-                        self?.isLoading = false
-                        if let error = error {
-                            self?.errorMessage = error.localizedDescription
-                        } else {
-                            self?.loadTeams()
+                        let memberData: [String: Any] = [
+                            "teamId": teamId,
+                            "userId": uid,
+                            "role": "member",
+                            "joinedAt": Int64(Date().timeIntervalSince1970 * 1000),
+                            "displayName": self?.currentUserEmail ?? "",
+                            "email": self?.currentUserEmail ?? ""
+                        ]
+
+                        let batch = self?.db.batch()
+                        batch?.setData(memberData, forDocument: self?.db.collection("team_members").document(UUID().uuidString) ?? self!.db.collection("team_members").document())
+                        batch?.updateData(["memberCount": FieldValue.increment(Int64(1))], forDocument: self?.db.collection("teams").document(teamId) ?? self!.db.collection("teams").document(teamId))
+
+                        batch?.commit { error in
+                            DispatchQueue.main.async {
+                                self?.isLoading = false
+                                if let error = error {
+                                    self?.errorMessage = error.localizedDescription
+                                } else {
+                                    self?.loadTeams()
+                                }
+                            }
                         }
                     }
-                }
             }
     }
 
-    func assignShift(to memberId: String, company: String, role: String, startTime: Int64, endTime: Int64, hourlyRate: Double, notes: String) {
+    func assignShift(to memberId: String, company: String, role: String, startTime: Int64, endTime: Int64, hourlyRate: Double, notes: String, tasks: [ShiftTaskInfo] = []) {
         guard let teamId = currentTeam?.id, let uid = currentUserId else { return }
         let shiftId = UUID().uuidString
+
+        let tasksData = tasks.map { t -> [String: Any] in
+            ["id": t.id, "title": t.title, "isCompleted": t.isCompleted]
+        }
 
         let data: [String: Any] = [
             "teamId": teamId,
@@ -276,10 +310,30 @@ final class TeamViewModel: ObservableObject {
             "endTime": endTime,
             "hourlyRate": hourlyRate,
             "notes": notes,
-            "status": "assigned"
+            "status": "assigned",
+            "tasks": tasksData
         ]
 
         db.collection("team_shifts").document(shiftId).setData(data)
+    }
+
+    func toggleTaskCompletion(shiftId: String, taskId: String) {
+        let ref = db.collection("team_shifts").document(shiftId)
+        ref.getDocument { [weak self] snapshot, _ in
+            guard let data = snapshot?.data(),
+                  var tasks = data["tasks"] as? [[String: Any]] else { return }
+            if let idx = tasks.firstIndex(where: { $0["id"] as? String == taskId }) {
+                let current = tasks[idx]["isCompleted"] as? Bool ?? false
+                tasks[idx]["isCompleted"] = !current
+                ref.updateData(["tasks": tasks])
+                if let localIdx = self?.teamShifts.firstIndex(where: { $0.id == shiftId }),
+                   let taskIdx = self?.teamShifts[localIdx].tasks.firstIndex(where: { $0.id == taskId }) {
+                    DispatchQueue.main.async {
+                        self?.teamShifts[localIdx].tasks[taskIdx].isCompleted = !current
+                    }
+                }
+            }
+        }
     }
 
     func updateShiftStatus(shiftId: String, status: String) {

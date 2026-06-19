@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
 import com.schedulo.shared.model.TeamShift
@@ -173,6 +174,15 @@ class TeamViewModel : ViewModel() {
                 }
                 if (value != null) {
                     _teamShifts.value = value.documents.map { doc ->
+                        val tasksRaw = doc.get("tasks") as? List<*> ?: emptyList<Any>()
+                        val tasks = tasksRaw.mapNotNull { item ->
+                            val map = item as? Map<*, *> ?: return@mapNotNull null
+                            ShiftTask(
+                                id = map["id"] as? String ?: "",
+                                title = map["title"] as? String ?: "",
+                                isCompleted = map["isCompleted"] as? Boolean ?: false
+                            )
+                        }
                         TeamShift(
                             id = doc.id,
                             teamId = doc.getString("teamId") ?: "",
@@ -184,7 +194,8 @@ class TeamViewModel : ViewModel() {
                             endTime = doc.getLong("endTime") ?: 0,
                             hourlyRate = doc.getDouble("hourlyRate") ?: 0.0,
                             notes = doc.getString("notes") ?: "",
-                            status = doc.getString("status") ?: "assigned"
+                            status = doc.getString("status") ?: "assigned",
+                            tasks = tasks
                         )
                     }.sortedByDescending { it.startTime }
                 }
@@ -320,7 +331,8 @@ class TeamViewModel : ViewModel() {
         startTime: Long,
         endTime: Long,
         hourlyRate: Double,
-        notes: String
+        notes: String,
+        tasks: List<ShiftTask> = emptyList()
     ) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
@@ -329,6 +341,14 @@ class TeamViewModel : ViewModel() {
         if (company.isBlank()) {
             _errorMessage.value = "Company name is required."
             return
+        }
+
+        val tasksList = tasks.map { task ->
+            hashMapOf(
+                "id" to task.id,
+                "title" to task.title,
+                "isCompleted" to task.isCompleted
+            )
         }
 
         val shiftData = hashMapOf(
@@ -341,7 +361,8 @@ class TeamViewModel : ViewModel() {
             "endTime" to endTime,
             "hourlyRate" to hourlyRate,
             "notes" to notes.trim(),
-            "status" to "assigned"
+            "status" to "assigned",
+            "tasks" to tasksList
         )
 
         database.collection("team_shifts").document()
@@ -369,6 +390,27 @@ class TeamViewModel : ViewModel() {
             .addOnFailureListener { e ->
                 _teamShifts.value = previousShifts
                 _errorMessage.value = "Failed to delete shift: ${e.message}"
+            }
+    }
+
+    fun toggleTaskCompletion(shiftId: String, taskId: String) {
+        val database = db ?: return
+        val shift = _teamShifts.value.find { it.id == shiftId } ?: return
+        val updatedTasks = shift.tasks.map { task ->
+            if (task.id == taskId) ShiftTask(id = task.id, title = task.title, isCompleted = !task.isCompleted)
+            else task
+        }
+        val tasksList = updatedTasks.map { task ->
+            hashMapOf(
+                "id" to task.id,
+                "title" to task.title,
+                "isCompleted" to task.isCompleted
+            )
+        }
+        database.collection("team_shifts").document(shiftId)
+            .update("tasks", tasksList)
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to update task: ${e.message}"
             }
     }
 

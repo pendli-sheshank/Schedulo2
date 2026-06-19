@@ -188,7 +188,7 @@ final class DashboardViewModel: ObservableObject {
 
     // MARK: - Shift CRUD
 
-    func addShift(company: String, startTime: Int64, endTime: Int64, hourlyRate: Double, isGig: Bool, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "") {
+    func addShift(company: String, startTime: Int64, endTime: Int64, hourlyRate: Double, isGig: Bool, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", bonusApplied: Bool = false, bonusAmount: Double = 0.0) {
         guard let uid = service.currentUserId else {
             syncError = "Please sign in to save shifts."
             return
@@ -205,7 +205,9 @@ final class DashboardViewModel: ObservableObject {
             customEarned: customEarned,
             reminderBeforeMinutes: reminderBeforeMinutes,
             isPaid: isGig,
-            notes: notes
+            notes: notes,
+            bonusApplied: bonusApplied,
+            bonusAmount: bonusAmount
         )
         shifts = (shifts + [shift]).sorted { $0.startTime > $1.startTime }
         service.addShift(shift)
@@ -215,7 +217,7 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    func updateShift(shiftId: String, company: String, startTime: Int64, endTime: Int64, hourlyRate: Double, isGig: Bool, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "") {
+    func updateShift(shiftId: String, company: String, startTime: Int64, endTime: Int64, hourlyRate: Double, isGig: Bool, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", bonusApplied: Bool = false, bonusAmount: Double = 0.0) {
         guard let existing = shifts.first(where: { $0.id == shiftId }) else { return }
         var updated = existing
         updated.company = company
@@ -228,6 +230,8 @@ final class DashboardViewModel: ObservableObject {
         updated.reminderBeforeMinutes = reminderBeforeMinutes
         updated.isPaid = isGig ? true : existing.isPaid
         updated.notes = notes
+        updated.bonusApplied = bonusApplied
+        updated.bonusAmount = bonusAmount
 
         shifts = shifts.map { $0.id == shiftId ? updated : $0 }.sorted { $0.startTime > $1.startTime }
         service.updateShift(updated)
@@ -299,7 +303,7 @@ final class DashboardViewModel: ObservableObject {
 
     // MARK: - Job CRUD
 
-    func addJob(title: String, isGigWork: Bool, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday", overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
+    func addJob(title: String, isGigWork: Bool, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday", overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5, bonusAmount: Double = 0.0, bonusReason: String = "") {
         guard let uid = service.currentUserId else {
             syncError = "Please sign in to add employers."
             return
@@ -314,13 +318,15 @@ final class DashboardViewModel: ObservableObject {
             goalType: goalType,
             weeklyCycleStartDay: weeklyCycleStartDay,
             overtimeThresholdHours: overtimeThresholdHours,
-            overtimeMultiplier: overtimeMultiplier
+            overtimeMultiplier: overtimeMultiplier,
+            bonusAmount: bonusAmount,
+            bonusReason: bonusReason
         )
         jobs.append(job)
         service.addJob(job)
     }
 
-    func updateJob(jobId: String, title: String, isGigWork: Bool, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String, overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
+    func updateJob(jobId: String, title: String, isGigWork: Bool, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String, overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5, bonusAmount: Double = 0.0, bonusReason: String = "") {
         guard let existing = jobs.first(where: { $0.id == jobId }) else { return }
         var updated = existing
         updated.title = title
@@ -331,6 +337,8 @@ final class DashboardViewModel: ObservableObject {
         updated.weeklyCycleStartDay = weeklyCycleStartDay
         updated.overtimeThresholdHours = overtimeThresholdHours
         updated.overtimeMultiplier = overtimeMultiplier
+        updated.bonusAmount = bonusAmount
+        updated.bonusReason = bonusReason
 
         jobs = jobs.map { $0.id == jobId ? updated : $0 }
         service.updateJob(updated)

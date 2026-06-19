@@ -19,6 +19,12 @@ data class TeamMember(
     var email: String = ""
 )
 
+data class ShiftTask(
+    var id: String = "",
+    var title: String = "",
+    var isCompleted: Boolean = false
+)
+
 data class TeamShift(
     var id: String = "",
     var teamId: String = "",
@@ -30,7 +36,8 @@ data class TeamShift(
     var endTime: Long = 0,
     var hourlyRate: Double = 0.0,
     var notes: String = "",
-    var status: String = "assigned"
+    var status: String = "assigned",
+    var tasks: List<ShiftTask> = emptyList()
 ) {
     val durationHours: Double
         get() = if (endTime > startTime) (endTime - startTime) / 3600000.0 else 0.0

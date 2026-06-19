@@ -3,6 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
+    @EnvironmentObject var teamViewModel: TeamViewModel
 
     @State private var selectedTab = 0
     @State private var showAddMenu = false
@@ -10,6 +11,7 @@ struct MainTabView: View {
     @State private var showWeekPlan = false
     @State private var showProfile = false
     @State private var showInsights = false
+    @State private var showPayView = false
     @State private var editingShiftId: String?
 
     var body: some View {
@@ -19,7 +21,8 @@ struct MainTabView: View {
                 case 0:
                     DashboardView(
                         onEditShift: { id in editingShiftId = id; showAddShift = true },
-                        onNavigateToProfile: { showProfile = true }
+                        onNavigateToProfile: { showProfile = true },
+                        onNavigateToPay: { showPayView = true }
                     )
                 case 1:
                     PlanView(
@@ -29,7 +32,7 @@ struct MainTabView: View {
                 case 2:
                     JobsView()
                 case 3:
-                    PayView()
+                    TeamView()
                 default:
                     EmptyView()
                 }
@@ -47,7 +50,7 @@ struct MainTabView: View {
                     TabBarButton(icon: "briefcase.fill", label: "Jobs", isSelected: selectedTab == 2) {
                         selectedTab = 2
                     }
-                    TabBarButton(icon: "wallet.pass.fill", label: "Pay", isSelected: selectedTab == 3) {
+                    TabBarButton(icon: "person.3.fill", label: "Team", isSelected: selectedTab == 3) {
                         selectedTab = 3
                     }
                 }
@@ -116,6 +119,17 @@ struct MainTabView: View {
         .sheet(isPresented: $showInsights) {
             InsightsView()
                 .environmentObject(dashboardViewModel)
+        }
+        .sheet(isPresented: $showPayView) {
+            NavigationStack {
+                PayView()
+                    .environmentObject(dashboardViewModel)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showPayView = false }
+                        }
+                    }
+            }
         }
     }
 }

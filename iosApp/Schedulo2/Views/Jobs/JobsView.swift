@@ -13,6 +13,8 @@ struct JobsView: View {
     @State private var weeklyCycleStartDay = "Monday"
     @State private var overtimeThresholdStr = "40.0"
     @State private var overtimeMultiplierStr = "1.5"
+    @State private var bonusAmountStr = "0.0"
+    @State private var bonusReason = ""
     @State private var jobToDelete: Job?
 
     private let daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -227,6 +229,21 @@ struct JobsView: View {
                     }
                 }
 
+                if !isGigWork {
+                    Section("Bonus Pay") {
+                        HStack {
+                            Text("Bonus Amount ($)")
+                            Spacer()
+                            TextField("0.00", text: $bonusAmountStr)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 100)
+                        }
+
+                        TextField("Bonus Reason (e.g. Weekend, Holiday)", text: $bonusReason)
+                    }
+                }
+
                 Section("Weekly Target") {
                     Picker("Target Type", selection: $goalType) {
                         Text("Hours").tag("Hours")
@@ -274,6 +291,8 @@ struct JobsView: View {
         weeklyCycleStartDay = "Monday"
         overtimeThresholdStr = "40.0"
         overtimeMultiplierStr = "1.5"
+        bonusAmountStr = "0.0"
+        bonusReason = ""
     }
 
     private func populateForm(_ job: Job) {
@@ -286,6 +305,8 @@ struct JobsView: View {
         weeklyCycleStartDay = job.weeklyCycleStartDay ?? "Monday"
         overtimeThresholdStr = "\(job.overtimeThresholdHours)"
         overtimeMultiplierStr = "\(job.overtimeMultiplier)"
+        bonusAmountStr = "\(job.bonusAmount)"
+        bonusReason = job.bonusReason
     }
 
     private func saveJob() {
@@ -293,20 +314,24 @@ struct JobsView: View {
         let finalGoal = Double(goalHoursStr) ?? 20.0
         let finalOT = Double(overtimeThresholdStr) ?? 40.0
         let finalOTM = Double(overtimeMultiplierStr) ?? 1.5
+        let finalBonus = isGigWork ? 0.0 : (Double(bonusAmountStr) ?? 0.0)
+        let finalBonusReason = isGigWork ? "" : bonusReason
 
         if let id = editingJobId {
             dashboardViewModel.updateJob(
                 jobId: id, title: title, isGigWork: isGigWork,
                 defaultHourlyRate: finalRate, goalHours: finalGoal,
                 goalType: goalType, weeklyCycleStartDay: weeklyCycleStartDay,
-                overtimeThresholdHours: finalOT, overtimeMultiplier: finalOTM
+                overtimeThresholdHours: finalOT, overtimeMultiplier: finalOTM,
+                bonusAmount: finalBonus, bonusReason: finalBonusReason
             )
         } else {
             dashboardViewModel.addJob(
                 title: title, isGigWork: isGigWork,
                 defaultHourlyRate: finalRate, goalHours: finalGoal,
                 goalType: goalType, weeklyCycleStartDay: weeklyCycleStartDay,
-                overtimeThresholdHours: finalOT, overtimeMultiplier: finalOTM
+                overtimeThresholdHours: finalOT, overtimeMultiplier: finalOTM,
+                bonusAmount: finalBonus, bonusReason: finalBonusReason
             )
         }
     }
