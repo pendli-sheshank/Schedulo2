@@ -72,10 +72,12 @@ jobs:
         env:
           DEVELOPMENT_TEAM: ${{ secrets.IOS_TEAM_ID }}
           PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          WIDGET_PROFILE_NAME: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_NAME }}
           VERSION_CODE: ${{ github.run_number }}
         run: |
           sed -i '' "s/INJECT_DEVELOPMENT_TEAM/$DEVELOPMENT_TEAM/g" iosApp/project.yml
           sed -i '' "s/INJECT_PROVISIONING_PROFILE/$PROVISIONING_PROFILE_NAME/g" iosApp/project.yml
+          sed -i '' "s/INJECT_WIDGET_PROVISIONING_PROFILE/$WIDGET_PROFILE_NAME/g" iosApp/project.yml
           BUILD_NUMBER=$(( VERSION_CODE + 100 ))
           sed -i '' "s/CURRENT_PROJECT_VERSION: \"[0-9]*\"/CURRENT_PROJECT_VERSION: \"$BUILD_NUMBER\"/" iosApp/project.yml
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
@@ -93,19 +95,22 @@ jobs:
             -scheme "$SCHEME" \
             -clonedSourcePackagesDirPath $RUNNER_TEMP/spm-cache
 
-      - name: Install Apple certificate and provisioning profile
+      - name: Install Apple certificate and provisioning profiles
         env:
           P12_CERTIFICATE_BASE64: ${{ secrets.IOS_P12_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
           PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          WIDGET_PROFILE_BASE64: ${{ secrets.WIDGET_PROVISIONING_PROFILE }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}
         run: |
           CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
           PROFILE_PATH=$RUNNER_TEMP/profile.mobileprovision
+          WIDGET_PROFILE_PATH=$RUNNER_TEMP/widget_profile.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
           echo "$P12_CERTIFICATE_BASE64" | base64 -d > "$CERTIFICATE_PATH"
           echo "$PROVISIONING_PROFILE_BASE64" | base64 -d > "$PROFILE_PATH"
+          echo "$WIDGET_PROFILE_BASE64" | base64 -d > "$WIDGET_PROFILE_PATH"
 
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
 
@@ -124,9 +129,15 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+
           PROFILE_UUID=$(security cms -D -i "$PROFILE_PATH" | grep -A1 UUID | grep string | \
             sed 's/.*<string>\(.*\)<\/string>/\1/')
           cp "$PROFILE_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/"$PROFILE_UUID".mobileprovision
+
+          WIDGET_UUID=$(security cms -D -i "$WIDGET_PROFILE_PATH" | grep -A1 UUID | grep string | \
+            sed 's/.*<string>\(.*\)<\/string>/\1/')
+          cp "$WIDGET_PROFILE_PATH" ~/Library/MobileDevice/Provisioning\ Profiles/"$WIDGET_UUID".mobileprovision
+          echo "Installed widget profile with UUID: $WIDGET_UUID"
 
       - name: Build archive
         working-directory: iosApp
@@ -147,9 +158,11 @@ jobs:
         env:
           DEVELOPMENT_TEAM: ${{ secrets.IOS_TEAM_ID }}
           PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          WIDGET_PROFILE_NAME: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_NAME }}
         run: |
           sed -i '' "s/\$(DEVELOPMENT_TEAM)/$DEVELOPMENT_TEAM/g" iosApp/ExportOptions.plist
           sed -i '' "s/\$(PROVISIONING_PROFILE_NAME)/$PROVISIONING_PROFILE_NAME/g" iosApp/ExportOptions.plist
+          sed -i '' "s/\$(WIDGET_PROVISIONING_PROFILE_NAME)/$WIDGET_PROFILE_NAME/g" iosApp/ExportOptions.plist
 
       - name: Export IPA
         env:

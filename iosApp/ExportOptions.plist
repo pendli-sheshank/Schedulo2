@@ -10,6 +10,8 @@
 	<dict>
 		<key>com.schedulo2.ios</key>
 		<string>$(PROVISIONING_PROFILE_NAME)</string>
+		<key>com.schedulo2.ios.widget</key>
+		<string>$(WIDGET_PROVISIONING_PROFILE_NAME)</string>
 	</dict>
 	<key>uploadSymbols</key>
 	<true/>
