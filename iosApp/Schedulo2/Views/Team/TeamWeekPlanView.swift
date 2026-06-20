@@ -9,6 +9,7 @@ struct TeamWeekPlanView: View {
     @State private var selectedJobTitle = ""
     @State private var role = ""
     @State private var hourlyRate = ""
+    @State private var notes = ""
     @State private var weekOffset = 0
     @State private var dayEnabled = [true, true, true, true, true, false, false]
     @State private var dayStartTimes: [Date] = (0..<7).map { _ in
@@ -48,6 +49,10 @@ struct TeamWeekPlanView: View {
         }
     }
 
+    private var canAssign: Bool {
+        !selectedMemberId.isEmpty && !selectedJobTitle.isEmpty && dayEnabled.contains(true)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -66,6 +71,11 @@ struct TeamWeekPlanView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: selectedMemberId) { newValue in
+                            if !newValue.isEmpty {
+                                teamViewModel.fetchMemberJobs(userId: newValue)
+                            }
+                        }
                     }
 
                     // Employer selector
@@ -83,25 +93,44 @@ struct TeamWeekPlanView: View {
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .onChange(of: selectedJobTitle) { newValue in
-                            if let job = dashboardViewModel.jobs.first(where: { $0.title == newValue }) {
-                                hourlyRate = String(format: "%.2f", job.defaultHourlyRate)
-                            }
+                            updateHourlyRate()
                         }
                     }
 
-                    // Role
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Role")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        TextField("Role / Position (optional)", text: $role)
-                            .textFieldStyle(.roundedBorder)
+                    // Role and Pay Rate
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Role")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            TextField("Optional", text: $role)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Pay Rate ($/hr)")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            TextField("0.00", text: $hourlyRate)
+                                .textFieldStyle(.roundedBorder)
+                                .keyboardType(.decimalPad)
+                        }
+                    }
+
+                    if !selectedMemberId.isEmpty && !selectedJobTitle.isEmpty {
+                        if let memberJob = teamViewModel.memberJobs.first(where: { $0.title.caseInsensitiveCompare(selectedJobTitle) == .orderedSame }) {
+                            let memberName = teamViewModel.members.first(where: { $0.userId == selectedMemberId })?.displayName ?? "member"
+                            Text("Rate from \(memberName)'s account: $\(String(format: "%.2f", memberJob.defaultHourlyRate))/hr")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.primaryGreen)
+                        }
                     }
 
                     // Week selector
                     HStack {
                         Button(action: { if weekOffset > -3 { weekOffset -= 1 } }) {
                             Image(systemName: "chevron.left")
+                                .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(weekOffset > -3 ? .primary : .secondary.opacity(0.3))
                         }
                         .disabled(weekOffset <= -3)
@@ -113,7 +142,7 @@ struct TeamWeekPlanView: View {
                             let _ = (fmt.dateFormat = "M/dd")
                             let endDate = Calendar.current.date(byAdding: .day, value: 6, to: weekStartDate) ?? weekStartDate
                             Text("\(fmt.string(from: weekStartDate)) - \(fmt.string(from: endDate))")
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: 18, weight: .bold))
 
                             Text(weekOffset == 0 ? "This Week" : weekOffset == 1 ? "Next Week" : weekOffset == -1 ? "Last Week" : weekOffset < -1 ? "\(-weekOffset) weeks ago" : "In \(weekOffset) weeks")
                                 .font(.system(size: 12, weight: .semibold))
@@ -124,22 +153,29 @@ struct TeamWeekPlanView: View {
 
                         Button(action: { if weekOffset < 12 { weekOffset += 1 } }) {
                             Image(systemName: "chevron.right")
+                                .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(weekOffset < 12 ? .primary : .secondary.opacity(0.3))
                         }
                         .disabled(weekOffset >= 12)
                     }
+                    .padding(.vertical, 4)
 
                     // Day toggles
                     ForEach(0..<7, id: \.self) { index in
                         let fmt = DateFormatter()
                         let _ = (fmt.dateFormat = "M/dd")
                         let dateStr = fmt.string(from: dayDate(for: index))
+                        let isEnabled = dayEnabled[index]
 
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Toggle("", isOn: Binding(
                                     get: { dayEnabled[index] },
-                                    set: { dayEnabled[index] = $0 }
+                                    set: { newVal in
+                                        var updated = dayEnabled
+                                        updated[index] = newVal
+                                        dayEnabled = updated
+                                    }
                                 ))
                                 .labelsHidden()
                                 .tint(.primaryGreen)
@@ -148,7 +184,7 @@ struct TeamWeekPlanView: View {
                                     .font(.system(size: 15, weight: .semibold))
                             }
 
-                            if dayEnabled[index] {
+                            if isEnabled {
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading) {
                                         Text("Start")
@@ -173,18 +209,41 @@ struct TeamWeekPlanView: View {
                         .padding(12)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(Color(UIColor.systemBackground))
+                                .fill(isEnabled ? Color.primaryGreen.opacity(0.08) : Color(UIColor.systemBackground))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 1)
+                                        .stroke(isEnabled ? Color.primaryGreen.opacity(0.4) : Color(UIColor.separator).opacity(0.3), lineWidth: 1)
                                 )
                         )
                     }
 
                     // Summary
-                    Text("\(totalDays) days · \(String(format: "%.1f", totalHours)) hours planned")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
+                    let rate = Double(hourlyRate) ?? 0.0
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(totalDays) days · \(String(format: "%.1f", totalHours)) hours")
+                            .font(.system(size: 15, weight: .bold))
+                        if rate > 0 {
+                            Text("Estimated pay: $\(String(format: "%.2f", totalHours * rate))")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.primaryGreen)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.primaryGreen.opacity(0.08))
+                    )
+
+                    // Notes
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Notes")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        TextField("Optional notes...", text: $notes, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(2...4)
+                    }
 
                     // Save
                     Button(action: saveWeekPlan) {
@@ -212,10 +271,20 @@ struct TeamWeekPlanView: View {
                 }
             }
         }
+        .interactiveDismissDisabled()
+        .onChange(of: teamViewModel.memberJobs) { _ in
+            updateHourlyRate()
+        }
     }
 
-    private var canAssign: Bool {
-        !selectedMemberId.isEmpty && !selectedJobTitle.isEmpty && dayEnabled.contains(true)
+    private func updateHourlyRate() {
+        guard !selectedJobTitle.isEmpty else { return }
+        if !selectedMemberId.isEmpty,
+           let memberJob = teamViewModel.memberJobs.first(where: { $0.title.caseInsensitiveCompare(selectedJobTitle) == .orderedSame }) {
+            hourlyRate = String(format: "%.2f", memberJob.defaultHourlyRate)
+        } else if let job = dashboardViewModel.jobs.first(where: { $0.title == selectedJobTitle }) {
+            hourlyRate = String(format: "%.2f", job.defaultHourlyRate)
+        }
     }
 
     private func saveWeekPlan() {
@@ -243,7 +312,7 @@ struct TeamWeekPlanView: View {
                 startTime: Int64(actualStart.timeIntervalSince1970 * 1000),
                 endTime: Int64(actualEnd.timeIntervalSince1970 * 1000),
                 hourlyRate: rate,
-                notes: ""
+                notes: notes
             )
         }
 

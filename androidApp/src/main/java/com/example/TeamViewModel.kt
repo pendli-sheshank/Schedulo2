@@ -40,12 +40,28 @@ class TeamViewModel : ViewModel() {
     private val _userRole = MutableStateFlow("member")
     val userRole = _userRole.asStateFlow()
 
+    private val _memberJobs = MutableStateFlow<List<Job>>(emptyList())
+    val memberJobs = _memberJobs.asStateFlow()
+
     private var teamsListener: ListenerRegistration? = null
     private var membersListener: ListenerRegistration? = null
     private var shiftsListener: ListenerRegistration? = null
+    private var memberJobsListener: ListenerRegistration? = null
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    fun fetchMemberJobs(userId: String) {
+        val database = db ?: return
+        memberJobsListener?.remove()
+        memberJobsListener = database.collection("jobs")
+            .whereEqualTo("userId", userId)
+            .addSnapshotListener { snapshot, _ ->
+                _memberJobs.value = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(Job::class.java)?.copy(id = doc.id)
+                } ?: emptyList()
+            }
     }
 
     fun loadTeams() {
@@ -548,5 +564,6 @@ class TeamViewModel : ViewModel() {
         teamsListener?.remove()
         membersListener?.remove()
         shiftsListener?.remove()
+        memberJobsListener?.remove()
     }
 }

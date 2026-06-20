@@ -56,6 +56,13 @@ struct TeamShiftInfo: Identifiable, Equatable {
     }
 }
 
+struct MemberJobInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var title: String = ""
+    var defaultHourlyRate: Double = 15.0
+    var isGigWork: Bool = false
+}
+
 final class TeamViewModel: ObservableObject {
     @Published var teams: [TeamInfo] = []
     @Published var currentTeam: TeamInfo?
@@ -64,16 +71,37 @@ final class TeamViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var userRole: String = "member"
+    @Published var memberJobs: [MemberJobInfo] = []
 
     private let db = Firestore.firestore(database: "schedulo2")
     private var teamsListener: ListenerRegistration?
     private var membersListener: ListenerRegistration?
     private var shiftsListener: ListenerRegistration?
+    private var memberJobsListener: ListenerRegistration?
 
     var currentUserId: String? { Auth.auth().currentUser?.uid }
     var currentUserEmail: String? { Auth.auth().currentUser?.email }
 
     var isManager: Bool { userRole == "manager" }
+
+    func fetchMemberJobs(userId: String) {
+        memberJobsListener?.remove()
+        memberJobsListener = db.collection("jobs")
+            .whereField("userId", isEqualTo: userId)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                self?.memberJobs = snapshot?.documents.map { docs in
+                    docs.compactMap { doc in
+                        let data = doc.data()
+                        return MemberJobInfo(
+                            id: doc.documentID,
+                            title: data["title"] as? String ?? "",
+                            defaultHourlyRate: data["defaultHourlyRate"] as? Double ?? 15.0,
+                            isGigWork: data["isGigWork"] as? Bool ?? false
+                        )
+                    }
+                } ?? []
+            }
+    }
 
     func loadTeams() {
         guard let uid = currentUserId else { return }
@@ -454,6 +482,7 @@ final class TeamViewModel: ObservableObject {
         teamsListener?.remove()
         membersListener?.remove()
         shiftsListener?.remove()
+        memberJobsListener?.remove()
     }
 
     private func generateInviteCode() -> String {
