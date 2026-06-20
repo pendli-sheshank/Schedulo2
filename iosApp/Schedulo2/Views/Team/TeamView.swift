@@ -23,7 +23,7 @@ struct TeamView: View {
                 }
                 .padding(16)
             }
-            .navigationTitle("Team")
+            .navigationTitle("Store Team")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -63,10 +63,10 @@ struct TeamView: View {
                 .foregroundColor(.secondary.opacity(0.4))
                 .padding(.top, 60)
 
-            Text("No Teams Yet")
+            Text("No Store Teams Yet")
                 .font(.system(size: 20, weight: .bold))
 
-            Text("Create a team to manage shifts for your crew, or join an existing team with an invite code.")
+            Text("Create a store team to manage shifts for your crew, or join an existing team with an invite code.")
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -123,7 +123,7 @@ struct TeamView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(team.name)
+                    Text("Store: \(team.name)")
                         .font(.system(size: 18, weight: .bold))
                     Text("\(teamViewModel.members.count) members")
                         .font(.system(size: 13))
@@ -230,6 +230,34 @@ struct TeamView: View {
                 Text("Assigned to: \(assignee.displayName.isEmpty ? assignee.email : assignee.displayName)")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
+            }
+
+            if !shift.tasks.isEmpty {
+                let completedCount = shift.tasks.filter { $0.isCompleted }.count
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(completedCount)/\(shift.tasks.count) tasks done")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(completedCount == shift.tasks.count ? .primaryGreen : .secondary)
+                    ForEach(shift.tasks) { task in
+                        Button(action: {
+                            if shift.assignedTo == teamViewModel.currentUserId || teamViewModel.isManager {
+                                teamViewModel.toggleTaskCompletion(shiftId: shift.id, taskId: task.id)
+                            }
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(task.isCompleted ? .primaryGreen : .secondary)
+                                    .font(.system(size: 14))
+                                Text(task.title)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(task.isCompleted ? .secondary : .primary)
+                                    .strikethrough(task.isCompleted)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, 4)
             }
 
             if shift.assignedTo == teamViewModel.currentUserId && shift.status == "assigned" {

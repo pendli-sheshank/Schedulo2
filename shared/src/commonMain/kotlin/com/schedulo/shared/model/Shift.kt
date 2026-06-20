@@ -12,11 +12,13 @@ data class Shift(
     var customEarned: Double = 0.0,
     var reminderBeforeMinutes: Int = 30,
     var isPaid: Boolean = false,
-    var notes: String = ""
+    var notes: String = "",
+    var bonusApplied: Boolean = false,
+    var bonusAmount: Double = 0.0
 ) {
     val durationHours: Double
         get() = if (endTime > startTime) (endTime - startTime) / 3600000.0 else 0.0
 
     val totalEarned: Double
-        get() = if (isGig) customEarned else (durationHours * hourlyRate)
+        get() = if (isGig) customEarned else (durationHours * hourlyRate) + (if (bonusApplied) bonusAmount else 0.0)
 }

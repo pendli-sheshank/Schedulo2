@@ -9,7 +9,7 @@ struct CreateTeamView: View {
         NavigationStack {
             VStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Team Name")
+                    Text("Store Name")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.secondary)
                     TextField("e.g. Morning Crew", text: $teamName)
@@ -25,7 +25,7 @@ struct CreateTeamView: View {
                     teamViewModel.createTeam(name: teamName.trimmingCharacters(in: .whitespacesAndNewlines))
                     dismiss()
                 }) {
-                    Text("Create Team")
+                    Text("Create Store Team")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -40,7 +40,7 @@ struct CreateTeamView: View {
                 Spacer()
             }
             .padding(16)
-            .navigationTitle("Create Team")
+            .navigationTitle("Create Store Team")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

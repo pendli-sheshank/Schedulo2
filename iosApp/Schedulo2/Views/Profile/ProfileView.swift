@@ -134,7 +134,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showTeam) {
             TeamView()
-                .environmentObject(TeamViewModel())
         }
         .alert("Delete Account", isPresented: $showDeleteAccount) {
             Button("Delete", role: .destructive) {

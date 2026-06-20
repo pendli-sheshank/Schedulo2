@@ -18,6 +18,8 @@ struct Shift: Identifiable, Codable, Equatable {
     var reminderBeforeMinutes: Int = 30
     var isPaid: Bool = false
     var notes: String = ""
+    var bonusApplied: Bool = false
+    var bonusAmount: Double = 0.0
 
     var durationHours: Double {
         guard endTime > startTime else { return 0.0 }
@@ -25,7 +27,7 @@ struct Shift: Identifiable, Codable, Equatable {
     }
 
     var totalEarned: Double {
-        isGig ? customEarned : (durationHours * hourlyRate)
+        isGig ? customEarned : (durationHours * hourlyRate) + (bonusApplied ? bonusAmount : 0.0)
     }
 
     var startDate: Date {
@@ -48,6 +50,8 @@ struct Job: Identifiable, Codable, Equatable, Hashable {
     var weeklyCycleStartDay: String? = "Monday"
     var overtimeThresholdHours: Double = 40.0
     var overtimeMultiplier: Double = 1.5
+    var bonusAmount: Double = 0.0
+    var bonusReason: String = ""
 
     func getStartOfCurrentCycle(targetDate: Date = Date()) -> Int64 {
         let calendar = Calendar.current
@@ -99,6 +103,17 @@ struct UserSettings: Codable, Equatable {
     var userId: String = ""
 }
 
+struct PayAdjustment: Identifiable, Codable, Equatable {
+    var id: String = UUID().uuidString
+    var userId: String = ""
+    var cycleKey: String = ""
+    var employer: String = ""
+    var type: String = ""  // Bonus, Overpaid, Underpaid, Deduction, Correction
+    var amount: Double = 0.0
+    var notes: String = ""
+    var createdAt: Int64 = 0
+}
+
 // MARK: - FirebaseService
 
 final class FirebaseService {
@@ -113,11 +128,13 @@ final class FirebaseService {
     let profileSubject = CurrentValueSubject<UserProfile?, Never>(nil)
     let settingsSubject = CurrentValueSubject<UserSettings?, Never>(nil)
     let authStateSubject = CurrentValueSubject<User?, Never>(nil)
+    let payAdjustmentsSubject = CurrentValueSubject<[PayAdjustment], Never>([])
 
     private var shiftsListener: ListenerRegistration?
     private var jobsListener: ListenerRegistration?
     private var profileListener: ListenerRegistration?
     private var settingsListener: ListenerRegistration?
+    private var payAdjustmentsListener: ListenerRegistration?
     private var authHandle: AuthStateDidChangeListenerHandle?
 
     private init() {
@@ -310,7 +327,9 @@ final class FirebaseService {
                         customEarned: data["customEarned"] as? Double ?? 0.0,
                         reminderBeforeMinutes: data["reminderBeforeMinutes"] as? Int ?? 30,
                         isPaid: data["isPaid"] as? Bool ?? false,
-                        notes: data["notes"] as? String ?? ""
+                        notes: data["notes"] as? String ?? "",
+                        bonusApplied: data["bonusApplied"] as? Bool ?? false,
+                        bonusAmount: data["bonusAmount"] as? Double ?? 0.0
                     )
                 }.sorted { $0.startTime > $1.startTime }
                 self?.shiftsSubject.send(shifts)
@@ -363,7 +382,9 @@ final class FirebaseService {
             "customEarned": s.customEarned,
             "reminderBeforeMinutes": s.reminderBeforeMinutes,
             "isPaid": s.isPaid,
-            "notes": s.notes
+            "notes": s.notes,
+            "bonusApplied": s.bonusApplied,
+            "bonusAmount": s.bonusAmount
         ]
     }
 
@@ -389,7 +410,9 @@ final class FirebaseService {
                         goalType: data["goalType"] as? String ?? "Hours",
                         weeklyCycleStartDay: data["weeklyCycleStartDay"] as? String ?? "Monday",
                         overtimeThresholdHours: data["overtimeThresholdHours"] as? Double ?? 40.0,
-                        overtimeMultiplier: data["overtimeMultiplier"] as? Double ?? 1.5
+                        overtimeMultiplier: data["overtimeMultiplier"] as? Double ?? 1.5,
+                        bonusAmount: data["bonusAmount"] as? Double ?? 0.0,
+                        bonusReason: data["bonusReason"] as? String ?? ""
                     )
                 }
                 if jobs.isEmpty && !isFromCache {
@@ -436,8 +459,57 @@ final class FirebaseService {
             "goalType": j.goalType,
             "weeklyCycleStartDay": j.weeklyCycleStartDay ?? "Monday",
             "overtimeThresholdHours": j.overtimeThresholdHours,
-            "overtimeMultiplier": j.overtimeMultiplier
+            "overtimeMultiplier": j.overtimeMultiplier,
+            "bonusAmount": j.bonusAmount,
+            "bonusReason": j.bonusReason
         ]
+    }
+
+    // MARK: - Pay Adjustments
+
+    func listenToPayAdjustments() {
+        guard let uid = currentUserId else { return }
+        payAdjustmentsListener?.remove()
+        payAdjustmentsListener = db.collection("pay_adjustments")
+            .whereField("userId", isEqualTo: uid)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let documents = snapshot?.documents, error == nil else { return }
+                let adjustments: [PayAdjustment] = documents.compactMap { doc in
+                    let data = doc.data()
+                    return PayAdjustment(
+                        id: doc.documentID,
+                        userId: data["userId"] as? String ?? "",
+                        cycleKey: data["cycleKey"] as? String ?? "",
+                        employer: data["employer"] as? String ?? "",
+                        type: data["type"] as? String ?? "",
+                        amount: data["amount"] as? Double ?? 0.0,
+                        notes: data["notes"] as? String ?? "",
+                        createdAt: (data["createdAt"] as? NSNumber)?.int64Value ?? 0
+                    )
+                }
+                self?.payAdjustmentsSubject.send(adjustments)
+            }
+    }
+
+    func addPayAdjustment(_ adjustment: PayAdjustment) {
+        var a = adjustment
+        if a.userId.isEmpty { a.userId = currentUserId ?? "" }
+        if a.createdAt == 0 { a.createdAt = Int64(Date().timeIntervalSince1970 * 1000) }
+        let data: [String: Any] = [
+            "id": a.id,
+            "userId": a.userId,
+            "cycleKey": a.cycleKey,
+            "employer": a.employer,
+            "type": a.type,
+            "amount": a.amount,
+            "notes": a.notes,
+            "createdAt": a.createdAt
+        ]
+        db.collection("pay_adjustments").document(a.id).setData(data)
+    }
+
+    func deletePayAdjustment(_ adjustmentId: String) {
+        db.collection("pay_adjustments").document(adjustmentId).delete()
     }
 
     // MARK: - Listener Management
@@ -451,10 +523,13 @@ final class FirebaseService {
         profileListener = nil
         settingsListener?.remove()
         settingsListener = nil
+        payAdjustmentsListener?.remove()
+        payAdjustmentsListener = nil
         shiftsSubject.send([])
         jobsSubject.send([])
         profileSubject.send(nil)
         settingsSubject.send(nil)
+        payAdjustmentsSubject.send([])
     }
 
     func startAllListeners() {
@@ -462,5 +537,6 @@ final class FirebaseService {
         listenToJobs()
         listenToProfile()
         listenToSettings()
+        listenToPayAdjustments()
     }
 }

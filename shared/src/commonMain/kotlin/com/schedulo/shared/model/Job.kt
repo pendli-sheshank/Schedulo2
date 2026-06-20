@@ -12,7 +12,9 @@ data class Job(
     var goalType: String = "Hours",
     var weeklyCycleStartDay: String? = "Monday",
     var overtimeThresholdHours: Double = 40.0,
-    var overtimeMultiplier: Double = 1.5
+    var overtimeMultiplier: Double = 1.5,
+    var bonusAmount: Double = 0.0,
+    var bonusReason: String = ""
 ) {
     fun getStartOfCurrentCycle(targetMillis: Long = Clock.System.now().toEpochMilliseconds()): Long {
         val instant = Instant.fromEpochMilliseconds(targetMillis)

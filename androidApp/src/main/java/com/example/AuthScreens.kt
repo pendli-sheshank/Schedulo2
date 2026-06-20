@@ -2,6 +2,7 @@ package com.example
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -286,6 +287,17 @@ fun LoginScreen(
                     val context = LocalContext.current
                     val biometricAvailable = remember { viewModel.isBiometricAvailable(context) }
                     val biometricEnabled by viewModel.biometricEnabled.collectAsState()
+
+                    LaunchedEffect(biometricAvailable, biometricEnabled) {
+                        if (biometricAvailable && biometricEnabled) {
+                            val activity = context as? FragmentActivity
+                            if (activity != null) {
+                                viewModel.showBiometricPrompt(activity) {
+                                    onNavigateToDashboard()
+                                }
+                            }
+                        }
+                    }
 
                     if (biometricAvailable && biometricEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))

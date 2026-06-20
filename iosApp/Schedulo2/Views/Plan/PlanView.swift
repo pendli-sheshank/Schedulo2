@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlanView: View {
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
+    @EnvironmentObject var teamViewModel: TeamViewModel
 
     var onEditShift: (String) -> Void = { _ in }
     var onAddShift: () -> Void = {}
@@ -14,6 +15,13 @@ struct PlanView: View {
         if searchQuery.isEmpty { return dashboardViewModel.shifts }
         return dashboardViewModel.shifts.filter {
             $0.company.localizedCaseInsensitiveContains(searchQuery)
+        }
+    }
+
+    private var myTeamShifts: [TeamShiftInfo] {
+        guard let uid = teamViewModel.currentUserId else { return [] }
+        return teamViewModel.teamShifts.filter {
+            $0.assignedTo == uid && $0.status != "declined"
         }
     }
 
@@ -72,6 +80,7 @@ struct PlanView: View {
                 CalendarMonthView(
                     selectedDate: $selectedDate,
                     shifts: filteredShifts,
+                    teamShifts: myTeamShifts,
                     onEditShift: onEditShift,
                     onAddShift: onAddShift,
                     onSwitchToDay: { date in selectedDate = date; viewMode = "Day" }
@@ -80,6 +89,7 @@ struct PlanView: View {
                 CalendarWeekView(
                     selectedDate: $selectedDate,
                     shifts: filteredShifts,
+                    teamShifts: myTeamShifts,
                     onEditShift: onEditShift,
                     onAddShift: onAddShift,
                     onDayTap: { date in selectedDate = date; viewMode = "Day" }
@@ -88,6 +98,7 @@ struct PlanView: View {
                 CalendarDayView(
                     selectedDate: $selectedDate,
                     shifts: filteredShifts,
+                    teamShifts: myTeamShifts,
                     onEditShift: onEditShift,
                     onAddShift: onAddShift
                 )
@@ -182,11 +193,73 @@ struct ShiftCard: View {
     }
 }
 
+// MARK: - Team Shift Card
+
+struct TeamShiftPlanCard: View {
+    let shift: TeamShiftInfo
+
+    private static let timeFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "hh:mm a"
+        return f
+    }()
+
+    var body: some View {
+        HStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.accentOrange)
+                .frame(width: 4, height: 44)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(shift.company)
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("TEAM")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(Color.accentOrange))
+                }
+                Text("\(Self.timeFormat.string(from: shift.startDate)) -> \(Self.timeFormat.string(from: shift.endDate))")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                if !shift.tasks.isEmpty {
+                    let done = shift.tasks.filter { $0.isCompleted }.count
+                    Text("\(done)/\(shift.tasks.count) tasks done")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(done == shift.tasks.count ? .primaryGreen : .secondary)
+                }
+            }
+            Spacer()
+            Text(shift.status.capitalized)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(shift.status == "accepted" ? .green : shift.status == "declined" ? .red : .orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill((shift.status == "accepted" ? Color.green : shift.status == "declined" ? Color.red : Color.orange).opacity(0.15))
+                )
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.accentOrange.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.accentOrange.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+}
+
 // MARK: - Month View
 
 private struct CalendarMonthView: View {
     @Binding var selectedDate: Date
     let shifts: [Shift]
+    var teamShifts: [TeamShiftInfo] = []
     var onEditShift: (String) -> Void
     var onAddShift: () -> Void
     var onSwitchToDay: (Date) -> Void
@@ -235,6 +308,18 @@ private struct CalendarMonthView: View {
         let dayStart = calendar.startOfDay(for: selectedDate)
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
         return shifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.sorted { $0.startTime < $1.startTime }
+    }
+
+    private func teamShiftsFor(day: Int) -> [TeamShiftInfo] {
+        let dayStart = dateFor(day: day)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+        return teamShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
+    }
+
+    private var selectedDayTeamShifts: [TeamShiftInfo] {
+        let dayStart = calendar.startOfDay(for: selectedDate)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return [] }
+        return teamShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.sorted { $0.startDate < $1.startDate }
     }
 
     var body: some View {
@@ -286,16 +371,22 @@ private struct CalendarMonthView: View {
                                 let isSelected = calendar.isDate(dateFor(day: dayNum), inSameDayAs: selectedDate)
                                 let dayShifts = shiftsFor(day: dayNum)
 
+                                let dayTeamShifts = teamShiftsFor(day: dayNum)
                                 Button(action: { selectedDate = dateFor(day: dayNum) }) {
                                     VStack(spacing: 2) {
                                         Text("\(dayNum)")
                                             .font(.system(size: 14, weight: isToday || isSelected ? .bold : .regular))
                                             .foregroundColor(isSelected ? .white : isToday ? .primaryGreen : .primary)
-                                        if !dayShifts.isEmpty {
+                                        if !dayShifts.isEmpty || !dayTeamShifts.isEmpty {
                                             HStack(spacing: 2) {
-                                                ForEach(0..<min(dayShifts.count, 3), id: \.self) { _ in
+                                                ForEach(0..<min(dayShifts.count, 2), id: \.self) { _ in
                                                     Circle()
                                                         .fill(isSelected ? Color.white : Color.primaryGreen)
+                                                        .frame(width: 4, height: 4)
+                                                }
+                                                if !dayTeamShifts.isEmpty {
+                                                    Circle()
+                                                        .fill(isSelected ? Color.white : Color.accentOrange)
                                                         .frame(width: 4, height: 4)
                                                 }
                                             }
@@ -334,7 +425,7 @@ private struct CalendarMonthView: View {
                 }
                 .padding(.horizontal, 16)
 
-                if selectedDayShifts.isEmpty {
+                if selectedDayShifts.isEmpty && selectedDayTeamShifts.isEmpty {
                     emptyState
                 } else {
                     ForEach(selectedDayShifts, id: \.id) { shift in
@@ -343,25 +434,32 @@ private struct CalendarMonthView: View {
                             .padding(.vertical, 4)
                     }
 
-                    // Day summary
-                    let totalHrs = selectedDayShifts.reduce(0) { $0 + $1.durationHours }
-                    let totalEarned = selectedDayShifts.reduce(0) { $0 + $1.totalEarned }
-                    HStack {
-                        Text("\(selectedDayShifts.count) shift\(selectedDayShifts.count != 1 ? "s" : "") - \(String(format: "%.1f", totalHrs)) hrs")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.primaryGreen)
-                        Spacer()
-                        Text("$\(totalEarned, specifier: "%.2f")")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.primaryGreen)
+                    ForEach(selectedDayTeamShifts, id: \.id) { teamShift in
+                        TeamShiftPlanCard(shift: teamShift)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 4)
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.primaryGreen.opacity(0.08))
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
+
+                    if !selectedDayShifts.isEmpty {
+                        let totalHrs = selectedDayShifts.reduce(0) { $0 + $1.durationHours }
+                        let totalEarned = selectedDayShifts.reduce(0) { $0 + $1.totalEarned }
+                        HStack {
+                            Text("\(selectedDayShifts.count) shift\(selectedDayShifts.count != 1 ? "s" : "") - \(String(format: "%.1f", totalHrs)) hrs")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.primaryGreen)
+                            Spacer()
+                            Text("$\(totalEarned, specifier: "%.2f")")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.primaryGreen)
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.primaryGreen.opacity(0.08))
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 4)
+                    }
                 }
 
                 Spacer().frame(height: 80)
@@ -400,6 +498,7 @@ private struct CalendarMonthView: View {
 private struct CalendarWeekView: View {
     @Binding var selectedDate: Date
     let shifts: [Shift]
+    var teamShifts: [TeamShiftInfo] = []
     var onEditShift: (String) -> Void
     var onAddShift: () -> Void
     var onDayTap: (Date) -> Void
@@ -419,6 +518,10 @@ private struct CalendarWeekView: View {
 
     private var weekShifts: [Shift] {
         shifts.filter { $0.startDate >= weekStart && $0.startDate < weekEnd }.sorted { $0.startTime < $1.startTime }
+    }
+
+    private var weekTeamShifts: [TeamShiftInfo] {
+        teamShifts.filter { $0.startDate >= weekStart && $0.startDate < weekEnd }.sorted { $0.startDate < $1.startDate }
     }
 
     private var daysList: [(Date, Date)] {
@@ -464,7 +567,9 @@ private struct CalendarWeekView: View {
                 HStack(spacing: 4) {
                     ForEach(daysList, id: \.0) { dayStart, _ in
                         let isToday = calendar.isDateInToday(dayStart)
-                        let shiftCount = weekShifts.filter { $0.startDate >= dayStart && $0.startDate < calendar.date(byAdding: .day, value: 1, to: dayStart)! }.count
+                        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart)!
+                        let shiftCount = weekShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.count
+                        let teamShiftCount = weekTeamShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.count
 
                         Button(action: { onDayTap(dayStart) }) {
                             VStack(spacing: 4) {
@@ -476,10 +581,15 @@ private struct CalendarWeekView: View {
                                 Text(f2.string(from: dayStart))
                                     .font(.system(size: 16, weight: .bold))
                                     .foregroundColor(isToday ? .primaryGreen : .primary)
-                                if shiftCount > 0 {
-                                    Circle()
-                                        .fill(Color.primaryGreen)
-                                        .frame(width: 6, height: 6)
+                                if shiftCount > 0 || teamShiftCount > 0 {
+                                    HStack(spacing: 2) {
+                                        if shiftCount > 0 {
+                                            Circle().fill(Color.primaryGreen).frame(width: 6, height: 6)
+                                        }
+                                        if teamShiftCount > 0 {
+                                            Circle().fill(Color.accentOrange).frame(width: 6, height: 6)
+                                        }
+                                    }
                                 } else {
                                     Spacer().frame(height: 6)
                                 }
@@ -504,7 +614,7 @@ private struct CalendarWeekView: View {
                 Divider().padding(.horizontal, 16).padding(.vertical, 4)
 
                 // Day-by-day agenda
-                if weekShifts.isEmpty {
+                if weekShifts.isEmpty && weekTeamShifts.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "calendar.badge.checkmark")
                             .font(.system(size: 40))
@@ -524,7 +634,8 @@ private struct CalendarWeekView: View {
                 } else {
                     ForEach(daysList, id: \.0) { dayStart, dayEnd in
                         let dayShifts = weekShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
-                        if !dayShifts.isEmpty {
+                        let dayTeamShifts = weekTeamShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }
+                        if !dayShifts.isEmpty || !dayTeamShifts.isEmpty {
                             let isToday = calendar.isDateInToday(dayStart)
                             HStack {
                                 HStack(spacing: 8) {
@@ -554,6 +665,12 @@ private struct CalendarWeekView: View {
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 3)
                             }
+
+                            ForEach(dayTeamShifts, id: \.id) { teamShift in
+                                TeamShiftPlanCard(shift: teamShift)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 3)
+                            }
                         }
                     }
                 }
@@ -575,6 +692,7 @@ private struct CalendarWeekView: View {
 private struct CalendarDayView: View {
     @Binding var selectedDate: Date
     let shifts: [Shift]
+    var teamShifts: [TeamShiftInfo] = []
     var onEditShift: (String) -> Void
     var onAddShift: () -> Void
 
@@ -585,6 +703,10 @@ private struct CalendarDayView: View {
 
     private var dayShifts: [Shift] {
         shifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.sorted { $0.startTime < $1.startTime }
+    }
+
+    private var dayTeamShifts: [TeamShiftInfo] {
+        teamShifts.filter { $0.startDate >= dayStart && $0.startDate < dayEnd }.sorted { $0.startDate < $1.startDate }
     }
 
     private var isToday: Bool { calendar.isDateInToday(selectedDate) }
@@ -667,7 +789,7 @@ private struct CalendarDayView: View {
                 }
 
                 // Shifts
-                if dayShifts.isEmpty {
+                if dayShifts.isEmpty && dayTeamShifts.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "calendar.badge.checkmark")
                             .font(.system(size: 40))
@@ -687,6 +809,12 @@ private struct CalendarDayView: View {
                 } else {
                     ForEach(dayShifts, id: \.id) { shift in
                         DayViewShiftCard(shift: shift) { onEditShift(shift.id) }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 4)
+                    }
+
+                    ForEach(dayTeamShifts, id: \.id) { teamShift in
+                        TeamShiftPlanCard(shift: teamShift)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 4)
                     }

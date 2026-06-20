@@ -11,6 +11,8 @@ struct AssignShiftView: View {
     @State private var endDate = Date().addingTimeInterval(3600 * 4)
     @State private var hourlyRate = ""
     @State private var notes = ""
+    @State private var tasks: [ShiftTaskInfo] = []
+    @State private var newTaskTitle = ""
 
     var body: some View {
         NavigationStack {
@@ -80,6 +82,50 @@ struct AssignShiftView: View {
                             .textFieldStyle(.roundedBorder)
                     }
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Tasks")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        ForEach(tasks) { task in
+                            HStack {
+                                Image(systemName: "checkmark.circle")
+                                    .foregroundColor(.primaryGreen)
+                                    .font(.system(size: 14))
+                                Text(task.title)
+                                    .font(.system(size: 14))
+                                Spacer()
+                                Button(action: { tasks.removeAll { $0.id == task.id } }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.secondary.opacity(0.5))
+                                        .font(.system(size: 16))
+                                }
+                            }
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
+                            )
+                        }
+
+                        HStack {
+                            TextField("Add a task...", text: $newTaskTitle)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 14))
+                            Button(action: {
+                                let trimmed = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !trimmed.isEmpty else { return }
+                                tasks.append(ShiftTaskInfo(title: trimmed))
+                                newTaskTitle = ""
+                            }) {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.primaryGreen)
+                                    .font(.system(size: 24))
+                            }
+                            .disabled(newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+
                     Button(action: assignShift) {
                         Text("Assign Shift")
                             .font(.system(size: 15, weight: .semibold))
@@ -121,7 +167,8 @@ struct AssignShiftView: View {
             startTime: startMillis,
             endTime: endMillis,
             hourlyRate: rate,
-            notes: notes
+            notes: notes,
+            tasks: tasks
         )
         dismiss()
     }

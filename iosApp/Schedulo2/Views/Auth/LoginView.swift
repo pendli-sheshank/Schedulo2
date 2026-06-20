@@ -237,6 +237,13 @@ struct LoginView: View {
                 }
             }
             .navigationBarHidden(true)
+            .onAppear {
+                if authViewModel.biometricAvailable && authViewModel.biometricEnabled {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        authViewModel.authenticateWithBiometric()
+                    }
+                }
+            }
             .sheet(isPresented: $showForgotPassword) {
                 ForgotPasswordSheet(email: $resetEmail, authViewModel: authViewModel, isPresented: $showForgotPassword)
             }

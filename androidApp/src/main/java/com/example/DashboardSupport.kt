@@ -44,7 +44,9 @@ data class Job(
     var goalType: String = "Hours", // "Hours" or "Earnings"
     var weeklyCycleStartDay: String? = "Monday", // "Monday", "Tuesday", etc.
     var overtimeThresholdHours: Double = 40.0, // weekly hours after which overtime kicks in
-    var overtimeMultiplier: Double = 1.5 // pay multiplier for overtime (e.g., 1.5x)
+    var overtimeMultiplier: Double = 1.5, // pay multiplier for overtime (e.g., 1.5x)
+    var bonusAmount: Double = 0.0,
+    var bonusReason: String = ""
 ) {
     fun getStartOfCurrentCycle(targetMillis: Long = System.currentTimeMillis()): Long {
         val calendar = Calendar.getInstance()
@@ -96,15 +98,17 @@ data class Shift(
     var customEarned: Double = 0.0,
     var reminderBeforeMinutes: Int = 30,
     var isPaid: Boolean = false,
-    var notes: String = ""
+    var notes: String = "",
+    var bonusApplied: Boolean = false,
+    var bonusAmount: Double = 0.0
 ) {
     @get:com.google.firebase.firestore.Exclude
     val durationHours: Double
         get() = if (endTime > startTime) (endTime - startTime) / 3600000.0 else 0.0
-        
+
     @get:com.google.firebase.firestore.Exclude
     val totalEarned: Double
-        get() = if (isGig) customEarned else (durationHours * hourlyRate)
+        get() = if (isGig) customEarned else (durationHours * hourlyRate) + (if (bonusApplied) bonusAmount else 0.0)
 }
 
 fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, Double> {
@@ -363,7 +367,7 @@ class DashboardViewModel : ViewModel() {
             }
     }
 
-    fun addJob(title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday", overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
+    fun addJob(title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String = "Monday", overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5, bonusAmount: Double = 0.0, bonusReason: String = "") {
         val uid = auth?.currentUser?.uid
         val database = db
         if (uid == null || database == null) {
@@ -380,7 +384,9 @@ class DashboardViewModel : ViewModel() {
             goalType = goalType,
             weeklyCycleStartDay = weeklyCycleStartDay,
             overtimeThresholdHours = overtimeThresholdHours.coerceAtLeast(1.0),
-            overtimeMultiplier = overtimeMultiplier.coerceAtLeast(1.0)
+            overtimeMultiplier = overtimeMultiplier.coerceAtLeast(1.0),
+            bonusAmount = if (isGigWork) 0.0 else bonusAmount.coerceAtLeast(0.0),
+            bonusReason = if (isGigWork) "" else bonusReason
         )
         _jobs.value = _jobs.value + job
         database.collection("jobs").document(job.id).set(job)
@@ -390,7 +396,7 @@ class DashboardViewModel : ViewModel() {
             }
     }
 
-    fun updateJob(jobId: String, title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String, overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5) {
+    fun updateJob(jobId: String, title: String, isGigWork: Boolean, defaultHourlyRate: Double, goalHours: Double, goalType: String, weeklyCycleStartDay: String, overtimeThresholdHours: Double = 40.0, overtimeMultiplier: Double = 1.5, bonusAmount: Double = 0.0, bonusReason: String = "") {
         val job = jobs.value.find { it.id == jobId } ?: return
         val database = db ?: run {
             _syncError.value = "Please sign in to update employers."
@@ -404,7 +410,9 @@ class DashboardViewModel : ViewModel() {
             goalType = goalType,
             weeklyCycleStartDay = weeklyCycleStartDay,
             overtimeThresholdHours = overtimeThresholdHours.coerceAtLeast(1.0),
-            overtimeMultiplier = overtimeMultiplier.coerceAtLeast(1.0)
+            overtimeMultiplier = overtimeMultiplier.coerceAtLeast(1.0),
+            bonusAmount = if (isGigWork) 0.0 else bonusAmount.coerceAtLeast(0.0),
+            bonusReason = if (isGigWork) "" else bonusReason
         )
         val previousJobs = _jobs.value
         _jobs.value = _jobs.value.map { if (it.id == jobId) updated else it }
@@ -485,8 +493,9 @@ class DashboardViewModel : ViewModel() {
                         doc.toObject(Shift::class.java)?.copy(id = doc.id)
                     }.sortedByDescending { it.startTime }
                     _shifts.value = list
-                    appContext?.let { ctx ->
-                        try { WidgetDataProvider.updateWidgetData(ctx, list) } catch (_: Exception) {}
+                    val ctx = appContext ?: try { com.google.firebase.FirebaseApp.getInstance().applicationContext } catch (_: Exception) { null }
+                    ctx?.let { c ->
+                        try { WidgetDataProvider.updateWidgetData(c, list) } catch (_: Exception) {}
                     }
                 }
             }
@@ -496,7 +505,7 @@ class DashboardViewModel : ViewModel() {
         addShift(company, startTime, endTime, hourlyRate, false, 0.0, 30, "")
     }
 
-    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", context: android.content.Context? = null) {
+    fun addShift(company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", context: android.content.Context? = null, bonusApplied: Boolean = false, bonusAmount: Double = 0.0) {
         val uid = auth?.currentUser?.uid
         val database = db
         if (uid == null || database == null) {
@@ -515,7 +524,9 @@ class DashboardViewModel : ViewModel() {
             customEarned = customEarned.coerceAtLeast(0.0),
             reminderBeforeMinutes = reminderBeforeMinutes,
             isPaid = isGig,
-            notes = notes
+            notes = notes,
+            bonusApplied = bonusApplied,
+            bonusAmount = bonusAmount
         )
         _shifts.value = (_shifts.value + shift).sortedByDescending { it.startTime }
         database.collection("shifts").document(shift.id).set(shift)
@@ -534,7 +545,7 @@ class DashboardViewModel : ViewModel() {
         updateShift(shiftId, company, startTime, endTime, hourlyRate, false, 0.0, 30, "")
     }
 
-    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", context: android.content.Context? = null) {
+    fun updateShift(shiftId: String, company: String, startTime: Long, endTime: Long, hourlyRate: Double, isGig: Boolean, customEarned: Double, reminderBeforeMinutes: Int, notes: String = "", context: android.content.Context? = null, bonusApplied: Boolean = false, bonusAmount: Double = 0.0) {
         val shift = shifts.value.find { it.id == shiftId } ?: return
         val database = db
         if (database == null) {
@@ -551,7 +562,9 @@ class DashboardViewModel : ViewModel() {
             customEarned = customEarned,
             reminderBeforeMinutes = reminderBeforeMinutes,
             isPaid = if (isGig) true else shift.isPaid,
-            notes = notes
+            notes = notes,
+            bonusApplied = bonusApplied,
+            bonusAmount = bonusAmount
         )
         val previousShifts = _shifts.value
         _shifts.value = _shifts.value.map { if (it.id == shiftId) updated else it }.sortedByDescending { it.startTime }
@@ -1009,6 +1022,9 @@ fun AddShiftScreen(
     var shiftNotes by remember(existingShift) {
         mutableStateOf(existingShift?.notes ?: "")
     }
+    var applyBonus by remember(selectedJob, existingShift) {
+        mutableStateOf(existingShift?.bonusApplied ?: false)
+    }
 
     var selectedDateMillis by remember { mutableStateOf(existingShift?.startTime ?: System.currentTimeMillis()) }
     var startHour by remember { mutableStateOf(existingShift?.let { Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.HOUR_OF_DAY) } ?: 9) }
@@ -1178,8 +1194,25 @@ fun AddShiftScreen(
                 )
             }
 
+            if (!isGig && selectedJob != null && selectedJob!!.bonusAmount > 0) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Apply Bonus: +$${String.format("%.2f", selectedJob!!.bonusAmount)}", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                        if (selectedJob!!.bonusReason.isNotBlank()) {
+                            Text(selectedJob!!.bonusReason, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Switch(checked = applyBonus, onCheckedChange = { applyBonus = it })
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Date Picker Field
             OutlinedTextField(
                 value = dateFormat.format(Date(selectedDateMillis)),
@@ -1365,15 +1398,18 @@ fun AddShiftScreen(
                     val remindersOn = viewModel.remindersEnabled.value
                     val effectiveReminder = if (remindersOn) reminderMinutes else 0
 
+                    val shiftBonusApplied = applyBonus && !isGig && selectedJob != null && selectedJob!!.bonusAmount > 0
+                    val shiftBonusAmount = if (shiftBonusApplied) selectedJob!!.bonusAmount else 0.0
+
                     if (existingShift != null) {
-                        viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes, context)
+                        viewModel.updateShift(existingShift.id, company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes, context, shiftBonusApplied, shiftBonusAmount)
                         if (effectiveReminder > 0) {
                             NotificationHelper.scheduleReminder(context, Shift(id = existingShift.id, company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = effectiveReminder))
                         } else {
                             NotificationHelper.cancelReminder(context, existingShift.id)
                         }
                     } else {
-                        viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes, context)
+                        viewModel.addShift(company, calStart.timeInMillis, finalEndTime, hourly, isGig, earned, effectiveReminder, trimmedNotes, context, shiftBonusApplied, shiftBonusAmount)
                         if (effectiveReminder > 0) {
                             NotificationHelper.scheduleReminder(context, Shift(company = company, startTime = calStart.timeInMillis, endTime = finalEndTime, reminderBeforeMinutes = effectiveReminder))
                         }
@@ -1394,7 +1430,7 @@ fun AddShiftScreen(
                                 }.timeInMillis
                                 val recurEnd = recurStart + shiftDuration
                                 val recurShift = Shift(company = company, startTime = recurStart, endTime = recurEnd, reminderBeforeMinutes = effectiveReminder)
-                                viewModel.addShift(company, recurStart, recurEnd, hourly, isGig, earned, effectiveReminder, trimmedNotes, context)
+                                viewModel.addShift(company, recurStart, recurEnd, hourly, isGig, earned, effectiveReminder, trimmedNotes, context, shiftBonusApplied, shiftBonusAmount)
                                 if (effectiveReminder > 0) NotificationHelper.scheduleReminder(context, recurShift)
                             }
                         }

@@ -28,6 +28,7 @@ import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.SecondaryGreen
 import com.example.ui.theme.AccentBlue
 import com.example.ui.theme.AccentOrange
+import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.TeamMember
 import com.schedulo.shared.model.TeamShift
 import java.text.SimpleDateFormat
@@ -38,7 +39,8 @@ import java.util.*
 fun TeamScreen(
     teamViewModel: TeamViewModel,
     authViewModel: AuthViewModel,
-    onBack: () -> Unit
+    onBack: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     val teams by teamViewModel.teams.collectAsState()
     val currentTeam by teamViewModel.currentTeam.collectAsState()
@@ -61,13 +63,18 @@ fun TeamScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text("Team Management") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                navigationIcon = if (onBack != null) {
+                    {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        }
                     }
+                } else {
+                    {}
                 }
             )
         },
@@ -146,14 +153,14 @@ fun TeamScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "No Teams Yet",
+                            "No Store Teams Yet",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Create a team to manage shifts for your crew, or join an existing team with an invite code.",
+                            "Create a store team to manage shifts for your crew, or join an existing team with an invite code.",
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -250,7 +257,7 @@ fun TeamScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(
-                                    currentTeam!!.name,
+                                    "Store: ${currentTeam!!.name}",
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
@@ -394,7 +401,8 @@ fun TeamScreen(
                                 currentUserId = currentUserId,
                                 onAccept = { teamViewModel.updateShiftStatus(shift.id, "accepted") },
                                 onDecline = { teamViewModel.updateShiftStatus(shift.id, "declined") },
-                                onDelete = { teamViewModel.deleteTeamShift(shift.id) }
+                                onDelete = { teamViewModel.deleteTeamShift(shift.id) },
+                                onToggleTask = { taskId -> teamViewModel.toggleTaskCompletion(shift.id, taskId) }
                             )
                         }
                     }
@@ -426,8 +434,8 @@ fun TeamScreen(
     if (showAssignDialog && members.isNotEmpty()) {
         AssignShiftDialog(
             onDismiss = { showAssignDialog = false },
-            onAssign = { memberId, company, role, startTime, endTime, hourlyRate, notes ->
-                teamViewModel.assignShift(memberId, company, role, startTime, endTime, hourlyRate, notes)
+            onAssign = { memberId, company, role, startTime, endTime, hourlyRate, notes, tasks ->
+                teamViewModel.assignShift(memberId, company, role, startTime, endTime, hourlyRate, notes, tasks)
                 showAssignDialog = false
             },
             members = members
@@ -530,7 +538,8 @@ private fun TeamShiftCard(
     currentUserId: String,
     onAccept: () -> Unit,
     onDecline: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleTask: (String) -> Unit = {}
 ) {
     val assignedMember = members.find { it.userId == shift.assignedTo }
     val assignedName = assignedMember?.displayName?.ifBlank { assignedMember.email.substringBefore("@") } ?: "Unknown"
@@ -609,6 +618,40 @@ private fun TeamShiftCard(
                 Text(shift.notes, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), maxLines = 2)
             }
 
+            if (shift.tasks.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                val completedCount = shift.tasks.count { it.isCompleted }
+                Text(
+                    "$completedCount/${shift.tasks.size} tasks done",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (completedCount == shift.tasks.size) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                shift.tasks.forEach { task ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = isAssignedToMe || isManager) { onToggleTask(task.id) }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (task.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            null,
+                            tint = if (task.isCompleted) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            task.title,
+                            fontSize = 13.sp,
+                            color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+            }
+
             // Action buttons
             if (isAssignedToMe && shift.status == "assigned") {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -661,15 +704,15 @@ fun CreateTeamDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Team", fontWeight = FontWeight.Bold) },
+        title = { Text("Create Store Team", fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                Text("Enter a name for your new team.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Enter a name for your new store team.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = teamName,
                     onValueChange = { if (it.length <= 50) teamName = it },
-                    label = { Text("Team Name") },
+                    label = { Text("Store Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
@@ -695,7 +738,7 @@ fun JoinTeamDialog(onDismiss: () -> Unit, onJoin: (String) -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Join Team", fontWeight = FontWeight.Bold) },
+        title = { Text("Join Store Team", fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 Text("Enter the 6-character invite code from your team manager.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -727,7 +770,7 @@ fun JoinTeamDialog(onDismiss: () -> Unit, onJoin: (String) -> Unit) {
 @Composable
 fun AssignShiftDialog(
     onDismiss: () -> Unit,
-    onAssign: (memberId: String, company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double, notes: String) -> Unit,
+    onAssign: (memberId: String, company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double, notes: String, tasks: List<ShiftTask>) -> Unit,
     members: List<TeamMember>
 ) {
     var selectedMember by remember { mutableStateOf<TeamMember?>(null) }
@@ -736,6 +779,8 @@ fun AssignShiftDialog(
     var role by remember { mutableStateOf("") }
     var hourlyRateStr by remember { mutableStateOf("15.0") }
     var notes by remember { mutableStateOf("") }
+    var tasks by remember { mutableStateOf(listOf<ShiftTask>()) }
+    var newTaskTitle by remember { mutableStateOf("") }
 
     var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var startHour by remember { mutableStateOf(9) }
@@ -923,6 +968,50 @@ fun AssignShiftDialog(
                     shape = RoundedCornerShape(12.dp),
                     maxLines = 2
                 )
+
+                Text("Tasks", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                tasks.forEach { task ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(task.title, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        IconButton(
+                            onClick = { tasks = tasks.filter { it.id != task.id } },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, "Remove", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = newTaskTitle,
+                        onValueChange = { newTaskTitle = it },
+                        placeholder = { Text("Add task...", fontSize = 13.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(
+                        onClick = {
+                            if (newTaskTitle.isNotBlank()) {
+                                tasks = tasks + ShiftTask(
+                                    id = UUID.randomUUID().toString(),
+                                    title = newTaskTitle.trim(),
+                                    isCompleted = false
+                                )
+                                newTaskTitle = ""
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Add, "Add Task", tint = PrimaryGreen)
+                    }
+                }
             }
         },
         confirmButton = {
@@ -951,7 +1040,8 @@ fun AssignShiftDialog(
                         calStart.timeInMillis,
                         finalEnd,
                         hourlyRateStr.toDoubleOrNull() ?: 0.0,
-                        notes
+                        notes,
+                        tasks
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),

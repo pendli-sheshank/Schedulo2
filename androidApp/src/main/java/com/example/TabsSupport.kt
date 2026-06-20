@@ -47,13 +47,17 @@ import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.SecondaryGreen
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.schedulo.shared.model.TeamShift
+import com.schedulo.shared.model.ShiftTask
 
 @Composable
 fun MainLayout(
     navController: NavHostController,
     currentRoute: String,
     authViewModel: AuthViewModel,
-    dashboardViewModel: DashboardViewModel
+    dashboardViewModel: DashboardViewModel,
+    teamViewModel: TeamViewModel? = null
 ) {
     androidx.compose.runtime.LaunchedEffect(Unit) {
         dashboardViewModel.loadShifts()
@@ -102,21 +106,25 @@ fun MainLayout(
                 onEditShift = { id -> navController.navigate("add_shift?shiftId=$id") },
                 onNavigateToProfile = { navController.navigate("profile") },
                 onNavigateToPay = {
-                    navController.navigate("pay") {
-                        popUpTo("dashboard") { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
+                    navController.navigate("pay")
                 }
             )
             "plan" -> PlanScreen(
                 modifier = Modifier.padding(innerPadding),
                 dashboardViewModel = dashboardViewModel,
+                teamViewModel = teamViewModel,
                 onEditShift = { id -> navController.navigate("add_shift?shiftId=$id") },
                 onAddShift = { navController.navigate("add_shift") }
             )
             "jobs" -> JobsScreen(modifier = Modifier.padding(innerPadding), dashboardViewModel = dashboardViewModel)
-            "pay" -> PayScreen(modifier = Modifier.padding(innerPadding), dashboardViewModel = dashboardViewModel)
+            "team" -> if (teamViewModel != null) {
+                TeamScreen(
+                    teamViewModel = teamViewModel,
+                    authViewModel = authViewModel,
+                    onBack = null,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
         }
     }
 }
@@ -126,12 +134,18 @@ fun MainLayout(
 fun PlanScreen(
     modifier: Modifier = Modifier,
     dashboardViewModel: DashboardViewModel,
+    teamViewModel: TeamViewModel? = null,
     onEditShift: (String) -> Unit,
     onAddShift: () -> Unit = {}
 ) {
     val shifts by dashboardViewModel.shifts.collectAsState(initial = emptyList())
+    val teamShifts by (teamViewModel?.teamShifts ?: MutableStateFlow(emptyList())).collectAsState()
     val isRefreshing by dashboardViewModel.isRefreshing.collectAsState()
     val now = System.currentTimeMillis()
+    val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    val myTeamShifts = remember(teamShifts, currentUserId) {
+        teamShifts.filter { it.assignedTo == currentUserId && it.status != "declined" }
+    }
 
     var viewMode by remember { mutableStateOf("Month") }
     var selectedDate by remember {
@@ -194,6 +208,7 @@ fun PlanScreen(
                     selectedDate = selectedDate,
                     onDateSelected = { selectedDate = it },
                     shifts = filteredShifts,
+                    teamShifts = myTeamShifts,
                     now = now,
                     onEditShift = onEditShift,
                     onAddShift = onAddShift,
@@ -203,6 +218,7 @@ fun PlanScreen(
                     selectedDate = selectedDate,
                     onDateChanged = { selectedDate = it },
                     shifts = filteredShifts,
+                    teamShifts = myTeamShifts,
                     now = now,
                     onEditShift = onEditShift,
                     onAddShift = onAddShift,
@@ -212,6 +228,7 @@ fun PlanScreen(
                     selectedDate = selectedDate,
                     onDateChanged = { selectedDate = it },
                     shifts = filteredShifts,
+                    teamShifts = myTeamShifts,
                     now = now,
                     onEditShift = onEditShift,
                     onAddShift = onAddShift
@@ -226,6 +243,7 @@ private fun CalendarMonthView(
     selectedDate: Long,
     onDateSelected: (Long) -> Unit,
     shifts: List<Shift>,
+    teamShifts: List<TeamShift> = emptyList(),
     now: Long,
     onEditShift: (String) -> Unit,
     onAddShift: () -> Unit,
@@ -269,6 +287,23 @@ private fun CalendarMonthView(
         }.timeInMillis
         val dayEnd = dayStart + 24 * 60 * 60 * 1000L
         shifts.filter { it.startTime in dayStart until dayEnd }.sortedBy { it.startTime }
+    }
+
+    val teamShiftsByDay = remember(teamShifts, year, month) {
+        val monthStart = Calendar.getInstance().apply { set(year, month, 1, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+        val monthEnd = Calendar.getInstance().apply { set(year, month, daysInMonth, 23, 59, 59) }.timeInMillis
+        teamShifts.filter { it.startTime in monthStart..monthEnd }.groupBy {
+            Calendar.getInstance().apply { timeInMillis = it.startTime }.get(Calendar.DAY_OF_MONTH)
+        }
+    }
+
+    val selectedDayTeamShifts = remember(teamShifts, selectedDate) {
+        val dayStart = Calendar.getInstance().apply {
+            timeInMillis = selectedDate
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val dayEnd = dayStart + 24 * 60 * 60 * 1000L
+        teamShifts.filter { it.startTime in dayStart until dayEnd }.sortedBy { it.startTime }
     }
 
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.US) }
@@ -327,6 +362,7 @@ private fun CalendarMonthView(
                         val dayShifts = shiftsByDay[dayNum]
                         val hasShifts = dayShifts != null && dayShifts.isNotEmpty()
                         val shiftCount = dayShifts?.size ?: 0
+                        val hasTeamShifts = teamShiftsByDay.containsKey(dayNum)
 
                         Box(
                             modifier = Modifier
@@ -360,12 +396,18 @@ private fun CalendarMonthView(
                                         else -> MaterialTheme.colorScheme.onBackground
                                     }
                                 )
-                                if (hasShifts) {
+                                if (hasShifts || hasTeamShifts) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        repeat(shiftCount.coerceAtMost(3)) {
+                                        repeat(shiftCount.coerceAtMost(2)) {
                                             Box(
                                                 modifier = Modifier.size(4.dp).clip(CircleShape)
                                                     .background(if (isSelected) Color.White else PrimaryGreen)
+                                            )
+                                        }
+                                        if (hasTeamShifts) {
+                                            Box(
+                                                modifier = Modifier.size(4.dp).clip(CircleShape)
+                                                    .background(if (isSelected) Color.White else AccentOrange)
                                             )
                                         }
                                     }
@@ -400,7 +442,7 @@ private fun CalendarMonthView(
             }
         }
 
-        if (selectedDayShifts.isEmpty()) {
+        if (selectedDayShifts.isEmpty() && selectedDayTeamShifts.isEmpty()) {
             item {
                 Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -420,18 +462,23 @@ private fun CalendarMonthView(
             items(selectedDayShifts, key = { it.id }) { shift ->
                 ShiftCard(shift = shift, timeFormat = timeFormat, now = now, onEditShift = onEditShift, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             }
-            item {
-                val totalHrs = selectedDayShifts.sumOf { it.durationHours }
-                val totalEarned = selectedDayShifts.sumOf { it.totalEarned }
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = PrimaryGreen.copy(alpha = 0.08f))
-                ) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("${selectedDayShifts.size} shift${if (selectedDayShifts.size != 1) "s" else ""} · ${"%.1f".format(totalHrs)} hrs",
-                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
-                        Text("$${"%.2f".format(totalEarned)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+            items(selectedDayTeamShifts, key = { "team_${it.id}" }) { teamShift ->
+                TeamShiftPlanCard(shift = teamShift, timeFormat = timeFormat, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            }
+            if (selectedDayShifts.isNotEmpty()) {
+                item {
+                    val totalHrs = selectedDayShifts.sumOf { it.durationHours }
+                    val totalEarned = selectedDayShifts.sumOf { it.totalEarned }
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = PrimaryGreen.copy(alpha = 0.08f))
+                    ) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${selectedDayShifts.size} shift${if (selectedDayShifts.size != 1) "s" else ""} · ${"%.1f".format(totalHrs)} hrs",
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
+                            Text("$${"%.2f".format(totalEarned)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                        }
                     }
                 }
             }
@@ -446,6 +493,7 @@ private fun CalendarWeekView(
     selectedDate: Long,
     onDateChanged: (Long) -> Unit,
     shifts: List<Shift>,
+    teamShifts: List<TeamShift> = emptyList(),
     now: Long,
     onEditShift: (String) -> Unit,
     onAddShift: () -> Unit = {},
@@ -509,7 +557,9 @@ private fun CalendarWeekView(
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 daysList.forEach { (dayStart, _) ->
                     val isToday = dayStart == todayMillis
-                    val dayShiftCount = weekShifts.count { it.startTime in dayStart until dayStart + 24 * 60 * 60 * 1000L }
+                    val dayEndMs = dayStart + 24 * 60 * 60 * 1000L
+                    val dayShiftCount = weekShifts.count { it.startTime in dayStart until dayEndMs }
+                    val dayTeamShiftCount = teamShifts.count { it.startTime in dayStart until dayEndMs }
                     Box(
                         modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
                             .background(if (isToday) PrimaryGreen.copy(alpha = 0.12f) else Color.Transparent)
@@ -523,8 +573,11 @@ private fun CalendarWeekView(
                                 color = if (isToday) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(dayNumFormat.format(Date(dayStart)), fontSize = 16.sp, fontWeight = FontWeight.Bold,
                                 color = if (isToday) PrimaryGreen else MaterialTheme.colorScheme.onBackground)
-                            if (dayShiftCount > 0) {
-                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(PrimaryGreen))
+                            if (dayShiftCount > 0 || dayTeamShiftCount > 0) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    if (dayShiftCount > 0) { Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(PrimaryGreen)) }
+                                    if (dayTeamShiftCount > 0) { Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(AccentOrange)) }
+                                }
                             } else {
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
@@ -536,11 +589,13 @@ private fun CalendarWeekView(
         }
 
         // Day-by-day agenda
+        val weekTeamShifts = teamShifts.filter { it.startTime in weekStart until weekEnd }
         daysList.forEach { (dayStart, dayEnd) ->
             val dayShifts = weekShifts.filter { it.startTime in dayStart until dayEnd }
+            val dayTeamShifts = weekTeamShifts.filter { it.startTime in dayStart until dayEnd }
             val isToday = dayStart == todayMillis
 
-            if (dayShifts.isNotEmpty()) {
+            if (dayShifts.isNotEmpty() || dayTeamShifts.isNotEmpty()) {
                 item(key = "day_header_$dayStart") {
                     val fullDayFormat = SimpleDateFormat("EEEE, MMM dd", Locale.US)
                     Row(
@@ -558,16 +613,21 @@ private fun CalendarWeekView(
                                 }
                             }
                         }
-                        Text("$${"%.2f".format(dayShifts.sumOf { it.totalEarned })}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                        if (dayShifts.isNotEmpty()) {
+                            Text("$${"%.2f".format(dayShifts.sumOf { it.totalEarned })}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                        }
                     }
                 }
                 items(dayShifts, key = { it.id }) { shift ->
                     ShiftCard(shift = shift, timeFormat = timeFormat, now = now, onEditShift = onEditShift, modifier = Modifier.padding(horizontal = 16.dp, vertical = 3.dp))
                 }
+                items(dayTeamShifts, key = { "team_${it.id}" }) { teamShift ->
+                    TeamShiftPlanCard(shift = teamShift, timeFormat = timeFormat, modifier = Modifier.padding(horizontal = 16.dp, vertical = 3.dp))
+                }
             }
         }
 
-        if (weekShifts.isEmpty()) {
+        if (weekShifts.isEmpty() && weekTeamShifts.isEmpty()) {
             item {
                 Box(modifier = Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -592,6 +652,7 @@ private fun CalendarDayView(
     selectedDate: Long,
     onDateChanged: (Long) -> Unit,
     shifts: List<Shift>,
+    teamShifts: List<TeamShift> = emptyList(),
     now: Long,
     onEditShift: (String) -> Unit,
     onAddShift: () -> Unit = {}
@@ -614,6 +675,9 @@ private fun CalendarDayView(
 
     val dayShifts = remember(shifts, dayStart) {
         shifts.filter { it.startTime in dayStart until dayEnd }.sortedBy { it.startTime }
+    }
+    val dayTeamShifts = remember(teamShifts, dayStart) {
+        teamShifts.filter { it.startTime in dayStart until dayEnd }.sortedBy { it.startTime }
     }
     val totalHours = dayShifts.sumOf { it.durationHours }
     val totalEarned = dayShifts.sumOf { it.totalEarned }
@@ -677,7 +741,7 @@ private fun CalendarDayView(
         }
 
         // Timeline view
-        if (dayShifts.isEmpty()) {
+        if (dayShifts.isEmpty() && dayTeamShifts.isEmpty()) {
             item {
                 Box(modifier = Modifier.fillMaxWidth().padding(64.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -696,6 +760,9 @@ private fun CalendarDayView(
         } else {
             items(dayShifts, key = { it.id }) { shift ->
                 DayViewShiftCard(shift = shift, timeFormat = timeFormat, now = now, onEditShift = onEditShift)
+            }
+            items(dayTeamShifts, key = { "team_${it.id}" }) { teamShift ->
+                TeamShiftPlanCard(shift = teamShift, timeFormat = timeFormat, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             }
         }
     }
@@ -768,6 +835,62 @@ private fun DayViewShiftCard(shift: Shift, timeFormat: SimpleDateFormat, now: Lo
 }
 
 @Composable
+private fun TeamShiftPlanCard(shift: TeamShift, timeFormat: SimpleDateFormat, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = AccentOrange.copy(alpha = 0.04f)),
+        border = BorderStroke(1.dp, AccentOrange.copy(alpha = 0.3f))
+    ) {
+        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(AccentOrange)
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(shift.company, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(shape = RoundedCornerShape(3.dp), color = AccentOrange) {
+                        Text("TEAM", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    "${timeFormat.format(Date(shift.startTime))} → ${timeFormat.format(Date(shift.endTime))}",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (shift.tasks.isNotEmpty()) {
+                    val done = shift.tasks.count { it.isCompleted }
+                    Text(
+                        "$done/${shift.tasks.size} tasks done",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (done == shift.tasks.size) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            val statusColor = when (shift.status) {
+                "accepted" -> PrimaryGreen
+                "declined" -> Color(0xFFEF4444)
+                else -> AccentOrange
+            }
+            Surface(shape = RoundedCornerShape(6.dp), color = statusColor.copy(alpha = 0.15f)) {
+                Text(
+                    shift.status.replaceFirstChar { it.uppercase() },
+                    fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = statusColor,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ShiftCard(shift: Shift, timeFormat: SimpleDateFormat, now: Long, onEditShift: (String) -> Unit, modifier: Modifier = Modifier) {
     val isActive = now in shift.startTime..shift.endTime
 
@@ -829,6 +952,8 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
     var weeklyCycleStartDay by remember { mutableStateOf("Monday") }
     var overtimeThresholdStr by remember { mutableStateOf("40.0") }
     var overtimeMultiplierStr by remember { mutableStateOf("1.5") }
+    var bonusAmountStr by remember { mutableStateOf("0.0") }
+    var bonusReasonStr by remember { mutableStateOf("") }
     var daysExpanded by remember { mutableStateOf(false) }
     val daysOfWeek = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
 
@@ -868,6 +993,13 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                         OutlinedTextField(value = overtimeMultiplierStr, onValueChange = { overtimeMultiplierStr = it },
                             label = { Text("Overtime Rate Multiplier") }, modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), shape = RoundedCornerShape(12.dp))
+
+                        OutlinedTextField(value = bonusAmountStr, onValueChange = { bonusAmountStr = it },
+                            label = { Text("Bonus Amount (\$)") }, modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), shape = RoundedCornerShape(12.dp))
+                        OutlinedTextField(value = bonusReasonStr, onValueChange = { bonusReasonStr = it },
+                            label = { Text("Bonus Reason (e.g. Weekend, Holiday)") }, modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp))
                     }
 
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -890,8 +1022,10 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                     val finalGoal = goalHoursStr.toDoubleOrNull() ?: 20.0
                     val finalOT = overtimeThresholdStr.toDoubleOrNull() ?: 40.0
                     val finalOTM = overtimeMultiplierStr.toDoubleOrNull() ?: 1.5
-                    if (editingJobId == null) dashboardViewModel.addJob(title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOT, finalOTM)
-                    else dashboardViewModel.updateJob(editingJobId!!, title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOT, finalOTM)
+                    val finalBonus = if (isGigWork) 0.0 else (bonusAmountStr.toDoubleOrNull() ?: 0.0)
+                    val finalBonusReason = if (isGigWork) "" else bonusReasonStr
+                    if (editingJobId == null) dashboardViewModel.addJob(title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOT, finalOTM, finalBonus, finalBonusReason)
+                    else dashboardViewModel.updateJob(editingJobId!!, title, isGigWork, finalRate, finalGoal, goalType, weeklyCycleStartDay, finalOT, finalOTM, finalBonus, finalBonusReason)
                     showDialog = false
                 }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) { Text("Save") }
             },
@@ -905,6 +1039,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
             Button(onClick = {
                 editingJobId = null; title = ""; isGigWork = false; rateStr = "15.0"; goalHoursStr = "20.0"
                 goalType = "Hours"; weeklyCycleStartDay = "Monday"; overtimeThresholdStr = "40.0"; overtimeMultiplierStr = "1.5"
+                bonusAmountStr = "0.0"; bonusReasonStr = ""
                 showDialog = true
             }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen), shape = RoundedCornerShape(12.dp)) { Text("+ Add Job") }
         }
@@ -928,6 +1063,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                             editingJobId = job.id; title = job.title; isGigWork = job.isGigWork; rateStr = job.defaultHourlyRate.toString()
                             goalHoursStr = job.goalHours.toString(); goalType = job.goalType; weeklyCycleStartDay = job.weeklyCycleStartDay ?: "Monday"
                             overtimeThresholdStr = job.overtimeThresholdHours.toString(); overtimeMultiplierStr = job.overtimeMultiplier.toString()
+                            bonusAmountStr = job.bonusAmount.toString(); bonusReasonStr = job.bonusReason
                             showDialog = true
                         },
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
