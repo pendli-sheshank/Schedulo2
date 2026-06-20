@@ -106,7 +106,11 @@ fun MainLayout(
                 onEditShift = { id -> navController.navigate("add_shift?shiftId=$id") },
                 onNavigateToProfile = { navController.navigate("profile") },
                 onNavigateToPay = {
-                    navController.navigate("pay")
+                    navController.navigate("pay") {
+                        popUpTo("dashboard") { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             )
             "plan" -> PlanScreen(
@@ -116,11 +120,12 @@ fun MainLayout(
                 onEditShift = { id -> navController.navigate("add_shift?shiftId=$id") },
                 onAddShift = { navController.navigate("add_shift") }
             )
-            "jobs" -> JobsScreen(modifier = Modifier.padding(innerPadding), dashboardViewModel = dashboardViewModel)
+            "pay" -> PayScreen(modifier = Modifier.padding(innerPadding), dashboardViewModel = dashboardViewModel)
             "team" -> if (teamViewModel != null) {
                 TeamScreen(
                     teamViewModel = teamViewModel,
                     authViewModel = authViewModel,
+                    dashboardViewModel = dashboardViewModel,
                     onBack = null,
                     modifier = Modifier.padding(innerPadding)
                 )
@@ -937,7 +942,7 @@ private fun ShiftCard(shift: Shift, timeFormat: SimpleDateFormat, now: Long, onE
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewModel) {
+fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewModel, onBack: (() -> Unit)? = null) {
     val jobs by dashboardViewModel.jobs.collectAsState(initial = emptyList())
     val shifts by dashboardViewModel.shifts.collectAsState(initial = emptyList())
 
@@ -1035,7 +1040,13 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Employers & Jobs", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                Text("Employers & Jobs", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            }
             Button(onClick = {
                 editingJobId = null; title = ""; isGigWork = false; rateStr = "15.0"; goalHoursStr = "20.0"
                 goalType = "Hours"; weeklyCycleStartDay = "Monday"; overtimeThresholdStr = "40.0"; overtimeMultiplierStr = "1.5"
@@ -1623,7 +1634,7 @@ fun ProfileScreen(
     authViewModel: AuthViewModel? = null,
     onBack: () -> Unit,
     onNavigateToInsights: () -> Unit = {},
-    onNavigateToTeam: () -> Unit = {}
+    onNavigateToJobs: () -> Unit = {}
 ) {
     val currentCompany by dashboardViewModel.defaultCompany.collectAsState()
     val currentRate by dashboardViewModel.defaultRate.collectAsState()
@@ -1986,21 +1997,19 @@ fun ProfileScreen(
 
             // Employers card
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onNavigateToJobs() },
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.WorkOutline, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Employers (${jobs.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.WorkOutline, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Employers & Jobs (${jobs.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                        Text(if (jobs.isNotEmpty()) jobs.joinToString(" · ") { it.title } else "Add employers to track shifts", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                     }
-                    if (jobs.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(jobs.joinToString(" · ") { it.title }, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }
             }
 
@@ -2038,25 +2047,6 @@ fun ProfileScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Earnings Insights", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
                         Text("Charts, trends & analytics", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onNavigateToTeam() },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Groups, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Team Management", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
-                        Text("Create teams, assign shifts & invite members", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }

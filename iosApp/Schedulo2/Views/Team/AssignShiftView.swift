@@ -2,10 +2,11 @@ import SwiftUI
 
 struct AssignShiftView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
+    @EnvironmentObject var dashboardViewModel: DashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedMemberId = ""
-    @State private var company = ""
+    @State private var selectedJobTitle = ""
     @State private var role = ""
     @State private var startDate = Date()
     @State private var endDate = Date().addingTimeInterval(3600 * 4)
@@ -34,11 +35,23 @@ struct AssignShiftView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Company")
+                        Text("Employer")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.secondary)
-                        TextField("Company name", text: $company)
-                            .textFieldStyle(.roundedBorder)
+                        Picker("Employer", selection: $selectedJobTitle) {
+                            Text("Select employer").tag("")
+                            ForEach(dashboardViewModel.jobs, id: \.id) { job in
+                                Text("\(job.title) (\(job.isGigWork ? "Gig" : "$\(String(format: "%.0f", job.defaultHourlyRate))/hr"))")
+                                    .tag(job.title)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: selectedJobTitle) { newValue in
+                            if let job = dashboardViewModel.jobs.first(where: { $0.title == newValue }) {
+                                hourlyRate = String(format: "%.2f", job.defaultHourlyRate)
+                            }
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -152,7 +165,7 @@ struct AssignShiftView: View {
     }
 
     private var canAssign: Bool {
-        !selectedMemberId.isEmpty && !company.isEmpty && endDate > startDate
+        !selectedMemberId.isEmpty && !selectedJobTitle.isEmpty && endDate > startDate
     }
 
     private func assignShift() {
@@ -162,7 +175,7 @@ struct AssignShiftView: View {
 
         teamViewModel.assignShift(
             to: selectedMemberId,
-            company: company,
+            company: selectedJobTitle,
             role: role,
             startTime: startMillis,
             endTime: endMillis,
