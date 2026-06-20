@@ -310,11 +310,29 @@ final class TeamViewModel: ObservableObject {
             "endTime": endTime,
             "hourlyRate": hourlyRate,
             "notes": notes,
-            "status": "assigned",
+            "status": "accepted",
             "tasks": tasksData
         ]
 
-        db.collection("team_shifts").document(shiftId).setData(data)
+        db.collection("team_shifts").document(shiftId).setData(data) { [weak self] error in
+            if error == nil {
+                let teamShift = TeamShiftInfo(
+                    id: shiftId,
+                    teamId: teamId,
+                    assignedTo: memberId,
+                    assignedBy: uid,
+                    company: company,
+                    role: role,
+                    startTime: startTime,
+                    endTime: endTime,
+                    hourlyRate: hourlyRate,
+                    notes: notes,
+                    status: "accepted",
+                    tasks: tasks
+                )
+                self?.createPersonalShiftFromTeam(teamShift, targetUserId: memberId)
+            }
+        }
     }
 
     func toggleTaskCompletion(shiftId: String, taskId: String) {
@@ -336,20 +354,9 @@ final class TeamViewModel: ObservableObject {
         }
     }
 
-    func updateShiftStatus(shiftId: String, status: String) {
-        db.collection("team_shifts").document(shiftId).updateData(["status": status])
-        if status == "accepted" {
-            if let shift = teamShifts.first(where: { $0.id == shiftId }),
-               shift.assignedTo == currentUserId {
-                createPersonalShiftFromTeam(shift)
-            }
-        }
-    }
-
-    private func createPersonalShiftFromTeam(_ teamShift: TeamShiftInfo) {
-        guard let uid = currentUserId else { return }
+    private func createPersonalShiftFromTeam(_ teamShift: TeamShiftInfo, targetUserId: String) {
         let shiftData: [String: Any] = [
-            "userId": uid,
+            "userId": targetUserId,
             "company": teamShift.company,
             "role": teamShift.role,
             "startTime": teamShift.startTime,
@@ -361,7 +368,8 @@ final class TeamViewModel: ObservableObject {
             "isPaid": false,
             "notes": "Team shift: \(teamShift.notes)".trimmingCharacters(in: .whitespaces),
             "bonusApplied": false,
-            "bonusAmount": 0.0
+            "bonusAmount": 0.0,
+            "teamShiftId": teamShift.id
         ]
         db.collection("shifts").document(UUID().uuidString).setData(shiftData)
     }

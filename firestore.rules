@@ -29,7 +29,7 @@ service cloud.firestore {
     match /shifts/{shiftId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userId is string
         && request.resource.data.company is string
         && request.resource.data.company.size() <= 200
         && request.resource.data.startTime is int
@@ -37,7 +37,8 @@ service cloud.firestore {
         && request.resource.data.endTime > request.resource.data.startTime
         && request.resource.data.hourlyRate is number
         && request.resource.data.hourlyRate >= 0
-        && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000));
+        && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000))
+        && (request.resource.data.userId == request.auth.uid || 'teamShiftId' in request.resource.data);
       allow update: if request.auth != null
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid

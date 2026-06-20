@@ -6,11 +6,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -58,10 +61,12 @@ fun TeamScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showAssignDialog by remember { mutableStateOf(false) }
+    var showWeekPlanDialog by remember { mutableStateOf(false) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var showEditTeamDialog by remember { mutableStateOf(false) }
     var showDeleteTeamConfirm by remember { mutableStateOf(false) }
     var teamSelectorExpanded by remember { mutableStateOf(false) }
+    var fabMenuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         teamViewModel.loadTeams()
@@ -85,12 +90,26 @@ fun TeamScreen(
         },
         floatingActionButton = {
             if (currentTeam != null && userRole == "manager") {
-                FloatingActionButton(
-                    onClick = { showAssignDialog = true },
-                    containerColor = PrimaryGreen,
-                    contentColor = Color.White
-                ) {
-                    Icon(Icons.Default.Add, "Assign Shift")
+                Box {
+                    FloatingActionButton(
+                        onClick = { fabMenuExpanded = true },
+                        containerColor = PrimaryGreen,
+                        contentColor = Color.White
+                    ) {
+                        Icon(Icons.Default.Add, "Assign Shift")
+                    }
+                    DropdownMenu(expanded = fabMenuExpanded, onDismissRequest = { fabMenuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Assign Single Shift") },
+                            leadingIcon = { Icon(Icons.Default.PersonAdd, null) },
+                            onClick = { fabMenuExpanded = false; showAssignDialog = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Plan Entire Week") },
+                            leadingIcon = { Icon(Icons.Default.DateRange, null) },
+                            onClick = { fabMenuExpanded = false; showWeekPlanDialog = true }
+                        )
+                    }
                 }
             }
         }
@@ -383,6 +402,17 @@ fun TeamScreen(
                         }
                     }
 
+                    // Manager dashboard
+                    if (userRole == "manager" && teamShifts.isNotEmpty()) {
+                        item {
+                            ManagerDashboardSection(
+                                teamShifts = teamShifts,
+                                members = members,
+                                jobs = jobs
+                            )
+                        }
+                    }
+
                     // Members section
                     item {
                         Text(
@@ -440,8 +470,6 @@ fun TeamScreen(
                                 members = members,
                                 isManager = userRole == "manager",
                                 currentUserId = currentUserId,
-                                onAccept = { teamViewModel.updateShiftStatus(shift.id, "accepted") },
-                                onDecline = { teamViewModel.updateShiftStatus(shift.id, "declined") },
                                 onDelete = { teamViewModel.deleteTeamShift(shift.id) },
                                 onToggleTask = { taskId -> teamViewModel.toggleTaskCompletion(shift.id, taskId) }
                             )
@@ -478,6 +506,35 @@ fun TeamScreen(
             onAssign = { memberId, company, role, startTime, endTime, hourlyRate, notes, tasks ->
                 teamViewModel.assignShift(memberId, company, role, startTime, endTime, hourlyRate, notes, tasks)
                 showAssignDialog = false
+            },
+            members = members,
+            jobs = jobs
+        )
+    }
+
+    if (showWeekPlanDialog && members.isNotEmpty()) {
+        TeamWeekPlanDialog(
+            onDismiss = { showWeekPlanDialog = false },
+            onAssignShifts = { memberId, company, role, hourlyRate, notes, tasks, weekStartMillis, dayEntries ->
+                for (entry in dayEntries) {
+                    val dayMillis = weekStartMillis + entry.dayOffset.toLong() * 24 * 60 * 60 * 1000L
+                    val cal = Calendar.getInstance().apply {
+                        timeInMillis = dayMillis
+                        set(Calendar.HOUR_OF_DAY, entry.startH)
+                        set(Calendar.MINUTE, entry.startM)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    val startTime = cal.timeInMillis
+                    cal.apply {
+                        set(Calendar.HOUR_OF_DAY, entry.endH)
+                        set(Calendar.MINUTE, entry.endM)
+                    }
+                    var endTime = cal.timeInMillis
+                    if (endTime <= startTime) endTime += 24 * 60 * 60 * 1000L
+                    teamViewModel.assignShift(memberId, company, role, startTime, endTime, hourlyRate, notes, tasks)
+                }
+                showWeekPlanDialog = false
             },
             members = members,
             jobs = jobs
@@ -630,8 +687,6 @@ private fun TeamShiftCard(
     members: List<TeamMember>,
     isManager: Boolean,
     currentUserId: String,
-    onAccept: () -> Unit,
-    onDecline: () -> Unit,
     onDelete: () -> Unit,
     onToggleTask: (String) -> Unit = {}
 ) {
@@ -700,7 +755,7 @@ private fun TeamShiftCard(
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (shift.hourlyRate > 0) {
+            if (isManager && shift.hourlyRate > 0) {
                 Text(
                     "$${String.format("%.2f", shift.hourlyRate)}/hr · ${String.format("%.1f", shift.durationHours)} hrs",
                     fontSize = 13.sp,
@@ -742,36 +797,6 @@ private fun TeamShiftCard(
                             fontSize = 13.sp,
                             color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
                         )
-                    }
-                }
-            }
-
-            // Action buttons
-            if (isAssignedToMe && shift.status == "assigned") {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = onAccept,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Accept", fontSize = 13.sp)
-                    }
-                    OutlinedButton(
-                        onClick = onDecline,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Decline", fontSize = 13.sp)
                     }
                 }
             }
@@ -1164,4 +1189,352 @@ fun AssignShiftDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(16.dp)
     )
+}
+
+data class TeamWeekDayEntry(val dayOffset: Int, val startH: Int, val startM: Int, val endH: Int, val endM: Int)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TeamWeekPlanDialog(
+    onDismiss: () -> Unit,
+    onAssignShifts: (memberId: String, company: String, role: String, hourlyRate: Double, notes: String, tasks: List<ShiftTask>, weekStartMillis: Long, dayEntries: List<TeamWeekDayEntry>) -> Unit,
+    members: List<TeamMember>,
+    jobs: List<Job> = emptyList()
+) {
+    var selectedMember by remember { mutableStateOf<TeamMember?>(null) }
+    var memberDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedJob by remember { mutableStateOf<Job?>(null) }
+    var employerDropdownExpanded by remember { mutableStateOf(false) }
+    var role by remember { mutableStateOf("") }
+    var hourlyRateStr by remember { mutableStateOf("15.0") }
+    var notes by remember { mutableStateOf("") }
+
+    var dayEnabled by remember { mutableStateOf(List(7) { it < 5 }) }
+    var dayStartHours by remember { mutableStateOf(List(7) { 9 }) }
+    var dayStartMinutes by remember { mutableStateOf(List(7) { 0 }) }
+    var dayEndHours by remember { mutableStateOf(List(7) { 17 }) }
+    var dayEndMinutes by remember { mutableStateOf(List(7) { 0 }) }
+    var weekOffset by remember { mutableStateOf(0) }
+    var showTimePickerForDay by remember { mutableStateOf(-1) }
+    var isStartTimePicker by remember { mutableStateOf(true) }
+
+    val daysOfWeek = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
+    val dayFormat = remember { SimpleDateFormat("M/dd", Locale.US) }
+
+    val weekStartMillis = remember(weekOffset) {
+        Calendar.getInstance().apply {
+            firstDayOfWeek = Calendar.MONDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            add(Calendar.WEEK_OF_YEAR, weekOffset)
+        }.timeInMillis
+    }
+
+    LaunchedEffect(selectedJob) {
+        if (selectedJob != null) {
+            hourlyRateStr = String.format("%.2f", selectedJob!!.defaultHourlyRate)
+        }
+    }
+
+    if (showTimePickerForDay >= 0) {
+        val dayIndex = showTimePickerForDay
+        val initialHour = if (isStartTimePicker) dayStartHours[dayIndex] else dayEndHours[dayIndex]
+        val initialMinute = if (isStartTimePicker) dayStartMinutes[dayIndex] else dayEndMinutes[dayIndex]
+        val pickerState = rememberTimePickerState(initialHour = initialHour, initialMinute = initialMinute)
+        AlertDialog(
+            onDismissRequest = { showTimePickerForDay = -1 },
+            title = { Text(if (isStartTimePicker) "Start Time — ${daysOfWeek[dayIndex]}" else "End Time — ${daysOfWeek[dayIndex]}", fontWeight = FontWeight.Bold) },
+            text = { TimePicker(state = pickerState) },
+            confirmButton = {
+                Button(onClick = {
+                    if (isStartTimePicker) {
+                        dayStartHours = dayStartHours.toMutableList().also { it[dayIndex] = pickerState.hour }
+                        dayStartMinutes = dayStartMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
+                    } else {
+                        dayEndHours = dayEndHours.toMutableList().also { it[dayIndex] = pickerState.hour }
+                        dayEndMinutes = dayEndMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
+                    }
+                    showTimePickerForDay = -1
+                }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { showTimePickerForDay = -1 }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Plan Team Week", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text("Assign To", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = selectedMember?.let { it.displayName.ifBlank { it.email.substringBefore("@") } } ?: "Select member...",
+                        onValueChange = {}, readOnly = true,
+                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = memberDropdownExpanded) }
+                    )
+                    Box(modifier = Modifier.matchParentSize().clickable { memberDropdownExpanded = true })
+                    DropdownMenu(expanded = memberDropdownExpanded, onDismissRequest = { memberDropdownExpanded = false }) {
+                        members.forEach { member ->
+                            DropdownMenuItem(
+                                text = { Text(member.displayName.ifBlank { member.email.substringBefore("@") }) },
+                                onClick = { selectedMember = member; memberDropdownExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("Employer", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = selectedJob?.title ?: "Select employer...",
+                        onValueChange = {}, readOnly = true,
+                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employerDropdownExpanded) }
+                    )
+                    Box(modifier = Modifier.matchParentSize().clickable { employerDropdownExpanded = true })
+                    DropdownMenu(expanded = employerDropdownExpanded, onDismissRequest = { employerDropdownExpanded = false }) {
+                        jobs.forEach { job ->
+                            DropdownMenuItem(
+                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${job.defaultHourlyRate}/hr"})") },
+                                onClick = { selectedJob = job; employerDropdownExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = role, onValueChange = { role = it },
+                    label = { Text("Role (optional)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { if (weekOffset > -3) weekOffset-- }, enabled = weekOffset > -3) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous week",
+                            tint = if (weekOffset > -3) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("${dayFormat.format(Date(weekStartMillis))} – ${dayFormat.format(Date(weekStartMillis + 6L * 24 * 60 * 60 * 1000L))}",
+                            fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            when {
+                                weekOffset == 0 -> "This Week"
+                                weekOffset == 1 -> "Next Week"
+                                weekOffset == -1 -> "Last Week"
+                                weekOffset < -1 -> "${-weekOffset} weeks ago"
+                                else -> "In $weekOffset weeks"
+                            },
+                            fontSize = 11.sp, color = PrimaryGreen, fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    IconButton(onClick = { if (weekOffset < 12) weekOffset++ }, enabled = weekOffset < 12) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next week",
+                            tint = if (weekOffset < 12) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                daysOfWeek.forEachIndexed { index, dayName ->
+                    val dayMillis = weekStartMillis + index.toLong() * 24 * 60 * 60 * 1000L
+                    val dateStr = dayFormat.format(Date(dayMillis))
+                    val enabled = dayEnabled[index]
+                    val startTimeStr = String.format(Locale.US, "%d:%02d %s",
+                        if (dayStartHours[index] % 12 == 0) 12 else dayStartHours[index] % 12,
+                        dayStartMinutes[index],
+                        if (dayStartHours[index] < 12) "AM" else "PM")
+                    val endTimeStr = String.format(Locale.US, "%d:%02d %s",
+                        if (dayEndHours[index] % 12 == 0) 12 else dayEndHours[index] % 12,
+                        dayEndMinutes[index],
+                        if (dayEndHours[index] < 12) "AM" else "PM")
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Switch(checked = enabled,
+                                    onCheckedChange = { dayEnabled = dayEnabled.toMutableList().also { list -> list[index] = it } },
+                                    modifier = Modifier.padding(end = 6.dp))
+                                Text("$dayName ($dateStr)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            }
+                            if (enabled) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { isStartTimePicker = true; showTimePickerForDay = index },
+                                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
+                                    ) { Text("Start: $startTimeStr", fontSize = 11.sp) }
+                                    OutlinedButton(
+                                        onClick = { isStartTimePicker = false; showTimePickerForDay = index },
+                                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
+                                    ) { Text("End: $endTimeStr", fontSize = 11.sp) }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                val totalDays = dayEnabled.count { it }
+                Text("$totalDays days selected", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val member = selectedMember ?: return@Button
+                    val job = selectedJob ?: return@Button
+                    val entries = (0..6).filter { dayEnabled[it] }
+                        .map { TeamWeekDayEntry(it, dayStartHours[it], dayStartMinutes[it], dayEndHours[it], dayEndMinutes[it]) }
+                    onAssignShifts(
+                        member.userId,
+                        job.title,
+                        role,
+                        hourlyRateStr.toDoubleOrNull() ?: job.defaultHourlyRate,
+                        notes,
+                        emptyList(),
+                        weekStartMillis,
+                        entries
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                enabled = selectedMember != null && selectedJob != null && dayEnabled.any { it }
+            ) { Text("Assign Week", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@Composable
+private fun ManagerDashboardSection(
+    teamShifts: List<TeamShift>,
+    members: List<TeamMember>,
+    jobs: List<Job>
+) {
+    val acceptedShifts = teamShifts.filter { it.status == "accepted" }
+    var expandedMemberId by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            "Manager Dashboard",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            "Employee hours & pay overview",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        val memberShifts = acceptedShifts.groupBy { it.assignedTo }
+
+        members.forEach { member ->
+            val shifts = memberShifts[member.userId] ?: emptyList()
+            val totalHours = shifts.sumOf { it.durationHours }
+            val totalEarnings = shifts.sumOf { it.hourlyRate * it.durationHours }
+            val isExpanded = expandedMemberId == member.userId
+            val memberName = member.displayName.ifBlank { member.email.substringBefore("@") }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 3.dp)
+                    .clickable { expandedMemberId = if (isExpanded) null else member.userId },
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(memberName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${member.role.replaceFirstChar { it.uppercase() }} · ${shifts.size} shifts",
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("${String.format("%.1f", totalHours)} hrs", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
+                            Text("$${String.format("%.2f", totalEarnings)}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                        }
+                        Icon(
+                            if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            "Expand",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+                    }
+
+                    if (isExpanded && shifts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        HorizontalDivider()
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val byCompany = shifts.groupBy { it.company }
+                        byCompany.forEach { (company, companyShifts) ->
+                            val companyHours = companyShifts.sumOf { it.durationHours }
+                            val companyPay = companyShifts.sumOf { it.hourlyRate * it.durationHours }
+                            val now = System.currentTimeMillis()
+                            val latestEnd = companyShifts.maxOf { it.endTime }
+                            val payDue = latestEnd + 4L * 24 * 60 * 60 * 1000L < now
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(company, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        if (payDue) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = AccentOrange.copy(alpha = 0.15f)
+                                            ) {
+                                                Text(
+                                                    "PAY DUE",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = AccentOrange,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text("${companyShifts.size} shifts · ${String.format("%.1f", companyHours)} hrs",
+                                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text("$${String.format("%.2f", companyPay)}",
+                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

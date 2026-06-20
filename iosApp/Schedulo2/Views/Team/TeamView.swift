@@ -6,6 +6,7 @@ struct TeamView: View {
     @State private var showCreateTeam = false
     @State private var showJoinTeam = false
     @State private var showAssignShift = false
+    @State private var showWeekPlan = false
     @State private var showLeaveConfirm = false
     @State private var showEditTeam = false
     @State private var showDeleteConfirm = false
@@ -21,6 +22,9 @@ struct TeamView: View {
                         teamSelector
                         if let team = teamViewModel.currentTeam {
                             teamHeader(team)
+                            if teamViewModel.isManager && !teamViewModel.teamShifts.isEmpty {
+                                managerDashboardSection
+                            }
                             membersSection
                             shiftsSection
                         }
@@ -74,6 +78,11 @@ struct TeamView: View {
             }
             .sheet(isPresented: $showAssignShift) {
                 AssignShiftView()
+                    .environmentObject(teamViewModel)
+                    .environmentObject(dashboardViewModel)
+            }
+            .sheet(isPresented: $showWeekPlan) {
+                TeamWeekPlanView()
                     .environmentObject(teamViewModel)
                     .environmentObject(dashboardViewModel)
             }
@@ -239,7 +248,14 @@ struct TeamView: View {
                     .foregroundColor(.secondary)
                 Spacer()
                 if teamViewModel.isManager {
-                    Button(action: { showAssignShift = true }) {
+                    Menu {
+                        Button(action: { showAssignShift = true }) {
+                            Label("Assign Single Shift", systemImage: "person.badge.plus")
+                        }
+                        Button(action: { showWeekPlan = true }) {
+                            Label("Plan Entire Week", systemImage: "calendar.badge.plus")
+                        }
+                    } label: {
                         Image(systemName: "plus.circle.fill")
                             .foregroundColor(.primaryGreen)
                     }
@@ -315,34 +331,92 @@ struct TeamView: View {
                 .padding(.top, 4)
             }
 
-            if shift.assignedTo == teamViewModel.currentUserId && shift.status == "assigned" {
-                HStack(spacing: 8) {
-                    Button("Accept") {
-                        teamViewModel.updateShiftStatus(shiftId: shift.id, status: "accepted")
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primaryGreen))
-
-                    Button("Decline") {
-                        teamViewModel.updateShiftStatus(shiftId: shift.id, status: "declined")
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8).stroke(Color.red, lineWidth: 1))
-                }
-                .padding(.top, 4)
-            }
         }
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(UIColor.secondarySystemBackground))
         )
+    }
+
+    private var managerDashboardSection: some View {
+        let acceptedShifts = teamViewModel.teamShifts.filter { $0.status == "accepted" }
+        let memberShifts = Dictionary(grouping: acceptedShifts) { $0.assignedTo }
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Manager Dashboard")
+                .font(.system(size: 16, weight: .bold))
+            Text("Employee hours & pay overview")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            ForEach(teamViewModel.members) { member in
+                let shifts = memberShifts[member.userId] ?? []
+                let totalHours = shifts.reduce(0.0) { $0 + $1.durationHours }
+                let totalEarnings = shifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
+                let memberName = member.displayName.isEmpty ? member.email : member.displayName
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(memberName)
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("\(member.role.capitalized) · \(shifts.count) shifts")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(String(format: "%.1f", totalHours)) hrs")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.primaryGreen)
+                            Text("$\(String(format: "%.2f", totalEarnings))")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                    }
+
+                    if !shifts.isEmpty {
+                        let byCompany = Dictionary(grouping: shifts) { $0.company }
+                        ForEach(Array(byCompany.keys.sorted()), id: \.self) { company in
+                            let companyShifts = byCompany[company] ?? []
+                            let companyHours = companyShifts.reduce(0.0) { $0 + $1.durationHours }
+                            let companyPay = companyShifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
+                            let latestEnd = companyShifts.map { $0.endTime }.max() ?? 0
+                            let now = Int64(Date().timeIntervalSince1970 * 1000)
+                            let payDue = latestEnd + 4 * 24 * 3600 * 1000 < now
+
+                            HStack {
+                                HStack(spacing: 4) {
+                                    Text(company)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                    if payDue {
+                                        Text("PAY DUE")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundColor(.accentOrange)
+                                            .padding(.horizontal, 4)
+                                            .padding(.vertical, 1)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 3)
+                                                    .fill(Color.accentOrange.opacity(0.15))
+                                            )
+                                    }
+                                }
+                                Spacer()
+                                Text("\(companyShifts.count) shifts · \(String(format: "%.1f", companyHours)) hrs · $\(String(format: "%.2f", companyPay))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(UIColor.secondarySystemBackground))
+                )
+            }
+        }
     }
 
     private func statusBadge(_ status: String) -> some View {
