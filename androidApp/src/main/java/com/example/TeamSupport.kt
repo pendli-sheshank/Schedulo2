@@ -31,6 +31,7 @@ import com.example.ui.theme.AccentOrange
 import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.TeamMember
 import com.schedulo.shared.model.TeamShift
+import kotlinx.coroutines.flow.MutableStateFlow
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -39,6 +40,7 @@ import java.util.*
 fun TeamScreen(
     teamViewModel: TeamViewModel,
     authViewModel: AuthViewModel,
+    dashboardViewModel: DashboardViewModel? = null,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -51,11 +53,14 @@ fun TeamScreen(
     val userRole by teamViewModel.userRole.collectAsState()
 
     val currentUserId by authViewModel.currentUserId.collectAsState()
+    val jobs by (dashboardViewModel?.jobs ?: MutableStateFlow(emptyList<Job>())).collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showAssignDialog by remember { mutableStateOf(false) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
+    var showEditTeamDialog by remember { mutableStateOf(false) }
+    var showDeleteTeamConfirm by remember { mutableStateOf(false) }
     var teamSelectorExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -315,7 +320,7 @@ fun TeamScreen(
                             ) {
                                 Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("New Team", fontSize = 13.sp)
+                                Text("New", fontSize = 13.sp)
                             }
                             OutlinedButton(
                                 onClick = { showJoinDialog = true },
@@ -328,6 +333,29 @@ fun TeamScreen(
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Join", fontSize = 13.sp)
                             }
+                            if (userRole == "manager") {
+                                OutlinedButton(
+                                    onClick = { showEditTeamDialog = true },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, AccentBlue),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentBlue)
+                                ) {
+                                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Edit", fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             OutlinedButton(
                                 onClick = { showLeaveConfirm = true },
                                 modifier = Modifier.weight(1f),
@@ -338,6 +366,19 @@ fun TeamScreen(
                                 Icon(Icons.AutoMirrored.Filled.ExitToApp, null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Leave", fontSize = 13.sp)
+                            }
+                            if (userRole == "manager") {
+                                OutlinedButton(
+                                    onClick = { showDeleteTeamConfirm = true },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Delete", fontSize = 13.sp)
+                                }
                             }
                         }
                     }
@@ -438,7 +479,8 @@ fun TeamScreen(
                 teamViewModel.assignShift(memberId, company, role, startTime, endTime, hourlyRate, notes, tasks)
                 showAssignDialog = false
             },
-            members = members
+            members = members,
+            jobs = jobs
         )
     }
 
@@ -458,6 +500,58 @@ fun TeamScreen(
                 ) { Text("Leave") }
             },
             dismissButton = { TextButton(onClick = { showLeaveConfirm = false }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showEditTeamDialog && currentTeam != null) {
+        var editTeamName by remember { mutableStateOf(currentTeam!!.name) }
+        AlertDialog(
+            onDismissRequest = { showEditTeamDialog = false },
+            title = { Text("Edit Team Name", fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = editTeamName,
+                    onValueChange = { if (it.length <= 50) editTeamName = it },
+                    label = { Text("Store Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        teamViewModel.updateTeamName(currentTeam!!.id, editTeamName.trim())
+                        showEditTeamDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                    enabled = editTeamName.trim().isNotBlank()
+                ) { Text("Save", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showEditTeamDialog = false }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showDeleteTeamConfirm && currentTeam != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteTeamConfirm = false },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp)) },
+            title = { Text("Delete Team", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to permanently delete \"${currentTeam!!.name}\"? All team data, members, and shifts will be removed. This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        teamViewModel.deleteTeam(currentTeam!!.id)
+                        showDeleteTeamConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteTeamConfirm = false }) { Text("Cancel") } },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(16.dp)
         )
@@ -771,11 +865,13 @@ fun JoinTeamDialog(onDismiss: () -> Unit, onJoin: (String) -> Unit) {
 fun AssignShiftDialog(
     onDismiss: () -> Unit,
     onAssign: (memberId: String, company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double, notes: String, tasks: List<ShiftTask>) -> Unit,
-    members: List<TeamMember>
+    members: List<TeamMember>,
+    jobs: List<Job> = emptyList()
 ) {
     var selectedMember by remember { mutableStateOf<TeamMember?>(null) }
     var memberDropdownExpanded by remember { mutableStateOf(false) }
-    var company by remember { mutableStateOf("") }
+    var selectedJob by remember { mutableStateOf<Job?>(null) }
+    var employerDropdownExpanded by remember { mutableStateOf(false) }
     var role by remember { mutableStateOf("") }
     var hourlyRateStr by remember { mutableStateOf("15.0") }
     var notes by remember { mutableStateOf("") }
@@ -887,14 +983,30 @@ fun AssignShiftDialog(
                     }
                 }
 
-                OutlinedTextField(
-                    value = company,
-                    onValueChange = { company = it },
-                    label = { Text("Company") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = selectedJob?.title ?: "Select employer...",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Employer") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employerDropdownExpanded) }
+                    )
+                    Box(modifier = Modifier.matchParentSize().clickable { employerDropdownExpanded = true })
+                    DropdownMenu(expanded = employerDropdownExpanded, onDismissRequest = { employerDropdownExpanded = false }) {
+                        jobs.forEach { job ->
+                            DropdownMenuItem(
+                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${job.defaultHourlyRate}/hr"})") },
+                                onClick = {
+                                    selectedJob = job
+                                    hourlyRateStr = job.defaultHourlyRate.toString()
+                                    employerDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = role,
@@ -1035,7 +1147,7 @@ fun AssignShiftDialog(
 
                     onAssign(
                         member.userId,
-                        company,
+                        selectedJob?.title ?: "",
                         role,
                         calStart.timeInMillis,
                         finalEnd,
@@ -1045,7 +1157,7 @@ fun AssignShiftDialog(
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                enabled = selectedMember != null && company.isNotBlank()
+                enabled = selectedMember != null && selectedJob != null
             ) { Text("Assign", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

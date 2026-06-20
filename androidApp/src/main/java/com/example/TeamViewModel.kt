@@ -374,10 +374,90 @@ class TeamViewModel : ViewModel() {
 
     fun updateShiftStatus(shiftId: String, status: String) {
         val database = db ?: return
+        val uid = auth?.currentUser?.uid ?: return
         database.collection("team_shifts").document(shiftId)
             .update("status", status)
+            .addOnSuccessListener {
+                if (status == "accepted") {
+                    val shift = _teamShifts.value.find { it.id == shiftId }
+                    if (shift != null && shift.assignedTo == uid) {
+                        createPersonalShiftFromTeam(shift)
+                    }
+                }
+            }
             .addOnFailureListener { e ->
                 _errorMessage.value = "Failed to update shift status: ${e.message}"
+            }
+    }
+
+    private fun createPersonalShiftFromTeam(teamShift: TeamShift) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val shiftData = hashMapOf(
+            "userId" to uid,
+            "company" to teamShift.company,
+            "role" to teamShift.role,
+            "startTime" to teamShift.startTime,
+            "endTime" to teamShift.endTime,
+            "hourlyRate" to teamShift.hourlyRate,
+            "isGig" to false,
+            "customEarned" to 0.0,
+            "reminderBeforeMinutes" to 30,
+            "isPaid" to false,
+            "notes" to "Team shift: ${teamShift.notes}".trim(),
+            "bonusApplied" to false,
+            "bonusAmount" to 0.0
+        )
+        database.collection("shifts").document()
+            .set(shiftData)
+    }
+
+    fun updateTeamName(teamId: String, newName: String) {
+        val database = db ?: return
+        if (newName.isBlank()) return
+        database.collection("teams").document(teamId)
+            .update("name", newName.trim())
+            .addOnSuccessListener { loadTeams() }
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to update team name: ${e.message}"
+            }
+    }
+
+    fun deleteTeam(teamId: String) {
+        val database = db ?: return
+        _isLoading.value = true
+
+        database.collection("team_members")
+            .whereEqualTo("teamId", teamId)
+            .get()
+            .addOnSuccessListener { memberDocs ->
+                database.collection("team_shifts")
+                    .whereEqualTo("teamId", teamId)
+                    .get()
+                    .addOnSuccessListener { shiftDocs ->
+                        val batch = database.batch()
+                        for (doc in memberDocs.documents) batch.delete(doc.reference)
+                        for (doc in shiftDocs.documents) batch.delete(doc.reference)
+                        batch.delete(database.collection("teams").document(teamId))
+                        batch.commit()
+                            .addOnSuccessListener {
+                                _currentTeam.value = null
+                                _members.value = emptyList()
+                                _teamShifts.value = emptyList()
+                                membersListener?.remove()
+                                shiftsListener?.remove()
+                                _isLoading.value = false
+                                loadTeams()
+                            }
+                            .addOnFailureListener { e ->
+                                _errorMessage.value = "Failed to delete team: ${e.message}"
+                                _isLoading.value = false
+                            }
+                    }
+            }
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to delete team: ${e.message}"
+                _isLoading.value = false
             }
     }
 

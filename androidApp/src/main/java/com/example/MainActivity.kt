@@ -110,20 +110,17 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("dashboard") { MainLayout(navController, "dashboard", authViewModel, dashboardViewModel, teamViewModel) }
                     composable("plan") { MainLayout(navController, "plan", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("jobs") { MainLayout(navController, "jobs", authViewModel, dashboardViewModel, teamViewModel) }
+                    composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel, teamViewModel) }
                     composable("team") { MainLayout(navController, "team", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("pay") {
-                        PayScreen(
+                    composable("jobs") {
+                        JobsScreen(
                             modifier = Modifier,
-                            dashboardViewModel = dashboardViewModel
+                            dashboardViewModel = dashboardViewModel,
+                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
                         )
                     }
                     composable("profile") {
-                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") }, onNavigateToTeam = { navController.navigate("team") {
-                            popUpTo("dashboard") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        } })
+                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") }, onNavigateToJobs = { navController.navigate("jobs") })
                     }
                     composable("insights") {
                         InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
@@ -811,7 +808,7 @@ fun BottomNavigationBar(currentRoute: String, onNavigate: (String) -> Unit) {
             NavBarItem(icon = Icons.Default.Home, label = "Home", selected = currentRoute == "dashboard", onClick = { onNavigate("dashboard") })
             NavBarItem(icon = Icons.Default.CalendarMonth, label = "Plan", selected = currentRoute == "plan", onClick = { onNavigate("plan") })
             Spacer(modifier = Modifier.width(56.dp))
-            NavBarItem(icon = Icons.Default.WorkOutline, label = "Jobs", selected = currentRoute == "jobs", onClick = { onNavigate("jobs") })
+            NavBarItem(icon = Icons.Default.Payments, label = "Pay", selected = currentRoute == "pay", onClick = { onNavigate("pay") })
             NavBarItem(icon = Icons.Default.Groups, label = "Team", selected = currentRoute == "team", onClick = { onNavigate("team") })
         }
     }

@@ -8,6 +8,7 @@ struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
 
     var onNavigateToInsights: () -> Void = {}
+    var onNavigateToJobs: () -> Void = {}
 
     @State private var showEditNameAlert = false
     @State private var editNameValue = ""
@@ -18,7 +19,6 @@ struct ProfileView: View {
     @State private var showDeleteAccount = false
     @State private var showReauthDialog = false
     @State private var deletePassword = ""
-    @State private var showTeam = false
 
     @ObservedObject private var calendarService = CalendarService.shared
     @State private var availableCalendars: [EKCalendar] = []
@@ -76,8 +76,8 @@ struct ProfileView: View {
                     // Change Password
                     changePasswordCard
 
-                    // Team Management
-                    teamCard
+                    // Employers & Jobs
+                    employersCard
 
                     // Insights
                     insightsCard
@@ -131,9 +131,6 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showChangePassword) {
             changePasswordSheet
-        }
-        .sheet(isPresented: $showTeam) {
-            TeamView()
         }
         .alert("Delete Account", isPresented: $showDeleteAccount) {
             Button("Delete", role: .destructive) {
@@ -474,20 +471,21 @@ struct ProfileView: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: - Insights Card
+    // MARK: - Employers Card
 
-    private var teamCard: some View {
-        Button(action: { showTeam = true }) {
+    private var employersCard: some View {
+        Button(action: onNavigateToJobs) {
             HStack(spacing: 8) {
-                Image(systemName: "person.3.fill")
+                Image(systemName: "briefcase.fill")
                     .foregroundColor(.primaryGreen)
                     .font(.system(size: 16))
                 VStack(alignment: .leading) {
-                    Text("Team Management")
+                    Text("Employers & Jobs (\(dashboardViewModel.jobs.count))")
                         .font(.system(size: 16, weight: .bold))
-                    Text("Create or join a team, assign shifts")
+                    Text(dashboardViewModel.jobs.isEmpty ? "Add employers to track shifts" : dashboardViewModel.jobs.map(\.title).joined(separator: " · "))
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -500,6 +498,8 @@ struct ProfileView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
     }
+
+    // MARK: - Insights Card
 
     private var insightsCard: some View {
         Button(action: onNavigateToInsights) {

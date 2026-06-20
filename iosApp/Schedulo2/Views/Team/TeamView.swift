@@ -2,9 +2,14 @@ import SwiftUI
 
 struct TeamView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
+    @EnvironmentObject var dashboardViewModel: DashboardViewModel
     @State private var showCreateTeam = false
     @State private var showJoinTeam = false
     @State private var showAssignShift = false
+    @State private var showLeaveConfirm = false
+    @State private var showEditTeam = false
+    @State private var showDeleteConfirm = false
+    @State private var editTeamName = ""
 
     var body: some View {
         NavigationStack {
@@ -34,6 +39,25 @@ struct TeamView: View {
                         Button(action: { showJoinTeam = true }) {
                             Label("Join Team", systemImage: "person.badge.plus")
                         }
+                        if teamViewModel.currentTeam != nil {
+                            Divider()
+                            if teamViewModel.isManager {
+                                Button(action: {
+                                    editTeamName = teamViewModel.currentTeam?.name ?? ""
+                                    showEditTeam = true
+                                }) {
+                                    Label("Edit Team Name", systemImage: "pencil")
+                                }
+                            }
+                            Button(role: .destructive, action: { showLeaveConfirm = true }) {
+                                Label("Leave Team", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                            if teamViewModel.isManager {
+                                Button(role: .destructive, action: { showDeleteConfirm = true }) {
+                                    Label("Delete Team", systemImage: "trash")
+                                }
+                            }
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .foregroundColor(.primaryGreen)
@@ -51,6 +75,37 @@ struct TeamView: View {
             .sheet(isPresented: $showAssignShift) {
                 AssignShiftView()
                     .environmentObject(teamViewModel)
+                    .environmentObject(dashboardViewModel)
+            }
+            .alert("Leave Team", isPresented: $showLeaveConfirm) {
+                Button("Leave", role: .destructive) {
+                    if let team = teamViewModel.currentTeam {
+                        teamViewModel.leaveTeam(teamId: team.id)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to leave \"\(teamViewModel.currentTeam?.name ?? "")\"? You will lose access to team shifts and data.")
+            }
+            .alert("Edit Team Name", isPresented: $showEditTeam) {
+                TextField("Store Name", text: $editTeamName)
+                Button("Save") {
+                    let trimmed = editTeamName.trimmingCharacters(in: .whitespaces)
+                    if !trimmed.isEmpty, let team = teamViewModel.currentTeam {
+                        teamViewModel.updateTeamName(teamId: team.id, newName: trimmed)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            }
+            .alert("Delete Team", isPresented: $showDeleteConfirm) {
+                Button("Delete", role: .destructive) {
+                    if let team = teamViewModel.currentTeam {
+                        teamViewModel.deleteTeam(teamId: team.id)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to permanently delete \"\(teamViewModel.currentTeam?.name ?? "")\"? All team data, members, and shifts will be removed.")
             }
             .onAppear { teamViewModel.loadTeams() }
         }

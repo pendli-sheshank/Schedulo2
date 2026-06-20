@@ -11,7 +11,7 @@ struct MainTabView: View {
     @State private var showWeekPlan = false
     @State private var showProfile = false
     @State private var showInsights = false
-    @State private var showPayView = false
+    @State private var showJobsView = false
     @State private var editingShiftId: String?
 
     var body: some View {
@@ -22,7 +22,7 @@ struct MainTabView: View {
                     DashboardView(
                         onEditShift: { id in editingShiftId = id; showAddShift = true },
                         onNavigateToProfile: { showProfile = true },
-                        onNavigateToPay: { showPayView = true }
+                        onNavigateToPay: { selectedTab = 2 }
                     )
                 case 1:
                     PlanView(
@@ -30,7 +30,7 @@ struct MainTabView: View {
                         onAddShift: { editingShiftId = nil; showAddShift = true }
                     )
                 case 2:
-                    JobsView()
+                    PayView()
                 case 3:
                     TeamView()
                 default:
@@ -47,7 +47,7 @@ struct MainTabView: View {
                         selectedTab = 1
                     }
                     Spacer().frame(width: 56)
-                    TabBarButton(icon: "briefcase.fill", label: "Jobs", isSelected: selectedTab == 2) {
+                    TabBarButton(icon: "dollarsign.circle.fill", label: "Pay", isSelected: selectedTab == 2) {
                         selectedTab = 2
                     }
                     TabBarButton(icon: "person.3.fill", label: "Team", isSelected: selectedTab == 3) {
@@ -107,12 +107,20 @@ struct MainTabView: View {
             }
         }
         .sheet(isPresented: $showProfile) {
-            ProfileView(onNavigateToInsights: {
-                showProfile = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    showInsights = true
+            ProfileView(
+                onNavigateToInsights: {
+                    showProfile = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showInsights = true
+                    }
+                },
+                onNavigateToJobs: {
+                    showProfile = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showJobsView = true
+                    }
                 }
-            })
+            )
             .environmentObject(authViewModel)
             .environmentObject(dashboardViewModel)
         }
@@ -120,13 +128,13 @@ struct MainTabView: View {
             InsightsView()
                 .environmentObject(dashboardViewModel)
         }
-        .sheet(isPresented: $showPayView) {
+        .sheet(isPresented: $showJobsView) {
             NavigationStack {
-                PayView()
+                JobsView()
                     .environmentObject(dashboardViewModel)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { showPayView = false }
+                            Button("Done") { showJobsView = false }
                         }
                     }
             }

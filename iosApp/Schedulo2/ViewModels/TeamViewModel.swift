@@ -338,6 +338,85 @@ final class TeamViewModel: ObservableObject {
 
     func updateShiftStatus(shiftId: String, status: String) {
         db.collection("team_shifts").document(shiftId).updateData(["status": status])
+        if status == "accepted" {
+            if let shift = teamShifts.first(where: { $0.id == shiftId }),
+               shift.assignedTo == currentUserId {
+                createPersonalShiftFromTeam(shift)
+            }
+        }
+    }
+
+    private func createPersonalShiftFromTeam(_ teamShift: TeamShiftInfo) {
+        guard let uid = currentUserId else { return }
+        let shiftData: [String: Any] = [
+            "userId": uid,
+            "company": teamShift.company,
+            "role": teamShift.role,
+            "startTime": teamShift.startTime,
+            "endTime": teamShift.endTime,
+            "hourlyRate": teamShift.hourlyRate,
+            "isGig": false,
+            "customEarned": 0.0,
+            "reminderBeforeMinutes": 30,
+            "isPaid": false,
+            "notes": "Team shift: \(teamShift.notes)".trimmingCharacters(in: .whitespaces),
+            "bonusApplied": false,
+            "bonusAmount": 0.0
+        ]
+        db.collection("shifts").document(UUID().uuidString).setData(shiftData)
+    }
+
+    func updateTeamName(teamId: String, newName: String) {
+        db.collection("teams").document(teamId).updateData(["name": newName]) { [weak self] error in
+            if error == nil {
+                DispatchQueue.main.async {
+                    self?.loadTeams()
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self?.errorMessage = error?.localizedDescription
+                }
+            }
+        }
+    }
+
+    func deleteTeam(teamId: String) {
+        isLoading = true
+        let group = DispatchGroup()
+
+        group.enter()
+        db.collection("team_members").whereField("teamId", isEqualTo: teamId).getDocuments { [weak self] snapshot, _ in
+            if let docs = snapshot?.documents {
+                let batch = self?.db.batch()
+                docs.forEach { batch?.deleteDocument($0.reference) }
+                batch?.commit { _ in group.leave() }
+            } else {
+                group.leave()
+            }
+        }
+
+        group.enter()
+        db.collection("team_shifts").whereField("teamId", isEqualTo: teamId).getDocuments { [weak self] snapshot, _ in
+            if let docs = snapshot?.documents {
+                let batch = self?.db.batch()
+                docs.forEach { batch?.deleteDocument($0.reference) }
+                batch?.commit { _ in group.leave() }
+            } else {
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) { [weak self] in
+            self?.db.collection("teams").document(teamId).delete { error in
+                DispatchQueue.main.async {
+                    self?.isLoading = false
+                    self?.currentTeam = nil
+                    self?.members = []
+                    self?.teamShifts = []
+                    self?.loadTeams()
+                }
+            }
+        }
     }
 
     func deleteTeamShift(shiftId: String) {
