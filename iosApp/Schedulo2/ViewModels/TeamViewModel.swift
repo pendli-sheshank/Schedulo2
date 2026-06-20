@@ -89,17 +89,19 @@ final class TeamViewModel: ObservableObject {
         memberJobsListener = db.collection("jobs")
             .whereField("userId", isEqualTo: userId)
             .addSnapshotListener { [weak self] snapshot, _ in
-                self?.memberJobs = snapshot?.documents.map { docs in
-                    docs.compactMap { doc in
-                        let data = doc.data()
-                        return MemberJobInfo(
-                            id: doc.documentID,
-                            title: data["title"] as? String ?? "",
-                            defaultHourlyRate: data["defaultHourlyRate"] as? Double ?? 15.0,
-                            isGigWork: data["isGigWork"] as? Bool ?? false
-                        )
-                    }
-                } ?? []
+                guard let documents = snapshot?.documents else {
+                    self?.memberJobs = []
+                    return
+                }
+                self?.memberJobs = documents.compactMap { doc in
+                    let data = doc.data()
+                    return MemberJobInfo(
+                        id: doc.documentID,
+                        title: data["title"] as? String ?? "",
+                        defaultHourlyRate: data["defaultHourlyRate"] as? Double ?? 15.0,
+                        isGigWork: data["isGigWork"] as? Bool ?? false
+                    )
+                }
             }
     }
 

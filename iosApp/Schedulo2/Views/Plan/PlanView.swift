@@ -411,7 +411,6 @@ private struct CalendarMonthView: View {
 
                 // Selected day detail
                 HStack {
-                    let fmt = DateFormatter()
                     Text({
                         let f = DateFormatter(); f.dateFormat = "EEEE, MMM dd"; return f.string(from: selectedDate)
                     }())
@@ -542,7 +541,6 @@ private struct CalendarWeekView: View {
                     }
                     Spacer()
                     VStack(spacing: 2) {
-                        let fmt = DateFormatter()
                         Text({
                             let f = DateFormatter(); f.dateFormat = "MMM dd"
                             let end = calendar.date(byAdding: .day, value: -1, to: weekEnd)!
