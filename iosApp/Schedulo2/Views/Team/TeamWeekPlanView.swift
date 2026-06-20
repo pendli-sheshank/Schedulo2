@@ -298,7 +298,7 @@ struct TeamWeekPlanView: View {
             let startComps = cal.dateComponents([.hour, .minute], from: dayStartTimes[i])
             let endComps = cal.dateComponents([.hour, .minute], from: dayEndTimes[i])
 
-            var actualStart = cal.date(bySettingHour: startComps.hour ?? 9, minute: startComps.minute ?? 0, second: 0, of: dayStart) ?? dayStart
+            let actualStart = cal.date(bySettingHour: startComps.hour ?? 9, minute: startComps.minute ?? 0, second: 0, of: dayStart) ?? dayStart
             var actualEnd = cal.date(bySettingHour: endComps.hour ?? 17, minute: endComps.minute ?? 0, second: 0, of: dayStart) ?? dayStart
 
             if actualEnd <= actualStart {
