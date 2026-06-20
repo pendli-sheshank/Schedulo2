@@ -27,6 +27,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.SecondaryGreen
 import com.example.ui.theme.AccentBlue
@@ -537,7 +539,8 @@ fun TeamScreen(
                 showWeekPlanDialog = false
             },
             members = members,
-            jobs = jobs
+            jobs = jobs,
+            teamViewModel = teamViewModel
         )
     }
 
@@ -1199,14 +1202,15 @@ fun TeamWeekPlanDialog(
     onDismiss: () -> Unit,
     onAssignShifts: (memberId: String, company: String, role: String, hourlyRate: Double, notes: String, tasks: List<ShiftTask>, weekStartMillis: Long, dayEntries: List<TeamWeekDayEntry>) -> Unit,
     members: List<TeamMember>,
-    jobs: List<Job> = emptyList()
+    jobs: List<Job> = emptyList(),
+    teamViewModel: TeamViewModel? = null
 ) {
     var selectedMember by remember { mutableStateOf<TeamMember?>(null) }
     var memberDropdownExpanded by remember { mutableStateOf(false) }
     var selectedJob by remember { mutableStateOf<Job?>(null) }
     var employerDropdownExpanded by remember { mutableStateOf(false) }
     var role by remember { mutableStateOf("") }
-    var hourlyRateStr by remember { mutableStateOf("15.0") }
+    var hourlyRateStr by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
     var dayEnabled by remember { mutableStateOf(List(7) { it < 5 }) }
@@ -1214,9 +1218,11 @@ fun TeamWeekPlanDialog(
     var dayStartMinutes by remember { mutableStateOf(List(7) { 0 }) }
     var dayEndHours by remember { mutableStateOf(List(7) { 17 }) }
     var dayEndMinutes by remember { mutableStateOf(List(7) { 0 }) }
-    var weekOffset by remember { mutableStateOf(0) }
-    var showTimePickerForDay by remember { mutableStateOf(-1) }
+    var weekOffset by remember { mutableIntStateOf(0) }
+    var showTimePickerForDay by remember { mutableIntStateOf(-1) }
     var isStartTimePicker by remember { mutableStateOf(true) }
+
+    val memberJobs by (teamViewModel?.memberJobs ?: MutableStateFlow(emptyList<Job>())).collectAsState()
 
     val daysOfWeek = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
     val dayFormat = remember { SimpleDateFormat("M/dd", Locale.US) }
@@ -1230,43 +1236,71 @@ fun TeamWeekPlanDialog(
         }.timeInMillis
     }
 
-    LaunchedEffect(selectedJob) {
-        if (selectedJob != null) {
+    LaunchedEffect(selectedMember) {
+        selectedMember?.let { teamViewModel?.fetchMemberJobs(it.userId) }
+    }
+
+    LaunchedEffect(selectedMember, selectedJob, memberJobs) {
+        if (selectedJob != null && selectedMember != null) {
+            val memberJob = memberJobs.find { it.title.equals(selectedJob!!.title, ignoreCase = true) }
+            hourlyRateStr = String.format("%.2f", memberJob?.defaultHourlyRate ?: selectedJob!!.defaultHourlyRate)
+        } else if (selectedJob != null) {
             hourlyRateStr = String.format("%.2f", selectedJob!!.defaultHourlyRate)
         }
     }
 
-    if (showTimePickerForDay >= 0) {
-        val dayIndex = showTimePickerForDay
-        val initialHour = if (isStartTimePicker) dayStartHours[dayIndex] else dayEndHours[dayIndex]
-        val initialMinute = if (isStartTimePicker) dayStartMinutes[dayIndex] else dayEndMinutes[dayIndex]
-        val pickerState = rememberTimePickerState(initialHour = initialHour, initialMinute = initialMinute)
-        AlertDialog(
-            onDismissRequest = { showTimePickerForDay = -1 },
-            title = { Text(if (isStartTimePicker) "Start Time — ${daysOfWeek[dayIndex]}" else "End Time — ${daysOfWeek[dayIndex]}", fontWeight = FontWeight.Bold) },
-            text = { TimePicker(state = pickerState) },
-            confirmButton = {
-                Button(onClick = {
-                    if (isStartTimePicker) {
-                        dayStartHours = dayStartHours.toMutableList().also { it[dayIndex] = pickerState.hour }
-                        dayStartMinutes = dayStartMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
-                    } else {
-                        dayEndHours = dayEndHours.toMutableList().also { it[dayIndex] = pickerState.hour }
-                        dayEndMinutes = dayEndMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
-                    }
-                    showTimePickerForDay = -1
-                }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) { Text("OK") }
-            },
-            dismissButton = { TextButton(onClick = { showTimePickerForDay = -1 }) { Text("Cancel") } },
-            containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnClickOutside = false,
+            dismissOnBackPress = false,
+            usePlatformDefaultWidth = false
         )
-    }
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Plan Team Week", fontWeight = FontWeight.Bold) },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, "Close")
+                        }
+                    },
+                    actions = {
+                        Button(
+                            onClick = {
+                                val member = selectedMember ?: return@Button
+                                val job = selectedJob ?: return@Button
+                                val entries = (0..6).filter { dayEnabled[it] }
+                                    .map { TeamWeekDayEntry(it, dayStartHours[it], dayStartMinutes[it], dayEndHours[it], dayEndMinutes[it]) }
+                                onAssignShifts(
+                                    member.userId,
+                                    job.title,
+                                    role,
+                                    hourlyRateStr.toDoubleOrNull() ?: job.defaultHourlyRate,
+                                    notes,
+                                    emptyList(),
+                                    weekStartMillis,
+                                    entries
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                            enabled = selectedMember != null && selectedJob != null && dayEnabled.any { it },
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) { Text("Assign", fontWeight = FontWeight.Bold) }
+                    }
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Plan Team Week", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text("Assign To", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(4.dp))
                 Box(modifier = Modifier.fillMaxWidth()) {
@@ -1311,13 +1345,32 @@ fun TeamWeekPlanDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                OutlinedTextField(
-                    value = role, onValueChange = { role = it },
-                    label = { Text("Role (optional)") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
-                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = role, onValueChange = { role = it },
+                        label = { Text("Role (optional)") }, singleLine = true,
+                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)
+                    )
+                    OutlinedTextField(
+                        value = hourlyRateStr, onValueChange = { hourlyRateStr = it },
+                        label = { Text("Pay Rate ($/hr)") }, singleLine = true,
+                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                if (selectedMember != null && selectedJob != null) {
+                    val memberJob = memberJobs.find { it.title.equals(selectedJob!!.title, ignoreCase = true) }
+                    if (memberJob != null) {
+                        Text(
+                            "Rate from ${selectedMember!!.displayName.ifBlank { "member" }}'s account: $${String.format("%.2f", memberJob.defaultHourlyRate)}/hr",
+                            fontSize = 11.sp, color = PrimaryGreen, fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1330,7 +1383,7 @@ fun TeamWeekPlanDialog(
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("${dayFormat.format(Date(weekStartMillis))} – ${dayFormat.format(Date(weekStartMillis + 6L * 24 * 60 * 60 * 1000L))}",
-                            fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         Text(
                             when {
                                 weekOffset == 0 -> "This Week"
@@ -1339,7 +1392,7 @@ fun TeamWeekPlanDialog(
                                 weekOffset < -1 -> "${-weekOffset} weeks ago"
                                 else -> "In $weekOffset weeks"
                             },
-                            fontSize = 11.sp, color = PrimaryGreen, fontWeight = FontWeight.SemiBold
+                            fontSize = 12.sp, color = PrimaryGreen, fontWeight = FontWeight.SemiBold
                         )
                     }
                     IconButton(onClick = { if (weekOffset < 12) weekOffset++ }, enabled = weekOffset < 12) {
@@ -1363,64 +1416,105 @@ fun TeamWeekPlanDialog(
                         if (dayEndHours[index] < 12) "AM" else "PM")
 
                     Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        border = BorderStroke(1.dp, if (enabled) PrimaryGreen.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                     ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Switch(checked = enabled,
-                                    onCheckedChange = { dayEnabled = dayEnabled.toMutableList().also { list -> list[index] = it } },
-                                    modifier = Modifier.padding(end = 6.dp))
-                                Text("$dayName ($dateStr)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Switch(
+                                    checked = enabled,
+                                    onCheckedChange = { newVal ->
+                                        dayEnabled = List(7) { i -> if (i == index) newVal else dayEnabled[i] }
+                                    },
+                                    colors = SwitchDefaults.colors(checkedTrackColor = PrimaryGreen),
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text("$dayName ($dateStr)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             }
                             if (enabled) {
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedButton(
                                         onClick = { isStartTimePicker = true; showTimePickerForDay = index },
-                                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
-                                    ) { Text("Start: $startTimeStr", fontSize = 11.sp) }
+                                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, PrimaryGreen.copy(alpha = 0.5f))
+                                    ) { Text("Start: $startTimeStr", fontSize = 12.sp) }
                                     OutlinedButton(
                                         onClick = { isStartTimePicker = false; showTimePickerForDay = index },
-                                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)
-                                    ) { Text("End: $endTimeStr", fontSize = 11.sp) }
+                                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, PrimaryGreen.copy(alpha = 0.5f))
+                                    ) { Text("End: $endTimeStr", fontSize = 12.sp) }
                                 }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 val totalDays = dayEnabled.count { it }
-                Text("$totalDays days selected", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val totalHours = (0..6).filter { dayEnabled[it] }.sumOf { i ->
+                    val startMin = dayStartHours[i] * 60 + dayStartMinutes[i]
+                    var endMin = dayEndHours[i] * 60 + dayEndMinutes[i]
+                    if (endMin <= startMin) endMin += 24 * 60
+                    (endMin - startMin).toDouble() / 60.0
+                }
+                val rate = hourlyRateStr.toDoubleOrNull() ?: 0.0
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = PrimaryGreen.copy(alpha = 0.1f))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("$totalDays days · ${String.format("%.1f", totalHours)} hours", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        if (rate > 0) {
+                            Text("Estimated pay: $${String.format("%.2f", totalHours * rate)}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = PrimaryGreen)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = notes, onValueChange = { notes = it },
+                    label = { Text("Notes (optional)") },
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                    minLines = 2, maxLines = 4
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val member = selectedMember ?: return@Button
-                    val job = selectedJob ?: return@Button
-                    val entries = (0..6).filter { dayEnabled[it] }
-                        .map { TeamWeekDayEntry(it, dayStartHours[it], dayStartMinutes[it], dayEndHours[it], dayEndMinutes[it]) }
-                    onAssignShifts(
-                        member.userId,
-                        job.title,
-                        role,
-                        hourlyRateStr.toDoubleOrNull() ?: job.defaultHourlyRate,
-                        notes,
-                        emptyList(),
-                        weekStartMillis,
-                        entries
-                    )
+        }
+
+        if (showTimePickerForDay >= 0) {
+            val dayIndex = showTimePickerForDay
+            val initialHour = if (isStartTimePicker) dayStartHours[dayIndex] else dayEndHours[dayIndex]
+            val initialMinute = if (isStartTimePicker) dayStartMinutes[dayIndex] else dayEndMinutes[dayIndex]
+            val pickerState = rememberTimePickerState(initialHour = initialHour, initialMinute = initialMinute)
+            AlertDialog(
+                onDismissRequest = { showTimePickerForDay = -1 },
+                title = { Text(if (isStartTimePicker) "Start Time — ${daysOfWeek[dayIndex]}" else "End Time — ${daysOfWeek[dayIndex]}", fontWeight = FontWeight.Bold) },
+                text = { TimePicker(state = pickerState) },
+                confirmButton = {
+                    Button(onClick = {
+                        if (isStartTimePicker) {
+                            dayStartHours = dayStartHours.toMutableList().also { it[dayIndex] = pickerState.hour }
+                            dayStartMinutes = dayStartMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
+                        } else {
+                            dayEndHours = dayEndHours.toMutableList().also { it[dayIndex] = pickerState.hour }
+                            dayEndMinutes = dayEndMinutes.toMutableList().also { it[dayIndex] = pickerState.minute }
+                        }
+                        showTimePickerForDay = -1
+                    }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) { Text("OK") }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                enabled = selectedMember != null && selectedJob != null && dayEnabled.any { it }
-            ) { Text("Assign Week", fontWeight = FontWeight.Bold) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        containerColor = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(16.dp)
-    )
+                dismissButton = { TextButton(onClick = { showTimePickerForDay = -1 }) { Text("Cancel") } },
+                containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
+            )
+        }
+    }
 }
 
 @Composable
