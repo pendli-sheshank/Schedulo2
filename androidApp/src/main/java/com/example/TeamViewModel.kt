@@ -351,6 +351,7 @@ class TeamViewModel : ViewModel() {
             )
         }
 
+        val shiftId = UUID.randomUUID().toString()
         val shiftData = hashMapOf(
             "teamId" to team.id,
             "assignedTo" to memberId,
@@ -361,40 +362,38 @@ class TeamViewModel : ViewModel() {
             "endTime" to endTime,
             "hourlyRate" to hourlyRate,
             "notes" to notes.trim(),
-            "status" to "assigned",
+            "status" to "accepted",
             "tasks" to tasksList
         )
 
-        database.collection("team_shifts").document()
+        database.collection("team_shifts").document(shiftId)
             .set(shiftData)
+            .addOnSuccessListener {
+                val teamShift = TeamShift(
+                    id = shiftId,
+                    teamId = team.id,
+                    assignedTo = memberId,
+                    assignedBy = uid,
+                    company = company.trim(),
+                    role = role.trim(),
+                    startTime = startTime,
+                    endTime = endTime,
+                    hourlyRate = hourlyRate,
+                    notes = notes.trim(),
+                    status = "accepted",
+                    tasks = tasks
+                )
+                createPersonalShiftFromTeam(teamShift, memberId)
+            }
             .addOnFailureListener { e ->
                 _errorMessage.value = "Failed to assign shift: ${e.message}"
             }
     }
 
-    fun updateShiftStatus(shiftId: String, status: String) {
-        val database = db ?: return
-        val uid = auth?.currentUser?.uid ?: return
-        database.collection("team_shifts").document(shiftId)
-            .update("status", status)
-            .addOnSuccessListener {
-                if (status == "accepted") {
-                    val shift = _teamShifts.value.find { it.id == shiftId }
-                    if (shift != null && shift.assignedTo == uid) {
-                        createPersonalShiftFromTeam(shift)
-                    }
-                }
-            }
-            .addOnFailureListener { e ->
-                _errorMessage.value = "Failed to update shift status: ${e.message}"
-            }
-    }
-
-    private fun createPersonalShiftFromTeam(teamShift: TeamShift) {
-        val uid = auth?.currentUser?.uid ?: return
+    private fun createPersonalShiftFromTeam(teamShift: TeamShift, targetUserId: String) {
         val database = db ?: return
         val shiftData = hashMapOf(
-            "userId" to uid,
+            "userId" to targetUserId,
             "company" to teamShift.company,
             "role" to teamShift.role,
             "startTime" to teamShift.startTime,
@@ -406,7 +405,8 @@ class TeamViewModel : ViewModel() {
             "isPaid" to false,
             "notes" to "Team shift: ${teamShift.notes}".trim(),
             "bonusApplied" to false,
-            "bonusAmount" to 0.0
+            "bonusAmount" to 0.0,
+            "teamShiftId" to teamShift.id
         )
         database.collection("shifts").document()
             .set(shiftData)
