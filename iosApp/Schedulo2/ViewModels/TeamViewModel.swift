@@ -361,6 +361,10 @@ final class TeamViewModel: ObservableObject {
                     tasks: tasks
                 )
                 self?.createPersonalShiftFromTeam(teamShift, targetUserId: memberId)
+            } else {
+                DispatchQueue.main.async {
+                    self?.errorMessage = error?.localizedDescription
+                }
             }
         }
     }
@@ -373,11 +377,21 @@ final class TeamViewModel: ObservableObject {
             if let idx = tasks.firstIndex(where: { $0["id"] as? String == taskId }) {
                 let current = tasks[idx]["isCompleted"] as? Bool ?? false
                 tasks[idx]["isCompleted"] = !current
-                ref.updateData(["tasks": tasks])
                 if let localIdx = self?.teamShifts.firstIndex(where: { $0.id == shiftId }),
                    let taskIdx = self?.teamShifts[localIdx].tasks.firstIndex(where: { $0.id == taskId }) {
                     DispatchQueue.main.async {
                         self?.teamShifts[localIdx].tasks[taskIdx].isCompleted = !current
+                    }
+                }
+                ref.updateData(["tasks": tasks]) { error in
+                    if let error = error {
+                        DispatchQueue.main.async {
+                            self?.errorMessage = error.localizedDescription
+                            if let localIdx = self?.teamShifts.firstIndex(where: { $0.id == shiftId }),
+                               let taskIdx = self?.teamShifts[localIdx].tasks.firstIndex(where: { $0.id == taskId }) {
+                                self?.teamShifts[localIdx].tasks[taskIdx].isCompleted = current
+                            }
+                        }
                     }
                 }
             }
@@ -401,7 +415,13 @@ final class TeamViewModel: ObservableObject {
             "bonusAmount": 0.0,
             "teamShiftId": teamShift.id
         ]
-        db.collection("shifts").document(UUID().uuidString).setData(shiftData)
+        db.collection("shifts").document(UUID().uuidString).setData(shiftData) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.errorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     func updateTeamName(teamId: String, newName: String) {
@@ -421,13 +441,17 @@ final class TeamViewModel: ObservableObject {
     func deleteTeam(teamId: String) {
         isLoading = true
         let group = DispatchGroup()
+        var deleteError: Error?
 
         group.enter()
         db.collection("team_members").whereField("teamId", isEqualTo: teamId).getDocuments { [weak self] snapshot, _ in
             if let docs = snapshot?.documents {
                 let batch = self?.db.batch()
                 docs.forEach { batch?.deleteDocument($0.reference) }
-                batch?.commit { _ in group.leave() }
+                batch?.commit { error in
+                    if let error = error { deleteError = error }
+                    group.leave()
+                }
             } else {
                 group.leave()
             }
@@ -438,16 +462,28 @@ final class TeamViewModel: ObservableObject {
             if let docs = snapshot?.documents {
                 let batch = self?.db.batch()
                 docs.forEach { batch?.deleteDocument($0.reference) }
-                batch?.commit { _ in group.leave() }
+                batch?.commit { error in
+                    if let error = error { deleteError = error }
+                    group.leave()
+                }
             } else {
                 group.leave()
             }
         }
 
         group.notify(queue: .main) { [weak self] in
+            if let deleteError = deleteError {
+                self?.isLoading = false
+                self?.errorMessage = deleteError.localizedDescription
+                return
+            }
             self?.db.collection("teams").document(teamId).delete { error in
                 DispatchQueue.main.async {
                     self?.isLoading = false
+                    if let error = error {
+                        self?.errorMessage = error.localizedDescription
+                        return
+                    }
                     self?.currentTeam = nil
                     self?.members = []
                     self?.teamShifts = []
@@ -471,8 +507,12 @@ final class TeamViewModel: ObservableObject {
                 let batch = self?.db.batch()
                 batch?.deleteDocument(doc.reference)
                 batch?.updateData(["memberCount": FieldValue.increment(Int64(-1))], forDocument: self?.db.collection("teams").document(teamId) ?? self!.db.collection("teams").document(teamId))
-                batch?.commit { _ in
+                batch?.commit { error in
                     DispatchQueue.main.async {
+                        if let error = error {
+                            self?.errorMessage = error.localizedDescription
+                            return
+                        }
                         self?.currentTeam = nil
                         self?.loadTeams()
                     }

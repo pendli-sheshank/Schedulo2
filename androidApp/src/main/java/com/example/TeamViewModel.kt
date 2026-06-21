@@ -426,6 +426,9 @@ class TeamViewModel : ViewModel() {
         )
         database.collection("shifts").document()
             .set(shiftData)
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to create personal shift: ${e.message}"
+            }
     }
 
     fun updateTeamName(teamId: String, newName: String) {

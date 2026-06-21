@@ -16,6 +16,9 @@ struct TeamView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    if let error = teamViewModel.errorMessage {
+                        errorBanner(error)
+                    }
                     if teamViewModel.teams.isEmpty {
                         emptyState
                     } else {
@@ -118,6 +121,28 @@ struct TeamView: View {
             }
             .onAppear { teamViewModel.loadTeams() }
         }
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+                .foregroundColor(.red)
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundColor(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: { teamViewModel.errorMessage = nil }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.red)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.red.opacity(0.12))
+        )
     }
 
     private var emptyState: some View {
