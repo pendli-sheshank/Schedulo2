@@ -127,6 +127,7 @@ fun MainLayout(
                     authViewModel = authViewModel,
                     dashboardViewModel = dashboardViewModel,
                     onBack = null,
+                    onNavigateToDetail = { section -> navController.navigate("team_detail/$section") },
                     modifier = Modifier.padding(innerPadding)
                 )
             }
