@@ -47,6 +47,9 @@ final class AuthViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(biometricEnabled, forKey: "biometricEnabled") }
     }
     @Published var shouldPromptBiometric: Bool = false
+    // True when the app cold-started with a persisted Firebase session and biometric
+    // login is enabled, so the dashboard must stay gated until the prompt succeeds.
+    @Published var requiresBiometricUnlock: Bool = false
 
     private let service = FirebaseService.shared
     private var cancellables = Set<AnyCancellable>()
@@ -94,6 +97,9 @@ final class AuthViewModel: ObservableObject {
         if let user = service.currentUser {
             currentUserEmail = user.email ?? ""
             authState = .authenticated
+            if biometricEnabled {
+                requiresBiometricUnlock = true
+            }
         }
 
         // Listen for auth state changes
@@ -175,6 +181,7 @@ final class AuthViewModel: ObservableObject {
         do {
             try service.signOut()
             authState = .idle
+            requiresBiometricUnlock = false
         } catch {
             authState = .error("Failed to logout")
         }
@@ -264,8 +271,11 @@ final class AuthViewModel: ObservableObject {
         context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
             DispatchQueue.main.async {
                 if success {
-                    // Biometric succeeded — restore the existing Firebase session
-                    if let user = self.service.currentUser {
+                    if self.requiresBiometricUnlock {
+                        // Already-authenticated session was gated behind the lock screen.
+                        self.requiresBiometricUnlock = false
+                    } else if let user = self.service.currentUser {
+                        // Biometric succeeded — restore the existing Firebase session
                         self.currentUserEmail = user.email ?? ""
                         self.authState = .authenticated
                     } else {

@@ -404,6 +404,106 @@ fun LoginScreen(
 }
 
 @Composable
+fun BiometricUnlockScreen(
+    viewModel: AuthViewModel,
+    onUnlocked: () -> Unit
+) {
+    val context = LocalContext.current
+    val authState by viewModel.authState.collectAsState()
+
+    fun triggerPrompt() {
+        val activity = context as? FragmentActivity
+        if (activity != null) {
+            viewModel.showBiometricPrompt(activity, onUnlocked)
+        }
+    }
+
+    LaunchedEffect(Unit) { triggerPrompt() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(PrimaryGreen, DarkGreen),
+                    startY = 0f,
+                    endY = Float.POSITIVE_INFINITY
+                )
+            )
+            .padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            modifier = Modifier.size(88.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = Color.White.copy(alpha = 0.15f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Fingerprint,
+                    contentDescription = "Biometric Unlock",
+                    tint = Color.White,
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Schedulo is locked",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Unlock with biometrics to continue",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center
+        )
+
+        if (authState is AuthState.Error) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = (authState as AuthState.Error).message,
+                fontSize = 13.sp,
+                color = Color(0xFFFFCDD2),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = { triggerPrompt() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Fingerprint,
+                contentDescription = null,
+                tint = PrimaryGreen,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Unlock", color = PrimaryGreen, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        TextButton(onClick = { viewModel.logout() }) {
+            Text("Sign out", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
 fun SignupScreen(
     viewModel: AuthViewModel,
     onNavigateToLogin: () -> Unit,

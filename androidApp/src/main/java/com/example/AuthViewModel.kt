@@ -288,6 +288,7 @@ class AuthViewModel : ViewModel() {
         try {
             auth?.signOut()
             _authState.value = AuthState.Idle
+            _biometricLockActive.value = false
         } catch (e: Exception) {
             _authState.value = AuthState.Error("Failed to logout")
         }
@@ -298,9 +299,22 @@ class AuthViewModel : ViewModel() {
     private val _biometricEnabled = MutableStateFlow(false)
     val biometricEnabled: StateFlow<Boolean> = _biometricEnabled.asStateFlow()
 
+    // True when the app cold-started with a persisted Firebase session and biometric
+    // login is enabled, so the dashboard must stay gated until the prompt succeeds.
+    private val _biometricLockActive = MutableStateFlow(false)
+    val biometricLockActive: StateFlow<Boolean> = _biometricLockActive.asStateFlow()
+
     fun initBiometricPreference(context: Context) {
         val prefs = context.getSharedPreferences("schedulo_prefs", Context.MODE_PRIVATE)
-        _biometricEnabled.value = prefs.getBoolean("biometric_enabled", false)
+        val enabled = prefs.getBoolean("biometric_enabled", false)
+        _biometricEnabled.value = enabled
+        if (enabled && auth?.currentUser != null) {
+            _biometricLockActive.value = true
+        }
+    }
+
+    fun dismissBiometricLock() {
+        _biometricLockActive.value = false
     }
 
     fun setBiometricEnabled(context: Context, enabled: Boolean) {
