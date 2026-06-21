@@ -3,7 +3,6 @@ package com.example
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.fragment.app.FragmentActivity
 import com.example.ui.theme.*
 
 import androidx.compose.runtime.collectAsState
@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import java.util.Calendar
@@ -51,10 +52,17 @@ import java.util.Locale
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (not plain ComponentActivity) is required because
+// androidx.biometric.BiometricPrompt hosts its dialog via a Fragment.
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Read the biometric preference before the first composition so the lock
+        // screen gate is already decided when the UI first renders (avoids a
+        // dashboard flash before the gate kicks in).
+        ViewModelProvider(this)[AuthViewModel::class.java].initBiometricPreference(this)
 
         setContent {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -67,80 +75,83 @@ class MainActivity : ComponentActivity() {
             val navController = rememberNavController()
             val authViewModel: AuthViewModel = viewModel()
             val authState by authViewModel.authState.collectAsState()
+            val biometricLockActive by authViewModel.biometricLockActive.collectAsState()
             val dashboardViewModel: DashboardViewModel = viewModel()
             val teamViewModel: TeamViewModel = viewModel()
             dashboardViewModel.setAppContext(this@MainActivity)
             val themeMode by dashboardViewModel.themeMode.collectAsState()
 
-            // Initialize biometric preference from SharedPreferences
-            LaunchedEffect(Unit) {
-                authViewModel.initBiometricPreference(this@MainActivity)
-            }
-
             MyApplicationTheme(themeMode = themeMode) {
-                val startDestination = remember {
-                    if (authState is AuthState.Authenticated) "dashboard" else "login"
-                }
+                if (biometricLockActive) {
+                    BiometricUnlockScreen(
+                        viewModel = authViewModel,
+                        onUnlocked = { authViewModel.dismissBiometricLock() }
+                    )
+                } else {
+                    val startDestination = remember {
+                        if (authState is AuthState.Authenticated) "dashboard" else "login"
+                    }
 
-                NavHost(
-                    navController = navController,
-                    startDestination = startDestination
-                ) {
-                    composable("login") {
-                        LoginScreen(
-                            viewModel = authViewModel,
-                            onNavigateToSignup = { navController.navigate("signup") },
-                            onNavigateToDashboard = {
-                                navController.navigate("dashboard") {
-                                    popUpTo("login") { inclusive = true }
+                    NavHost(
+                        navController = navController,
+                        startDestination = startDestination
+                    ) {
+                        composable("login") {
+                            LoginScreen(
+                                viewModel = authViewModel,
+                                onNavigateToSignup = { navController.navigate("signup") },
+                                onNavigateToDashboard = {
+                                    navController.navigate("dashboard") {
+                                        popUpTo("login") { inclusive = true }
+                                    }
                                 }
-                            }
-                        )
-                    }
-                    composable("signup") {
-                        SignupScreen(
-                            viewModel = authViewModel,
-                            onNavigateToLogin = { navController.navigate("login") },
-                            onNavigateToDashboard = {
-                                navController.navigate("dashboard") {
-                                    popUpTo("signup") { inclusive = true }
+                            )
+                        }
+                        composable("signup") {
+                            SignupScreen(
+                                viewModel = authViewModel,
+                                onNavigateToLogin = { navController.navigate("login") },
+                                onNavigateToDashboard = {
+                                    navController.navigate("dashboard") {
+                                        popUpTo("signup") { inclusive = true }
+                                    }
                                 }
-                            }
-                        )
-                    }
-                    composable("dashboard") { MainLayout(navController, "dashboard", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("plan") { MainLayout(navController, "plan", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("team") { MainLayout(navController, "team", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("jobs") {
-                        JobsScreen(
-                            modifier = Modifier,
-                            dashboardViewModel = dashboardViewModel,
-                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
-                        )
-                    }
-                    composable("profile") {
-                        ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") }, onNavigateToJobs = { navController.navigate("jobs") })
-                    }
-                    composable("insights") {
-                        InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
-                    }
-                    composable("add_week_plan") {
-                        AddWeekPlanScreen(viewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
-                    }
-                    composable(
-                        route = "add_shift?shiftId={shiftId}",
-                        arguments = listOf(androidx.navigation.navArgument("shiftId") {
-                            type = androidx.navigation.NavType.StringType
-                            nullable = true
-                        })
-                    ) { backStackEntry ->
-                        val shiftId = backStackEntry.arguments?.getString("shiftId")
-                        AddShiftScreen(
-                            shiftId = shiftId,
-                            viewModel = dashboardViewModel,
-                            onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
-                        )
+                            )
+                        }
+                        composable("dashboard") { MainLayout(navController, "dashboard", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("plan") { MainLayout(navController, "plan", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("team") { MainLayout(navController, "team", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("jobs") {
+                            JobsScreen(
+                                modifier = Modifier,
+                                dashboardViewModel = dashboardViewModel,
+                                onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
+                            )
+                        }
+                        composable("profile") {
+                            ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") }, onNavigateToJobs = { navController.navigate("jobs") })
+                        }
+                        composable("insights") {
+                            InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
+                        }
+                        composable("add_week_plan") {
+                            AddWeekPlanScreen(viewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
+                        }
+                        composable(
+                            route = "add_shift?shiftId={shiftId}",
+                            arguments = listOf(androidx.navigation.navArgument("shiftId") {
+                                type = androidx.navigation.NavType.StringType
+                                nullable = true
+                            })
+                        ) { backStackEntry ->
+                            val shiftId = backStackEntry.arguments?.getString("shiftId")
+                            AddShiftScreen(
+                                shiftId = shiftId,
+                                viewModel = dashboardViewModel,
+                                onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }

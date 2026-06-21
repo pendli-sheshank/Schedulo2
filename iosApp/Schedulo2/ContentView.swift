@@ -6,7 +6,10 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if authViewModel.isAuthenticated {
+            if authViewModel.requiresBiometricUnlock {
+                BiometricLockView()
+                    .environmentObject(authViewModel)
+            } else if authViewModel.isAuthenticated {
                 MainTabView()
                     .environmentObject(authViewModel)
                     .environmentObject(dashboardViewModel)
@@ -19,5 +22,6 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: authViewModel.isAuthenticated)
+        .animation(.easeInOut(duration: 0.3), value: authViewModel.requiresBiometricUnlock)
     }
 }
