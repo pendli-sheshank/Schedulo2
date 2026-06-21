@@ -152,6 +152,21 @@ class MainActivity : FragmentActivity() {
                                 onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
                             )
                         }
+                        composable(
+                            route = "team_detail/{section}",
+                            arguments = listOf(androidx.navigation.navArgument("section") {
+                                type = androidx.navigation.NavType.StringType
+                            })
+                        ) { backStackEntry ->
+                            val section = backStackEntry.arguments?.getString("section") ?: "dashboard"
+                            TeamDetailScreen(
+                                section = section,
+                                teamViewModel = teamViewModel,
+                                authViewModel = authViewModel,
+                                dashboardViewModel = dashboardViewModel,
+                                onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }

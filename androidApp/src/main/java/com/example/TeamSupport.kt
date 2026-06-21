@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -47,6 +48,7 @@ fun TeamScreen(
     authViewModel: AuthViewModel,
     dashboardViewModel: DashboardViewModel? = null,
     onBack: (() -> Unit)? = null,
+    onNavigateToDetail: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val teams by teamViewModel.teams.collectAsState()
@@ -62,13 +64,11 @@ fun TeamScreen(
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
-    var showAssignDialog by remember { mutableStateOf(false) }
-    var showWeekPlanDialog by remember { mutableStateOf(false) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var showEditTeamDialog by remember { mutableStateOf(false) }
     var showDeleteTeamConfirm by remember { mutableStateOf(false) }
     var teamSelectorExpanded by remember { mutableStateOf(false) }
-    var fabMenuExpanded by remember { mutableStateOf(false) }
+    var overflowMenuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         teamViewModel.loadTeams()
@@ -87,33 +87,49 @@ fun TeamScreen(
                     }
                 } else {
                     {}
+                },
+                actions = {
+                    Box {
+                        IconButton(onClick = { overflowMenuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, "Team Options")
+                        }
+                        DropdownMenu(expanded = overflowMenuExpanded, onDismissRequest = { overflowMenuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Create Team") },
+                                leadingIcon = { Icon(Icons.Default.Add, null) },
+                                onClick = { overflowMenuExpanded = false; showCreateDialog = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Join Team") },
+                                leadingIcon = { Icon(Icons.Default.GroupAdd, null) },
+                                onClick = { overflowMenuExpanded = false; showJoinDialog = true }
+                            )
+                            if (currentTeam != null) {
+                                HorizontalDivider()
+                                if (userRole == "manager") {
+                                    DropdownMenuItem(
+                                        text = { Text("Edit Team Name") },
+                                        leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                        onClick = { overflowMenuExpanded = false; showEditTeamDialog = true }
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Leave Team") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, null) },
+                                    onClick = { overflowMenuExpanded = false; showLeaveConfirm = true }
+                                )
+                                if (userRole == "manager") {
+                                    DropdownMenuItem(
+                                        text = { Text("Delete Team") },
+                                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                                        onClick = { overflowMenuExpanded = false; showDeleteTeamConfirm = true }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             )
-        },
-        floatingActionButton = {
-            if (currentTeam != null && userRole == "manager") {
-                Box {
-                    FloatingActionButton(
-                        onClick = { fabMenuExpanded = true },
-                        containerColor = PrimaryGreen,
-                        contentColor = Color.White
-                    ) {
-                        Icon(Icons.Default.Add, "Assign Shift")
-                    }
-                    DropdownMenu(expanded = fabMenuExpanded, onDismissRequest = { fabMenuExpanded = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Assign Single Shift") },
-                            leadingIcon = { Icon(Icons.Default.PersonAdd, null) },
-                            onClick = { fabMenuExpanded = false; showAssignDialog = true }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Plan Entire Week") },
-                            leadingIcon = { Icon(Icons.Default.DateRange, null) },
-                            onClick = { fabMenuExpanded = false; showWeekPlanDialog = true }
-                        )
-                    }
-                }
-            }
         }
     ) { padding ->
         Column(
@@ -269,212 +285,99 @@ fun TeamScreen(
                         }
                     }
 
-                    // Team header card
+                    // Team identity strip
                     item {
-                        Card(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = PrimaryGreen)
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().padding(20.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    "Store: ${currentTeam!!.name}",
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("${members.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                        Text("Members", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-                                    }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("${teamShifts.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                        Text("Shifts", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color.White.copy(alpha = 0.2f)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.ContentCopy, null, tint = Color.White, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            "Invite Code: ${currentTeam!!.inviteCode}",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color.White
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Action buttons row
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { showCreateDialog = true },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, PrimaryGreen),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGreen)
-                            ) {
-                                Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("New", fontSize = 13.sp)
-                            }
-                            OutlinedButton(
-                                onClick = { showJoinDialog = true },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, PrimaryGreen),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryGreen)
-                            ) {
-                                Icon(Icons.Default.GroupAdd, null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Join", fontSize = 13.sp)
-                            }
-                            if (userRole == "manager") {
-                                OutlinedButton(
-                                    onClick = { showEditTeamDialog = true },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, AccentBlue),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentBlue)
-                                ) {
-                                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Edit", fontSize = 13.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { showLeaveConfirm = true },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.ExitToApp, null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Leave", fontSize = 13.sp)
-                            }
-                            if (userRole == "manager") {
-                                OutlinedButton(
-                                    onClick = { showDeleteTeamConfirm = true },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                ) {
-                                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Delete", fontSize = 13.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    // Manager dashboard
-                    if (userRole == "manager" && teamShifts.isNotEmpty()) {
-                        item {
-                            ManagerDashboardSection(
-                                teamShifts = teamShifts,
-                                members = members,
-                                jobs = jobs
-                            )
-                        }
-                    }
-
-                    // Members section
-                    item {
-                        Text(
-                            "Members",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-
-                    items(members, key = { it.id }) { member ->
-                        MemberCard(member = member)
-                    }
-
-                    // Team shifts section
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Team Shifts",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                    }
-
-                    if (teamShifts.isEmpty()) {
-                        item {
-                            Card(
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                                )
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(PrimaryGreen),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                                    contentAlignment = Alignment.Center
+                                Icon(Icons.Default.Groups, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    currentTeam!!.name,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Text(
+                                    "${members.size} members",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = PrimaryGreen.copy(alpha = 0.1f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    Icon(Icons.Default.ContentCopy, null, tint = PrimaryGreen, modifier = Modifier.size(12.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        "No shifts assigned yet",
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        currentTeam!!.inviteCode,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryGreen
                                     )
                                 }
                             }
                         }
-                    } else {
-                        items(teamShifts, key = { it.id }) { shift ->
-                            TeamShiftCard(
-                                shift = shift,
-                                members = members,
-                                isManager = userRole == "manager",
-                                currentUserId = currentUserId,
-                                onDelete = { teamViewModel.deleteTeamShift(shift.id) },
-                                onToggleTask = { taskId -> teamViewModel.toggleTaskCompletion(shift.id, taskId) }
+                    }
+
+                    // Bento grid: Dashboard / Schedule / Tasks
+                    item {
+                        val allTasks = remember(teamShifts) { teamShifts.flatMap { it.tasks } }
+                        val completedTasks = allTasks.count { it.isCompleted }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            BentoTile(
+                                modifier = Modifier.fillMaxWidth().height(110.dp),
+                                title = "Team Dashboard",
+                                subtitle = if (userRole == "manager") "Hours & pay overview" else "${members.size} members",
+                                icon = Icons.Default.Dashboard,
+                                tint = PrimaryGreen,
+                                onClick = { onNavigateToDetail("dashboard") }
                             )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                BentoTile(
+                                    modifier = Modifier.weight(1f).height(130.dp),
+                                    title = "Team Schedule",
+                                    subtitle = "${teamShifts.size} shifts",
+                                    icon = Icons.Default.CalendarMonth,
+                                    tint = AccentBlue,
+                                    onClick = { onNavigateToDetail("schedule") }
+                                )
+                                BentoTile(
+                                    modifier = Modifier.weight(1f).height(130.dp),
+                                    title = "Team Tasks",
+                                    subtitle = "$completedTasks/${allTasks.size} done",
+                                    icon = Icons.Default.Checklist,
+                                    tint = AccentOrange,
+                                    progress = if (allTasks.isNotEmpty()) completedTasks.toFloat() / allTasks.size else null,
+                                    onClick = { onNavigateToDetail("tasks") }
+                                )
+                            }
                         }
                     }
                 }
@@ -499,48 +402,6 @@ fun TeamScreen(
                 teamViewModel.joinTeam(code)
                 showJoinDialog = false
             }
-        )
-    }
-
-    if (showAssignDialog && members.isNotEmpty()) {
-        AssignShiftDialog(
-            onDismiss = { showAssignDialog = false },
-            onAssign = { memberId, company, role, startTime, endTime, hourlyRate, notes, tasks ->
-                teamViewModel.assignShift(memberId, company, role, startTime, endTime, hourlyRate, notes, tasks)
-                showAssignDialog = false
-            },
-            members = members,
-            jobs = jobs
-        )
-    }
-
-    if (showWeekPlanDialog && members.isNotEmpty()) {
-        TeamWeekPlanDialog(
-            onDismiss = { showWeekPlanDialog = false },
-            onAssignShifts = { memberId, company, role, hourlyRate, notes, tasks, weekStartMillis, dayEntries ->
-                for (entry in dayEntries) {
-                    val dayMillis = weekStartMillis + entry.dayOffset.toLong() * 24 * 60 * 60 * 1000L
-                    val cal = Calendar.getInstance().apply {
-                        timeInMillis = dayMillis
-                        set(Calendar.HOUR_OF_DAY, entry.startH)
-                        set(Calendar.MINUTE, entry.startM)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-                    }
-                    val startTime = cal.timeInMillis
-                    cal.apply {
-                        set(Calendar.HOUR_OF_DAY, entry.endH)
-                        set(Calendar.MINUTE, entry.endM)
-                    }
-                    var endTime = cal.timeInMillis
-                    if (endTime <= startTime) endTime += 24 * 60 * 60 * 1000L
-                    teamViewModel.assignShift(memberId, company, role, startTime, endTime, hourlyRate, notes, tasks)
-                }
-                showWeekPlanDialog = false
-            },
-            members = members,
-            jobs = jobs,
-            teamViewModel = teamViewModel
         )
     }
 
@@ -619,7 +480,68 @@ fun TeamScreen(
 }
 
 @Composable
-private fun MemberCard(member: TeamMember) {
+fun BentoTile(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    tint: Color,
+    onClick: () -> Unit,
+    progress: Float? = null
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.1f))
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(tint.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+                }
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    null,
+                    tint = tint.copy(alpha = 0.6f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            Column {
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (progress != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = tint,
+                        trackColor = tint.copy(alpha = 0.15f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MemberCard(member: TeamMember) {
     val initials = remember(member.displayName, member.email) {
         if (member.displayName.isNotBlank()) {
             val parts = member.displayName.trim().split(" ")
@@ -685,7 +607,7 @@ private fun MemberCard(member: TeamMember) {
 }
 
 @Composable
-private fun TeamShiftCard(
+fun TeamShiftCard(
     shift: TeamShift,
     members: List<TeamMember>,
     isManager: Boolean,
@@ -1518,7 +1440,7 @@ fun TeamWeekPlanDialog(
 }
 
 @Composable
-private fun ManagerDashboardSection(
+fun ManagerDashboardSection(
     teamShifts: List<TeamShift>,
     members: List<TeamMember>,
     jobs: List<Job>
