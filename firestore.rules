@@ -38,7 +38,10 @@ service cloud.firestore {
         && request.resource.data.hourlyRate is number
         && request.resource.data.hourlyRate >= 0
         && (!('notes' in request.resource.data) || (request.resource.data.notes is string && request.resource.data.notes.size() <= 1000))
-        && (request.resource.data.userId == request.auth.uid || 'teamShiftId' in request.resource.data);
+        && (request.resource.data.userId == request.auth.uid
+          || ('teamShiftId' in request.resource.data
+            && get(/databases/$(database)/documents/team_shifts/$(request.resource.data.teamShiftId)).data.assignedTo == request.resource.data.userId
+            && get(/databases/$(database)/documents/team_shifts/$(request.resource.data.teamShiftId)).data.assignedBy == request.auth.uid));
       allow update: if request.auth != null
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid
@@ -112,18 +115,21 @@ service cloud.firestore {
         && resource.data.ownerId == request.auth.uid;
     }
 
-    // Team Members: managers can manage, members can read their own
+    // Team Members: self-join only; "manager" role requires team ownership
     match /team_members/{membershipId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.userId is string
+        && request.resource.data.userId == request.auth.uid
         && request.resource.data.teamId is string
         && request.resource.data.role is string
-        && (request.resource.data.role == "manager" || request.resource.data.role == "member");
-      allow update: if request.auth != null
-        && request.resource.data.role is string
-        && (request.resource.data.role == "manager" || request.resource.data.role == "member");
-      allow delete: if request.auth != null;
+        && (request.resource.data.role == "member"
+          || (request.resource.data.role == "manager"
+            && (!exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
+              || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid)));
+      allow delete: if request.auth != null
+        && (resource.data.userId == request.auth.uid
+          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
     }
 
     // Team Shifts: managers can assign, members can read/accept/decline their own
@@ -131,18 +137,29 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow create: if request.auth != null
         && request.resource.data.teamId is string
+        && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid
         && request.resource.data.assignedTo is string
         && request.resource.data.assignedBy == request.auth.uid
         && request.resource.data.company is string
         && request.resource.data.startTime is int
         && request.resource.data.endTime is int
         && request.resource.data.endTime > request.resource.data.startTime
+        && request.resource.data.hourlyRate is number
+        && request.resource.data.hourlyRate >= 0
         && request.resource.data.status is string
         && (request.resource.data.status == "assigned" || request.resource.data.status == "accepted" || request.resource.data.status == "declined");
       allow update: if request.auth != null
         && (resource.data.assignedBy == request.auth.uid || resource.data.assignedTo == request.auth.uid)
-        && request.resource.data.status is string
-        && (request.resource.data.status == "assigned" || request.resource.data.status == "accepted" || request.resource.data.status == "declined");
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.assignedTo == resource.data.assignedTo
+        && request.resource.data.assignedBy == resource.data.assignedBy
+        && request.resource.data.company == resource.data.company
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.startTime == resource.data.startTime
+        && request.resource.data.endTime == resource.data.endTime
+        && request.resource.data.hourlyRate == resource.data.hourlyRate
+        && request.resource.data.notes == resource.data.notes
+        && request.resource.data.status == resource.data.status;
       allow delete: if request.auth != null
         && resource.data.assignedBy == request.auth.uid;
     }

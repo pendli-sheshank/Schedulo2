@@ -5,28 +5,28 @@ struct TeamView: View {
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
     @State private var showCreateTeam = false
     @State private var showJoinTeam = false
-    @State private var showAssignShift = false
-    @State private var showWeekPlan = false
     @State private var showLeaveConfirm = false
     @State private var showEditTeam = false
     @State private var showDeleteConfirm = false
     @State private var editTeamName = ""
+    @State private var showDashboardDetail = false
+    @State private var showScheduleDetail = false
+    @State private var showTasksDetail = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    if let error = teamViewModel.errorMessage {
+                        errorBanner(error)
+                    }
                     if teamViewModel.teams.isEmpty {
                         emptyState
                     } else {
                         teamSelector
                         if let team = teamViewModel.currentTeam {
                             teamHeader(team)
-                            if teamViewModel.isManager && !teamViewModel.teamShifts.isEmpty {
-                                managerDashboardSection
-                            }
-                            membersSection
-                            shiftsSection
+                            bentoGrid(team)
                         }
                     }
                 }
@@ -76,15 +76,18 @@ struct TeamView: View {
                 JoinTeamView()
                     .environmentObject(teamViewModel)
             }
-            .sheet(isPresented: $showAssignShift) {
-                AssignShiftView()
+            .sheet(isPresented: $showDashboardDetail) {
+                TeamDashboardDetailView()
+                    .environmentObject(teamViewModel)
+            }
+            .sheet(isPresented: $showScheduleDetail) {
+                TeamScheduleDetailView()
                     .environmentObject(teamViewModel)
                     .environmentObject(dashboardViewModel)
             }
-            .sheet(isPresented: $showWeekPlan) {
-                TeamWeekPlanView()
+            .sheet(isPresented: $showTasksDetail) {
+                TeamTasksDetailView()
                     .environmentObject(teamViewModel)
-                    .environmentObject(dashboardViewModel)
             }
             .alert("Leave Team", isPresented: $showLeaveConfirm) {
                 Button("Leave", role: .destructive) {
@@ -118,6 +121,28 @@ struct TeamView: View {
             }
             .onAppear { teamViewModel.loadTeams() }
         }
+    }
+
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+                .foregroundColor(.red)
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundColor(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: { teamViewModel.errorMessage = nil }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.red)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.red.opacity(0.12))
+        )
     }
 
     private var emptyState: some View {
@@ -184,258 +209,74 @@ struct TeamView: View {
     }
 
     private func teamHeader(_ team: TeamInfo) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Store: \(team.name)")
-                        .font(.system(size: 18, weight: .bold))
-                    Text("\(teamViewModel.members.count) members")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("Invite Code")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                    Text(team.inviteCode)
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
-                        .foregroundColor(.primaryGreen)
-                }
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.primaryGreen)
+                    .frame(width: 44, height: 44)
+                Image(systemName: "person.3.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
             }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color(UIColor.secondarySystemBackground))
-        )
-    }
-
-    private var membersSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Members")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.secondary)
-
-            ForEach(teamViewModel.members) { member in
-                HStack {
-                    Image(systemName: member.role == "manager" ? "star.circle.fill" : "person.circle.fill")
-                        .foregroundColor(member.role == "manager" ? .orange : .secondary)
-                        .font(.system(size: 24))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(member.displayName.isEmpty ? member.email : member.displayName)
-                            .font(.system(size: 14, weight: .medium))
-                        Text(member.role.capitalized)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(UIColor.secondarySystemBackground))
-                )
-            }
-        }
-    }
-
-    private var shiftsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Team Shifts")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.secondary)
-                Spacer()
-                if teamViewModel.isManager {
-                    Menu {
-                        Button(action: { showAssignShift = true }) {
-                            Label("Assign Single Shift", systemImage: "person.badge.plus")
-                        }
-                        Button(action: { showWeekPlan = true }) {
-                            Label("Plan Entire Week", systemImage: "calendar.badge.plus")
-                        }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundColor(.primaryGreen)
-                    }
-                }
-            }
-
-            let myShifts = teamViewModel.teamShifts.filter { shift in
-                teamViewModel.isManager || shift.assignedTo == teamViewModel.currentUserId
-            }
-
-            if myShifts.isEmpty {
-                Text("No shifts assigned yet")
-                    .font(.system(size: 14))
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 20)
-            } else {
-                ForEach(myShifts) { shift in
-                    teamShiftCard(shift)
-                }
-            }
-        }
-    }
-
-    private func teamShiftCard(_ shift: TeamShiftInfo) -> some View {
-        let timeFmt = DateFormatter()
-        timeFmt.dateFormat = "hh:mm a"
-        let dayFmt = DateFormatter()
-        dayFmt.dateFormat = "EEE, MMM dd"
-        let assignee = teamViewModel.members.first { $0.userId == shift.assignedTo }
-
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(shift.company)
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                statusBadge(shift.status)
-            }
-            Text("\(dayFmt.string(from: shift.startDate)) \(timeFmt.string(from: shift.startDate)) - \(timeFmt.string(from: shift.endDate))")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-            if let assignee = assignee {
-                Text("Assigned to: \(assignee.displayName.isEmpty ? assignee.email : assignee.displayName)")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(team.name)
+                    .font(.system(size: 18, weight: .bold))
+                Text("\(teamViewModel.members.count) members")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
-
-            if !shift.tasks.isEmpty {
-                let completedCount = shift.tasks.filter { $0.isCompleted }.count
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(completedCount)/\(shift.tasks.count) tasks done")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(completedCount == shift.tasks.count ? .primaryGreen : .secondary)
-                    ForEach(shift.tasks) { task in
-                        Button(action: {
-                            if shift.assignedTo == teamViewModel.currentUserId || teamViewModel.isManager {
-                                teamViewModel.toggleTaskCompletion(shiftId: shift.id, taskId: task.id)
-                            }
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(task.isCompleted ? .primaryGreen : .secondary)
-                                    .font(.system(size: 14))
-                                Text(task.title)
-                                    .font(.system(size: 13))
-                                    .foregroundColor(task.isCompleted ? .secondary : .primary)
-                                    .strikethrough(task.isCompleted)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.top, 4)
+            Spacer()
+            HStack(spacing: 4) {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 11))
+                Text(team.inviteCode)
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
             }
-
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(UIColor.secondarySystemBackground))
-        )
-    }
-
-    private var managerDashboardSection: some View {
-        let acceptedShifts = teamViewModel.teamShifts.filter { $0.status == "accepted" }
-        let memberShifts = Dictionary(grouping: acceptedShifts) { $0.assignedTo }
-
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("Manager Dashboard")
-                .font(.system(size: 16, weight: .bold))
-            Text("Employee hours & pay overview")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-
-            ForEach(teamViewModel.members) { member in
-                let shifts = memberShifts[member.userId] ?? []
-                let totalHours = shifts.reduce(0.0) { $0 + $1.durationHours }
-                let totalEarnings = shifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
-                let memberName = member.displayName.isEmpty ? member.email : member.displayName
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(memberName)
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("\(member.role.capitalized) · \(shifts.count) shifts")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("\(String(format: "%.1f", totalHours)) hrs")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.primaryGreen)
-                            Text("$\(String(format: "%.2f", totalEarnings))")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                    }
-
-                    if !shifts.isEmpty {
-                        let byCompany = Dictionary(grouping: shifts) { $0.company }
-                        ForEach(Array(byCompany.keys.sorted()), id: \.self) { company in
-                            let companyShifts = byCompany[company] ?? []
-                            let companyHours = companyShifts.reduce(0.0) { $0 + $1.durationHours }
-                            let companyPay = companyShifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
-                            let latestEnd = companyShifts.map { $0.endTime }.max() ?? 0
-                            let now = Int64(Date().timeIntervalSince1970 * 1000)
-                            let payDue = latestEnd + 4 * 24 * 3600 * 1000 < now
-
-                            HStack {
-                                HStack(spacing: 4) {
-                                    Text(company)
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
-                                    if payDue {
-                                        Text("PAY DUE")
-                                            .font(.system(size: 9, weight: .bold))
-                                            .foregroundColor(.accentOrange)
-                                            .padding(.horizontal, 4)
-                                            .padding(.vertical, 1)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 3)
-                                                    .fill(Color.accentOrange.opacity(0.15))
-                                            )
-                                    }
-                                }
-                                Spacer()
-                                Text("\(companyShifts.count) shifts · \(String(format: "%.1f", companyHours)) hrs · $\(String(format: "%.2f", companyPay))")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(UIColor.secondarySystemBackground))
-                )
-            }
-        }
-    }
-
-    private func statusBadge(_ status: String) -> some View {
-        let color: Color = {
-            switch status {
-            case "accepted": return .green
-            case "declined": return .red
-            default: return .orange
-            }
-        }()
-
-        return Text(status.capitalized)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .foregroundColor(.primaryGreen)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(color.opacity(0.15))
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primaryGreen.opacity(0.1))
             )
+        }
+    }
+
+    private func bentoGrid(_ team: TeamInfo) -> some View {
+        let allTasks = teamViewModel.teamShifts.flatMap { $0.tasks }
+        let completedTasks = allTasks.filter { $0.isCompleted }.count
+        let dashboardSubtitle = teamViewModel.isManager ? "Hours & pay overview" : "\(teamViewModel.members.count) members"
+
+        return VStack(spacing: 12) {
+            BentoTile(
+                title: "Team Dashboard",
+                subtitle: dashboardSubtitle,
+                systemImage: "square.grid.2x2.fill",
+                tint: .primaryGreen,
+                action: { showDashboardDetail = true }
+            )
+            .frame(height: 110)
+
+            HStack(spacing: 12) {
+                BentoTile(
+                    title: "Team Schedule",
+                    subtitle: "\(teamViewModel.teamShifts.count) shifts",
+                    systemImage: "calendar",
+                    tint: .accentBlue,
+                    action: { showScheduleDetail = true }
+                )
+                .frame(height: 130)
+
+                BentoTile(
+                    title: "Team Tasks",
+                    subtitle: "\(completedTasks)/\(allTasks.count) done",
+                    systemImage: "checklist",
+                    tint: .accentOrange,
+                    progress: allTasks.isEmpty ? nil : Double(completedTasks) / Double(allTasks.count),
+                    action: { showTasksDetail = true }
+                )
+                .frame(height: 130)
+            }
+        }
     }
 }
