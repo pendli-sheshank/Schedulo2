@@ -7,8 +7,6 @@ struct ScheduloApp: App {
 
     @AppStorage("themeMode") private var themeMode: String = "system"
 
-    @State private var showSplash = true
-
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var dashboardViewModel = DashboardViewModel()
     @StateObject private var teamViewModel = TeamViewModel()
@@ -19,29 +17,14 @@ struct ScheduloApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                ContentView()
-                    .environmentObject(authViewModel)
-                    .environmentObject(dashboardViewModel)
-                    .environmentObject(teamViewModel)
-                    .preferredColorScheme(resolvedColorScheme)
-                    .onReceive(dashboardViewModel.$themeMode) { mode in
-                        themeMode = mode
-                    }
-
-                if showSplash {
-                    SplashView()
-                        .transition(.opacity)
-                        .zIndex(1)
+            ContentView()
+                .environmentObject(authViewModel)
+                .environmentObject(dashboardViewModel)
+                .environmentObject(teamViewModel)
+                .preferredColorScheme(resolvedColorScheme)
+                .onReceive(dashboardViewModel.$themeMode) { mode in
+                    themeMode = mode
                 }
-            }
-            .onAppear {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    withAnimation(.easeOut(duration: 0.4)) {
-                        showSplash = false
-                    }
-                }
-            }
         }
     }
 

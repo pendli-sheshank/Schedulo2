@@ -10,9 +10,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.res.painterResource
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -61,7 +58,6 @@ import androidx.navigation.compose.rememberNavController
 // androidx.biometric.BiometricPrompt hosts its dialog via a Fragment.
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -88,11 +84,7 @@ class MainActivity : FragmentActivity() {
             val themeMode by dashboardViewModel.themeMode.collectAsState()
 
             MyApplicationTheme(themeMode = themeMode) {
-                var showSplash by remember { mutableStateOf(true) }
-
-                if (showSplash) {
-                    SplashScreenComposable(onFinished = { showSplash = false })
-                } else if (biometricLockActive) {
+                if (biometricLockActive) {
                     BiometricUnlockScreen(
                         viewModel = authViewModel,
                         onUnlocked = { authViewModel.dismissBiometricLock() }
@@ -205,79 +197,6 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
-    }
-}
-
-@Composable
-fun SplashScreenComposable(onFinished: () -> Unit) {
-    val logoScale = remember { Animatable(0.5f) }
-    val logoAlpha = remember { Animatable(0f) }
-    val taglineAlpha = remember { Animatable(0f) }
-    val sparkleAlpha = remember { Animatable(0f) }
-
-    LaunchedEffect(Unit) {
-        logoScale.animateTo(1f, animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f))
-    }
-    LaunchedEffect(Unit) {
-        logoAlpha.animateTo(1f, animationSpec = tween(400))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(400)
-        taglineAlpha.animateTo(1f, animationSpec = tween(500))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(700)
-        sparkleAlpha.animateTo(1f, animationSpec = tween(300))
-    }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(2000)
-        onFinished()
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(Color(0xFF0D9488), Color(0xFF065F56)),
-                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                    end = androidx.compose.ui.geometry.Offset(Float.MAX_VALUE, Float.MAX_VALUE)
-                )
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            androidx.compose.foundation.Image(
-                painter = painterResource(id = R.drawable.splash_logo),
-                contentDescription = "Schedulo",
-                modifier = Modifier
-                    .size(120.dp)
-                    .scale(logoScale.value)
-                    .graphicsLayer { alpha = logoAlpha.value }
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = "Smarter scheduling.\nStronger teams.",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.graphicsLayer { alpha = taglineAlpha.value }
-            )
-        }
-        // Sparkle accent
-        Text(
-            text = "✦",
-            fontSize = 16.sp,
-            color = Color.White.copy(alpha = 0.7f),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(32.dp)
-                .graphicsLayer { alpha = sparkleAlpha.value }
-        )
     }
 }
 
