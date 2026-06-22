@@ -24,14 +24,30 @@ struct LoginView: View {
         return pred.evaluate(with: trimmed) && password.count >= 6
     }
 
-    private let darkGreen = Color(red: 0.176, green: 0.247, blue: 0.153)
-    private let lightGreenBg = Color(red: 0.941, green: 0.961, blue: 0.933)
+    private let gradientEnd = Color(red: 0.176, green: 0.247, blue: 0.153)
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var cardBackground: Color {
+        colorScheme == .dark ? Color(red: 0.102, green: 0.114, blue: 0.141) : .white
+    }
+    private var cardText: Color {
+        colorScheme == .dark ? Color(red: 0.910, green: 0.918, blue: 0.929) : Color(red: 0.176, green: 0.247, blue: 0.153)
+    }
+    private var fieldBackground: Color {
+        colorScheme == .dark ? Color(red: 0.141, green: 0.157, blue: 0.192) : Color(red: 0.941, green: 0.961, blue: 0.933)
+    }
+    private var errorBannerBg: Color {
+        colorScheme == .dark ? Color(red: 0.176, green: 0.082, blue: 0.086) : Color(red: 0.992, green: 0.925, blue: 0.925)
+    }
+    private var errorColor: Color {
+        colorScheme == .dark ? Color(red: 0.973, green: 0.443, blue: 0.443) : Color(red: 0.827, green: 0.184, blue: 0.184)
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 LinearGradient(
-                    colors: [.primaryGreen, darkGreen],
+                    colors: [.primaryGreen, gradientEnd],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -69,11 +85,11 @@ struct LoginView: View {
                         VStack(spacing: 0) {
                             Text("Welcome back")
                                 .font(.system(size: 22, weight: .semibold))
-                                .foregroundColor(darkGreen)
+                                .foregroundColor(cardText)
 
                             Text("Sign in to continue")
                                 .font(.system(size: 14))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.secondary)
                                 .padding(.top, 4)
 
                             Spacer().frame(height: 28)
@@ -93,7 +109,7 @@ struct LoginView: View {
                             .background(
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(emailError != nil ? Color.red : Color.gray.opacity(0.3), lineWidth: 1)
-                                    .background(lightGreenBg.cornerRadius(14))
+                                    .background(fieldBackground.cornerRadius(14))
                             )
 
                             if let error = emailError {
@@ -120,31 +136,31 @@ struct LoginView: View {
                                 }
                                 Button(action: { passwordVisible.toggle() }) {
                                     Image(systemName: passwordVisible ? "eye.slash.fill" : "eye.fill")
-                                        .foregroundColor(.gray)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                             .padding(14)
                             .background(
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                    .background(lightGreenBg.cornerRadius(14))
+                                    .background(fieldBackground.cornerRadius(14))
                             )
 
                             // Error
                             if let errorMsg = authViewModel.errorMessage {
                                 HStack(spacing: 10) {
                                     Image(systemName: "exclamationmark.circle.fill")
-                                        .foregroundColor(Color(red: 0.827, green: 0.184, blue: 0.184))
+                                        .foregroundColor(errorColor)
                                         .font(.system(size: 16))
                                     Text(errorMsg)
                                         .font(.system(size: 13))
-                                        .foregroundColor(Color(red: 0.827, green: 0.184, blue: 0.184))
+                                        .foregroundColor(errorColor)
                                 }
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color(red: 0.992, green: 0.925, blue: 0.925))
+                                        .fill(errorBannerBg)
                                 )
                                 .padding(.top, 16)
                             }
@@ -213,8 +229,8 @@ struct LoginView: View {
                         .padding(.vertical, 32)
                         .background(
                             RoundedRectangle(cornerRadius: 28)
-                                .fill(Color.white)
-                                .shadow(color: .black.opacity(0.1), radius: 12, y: 4)
+                                .fill(cardBackground)
+                                .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.1), radius: 12, y: 4)
                         )
                         .padding(.horizontal, 28)
 
