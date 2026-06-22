@@ -88,7 +88,11 @@ class MainActivity : FragmentActivity() {
             val themeMode by dashboardViewModel.themeMode.collectAsState()
 
             MyApplicationTheme(themeMode = themeMode) {
-                if (biometricLockActive) {
+                var showSplash by remember { mutableStateOf(true) }
+
+                if (showSplash) {
+                    SplashScreenComposable(onFinished = { showSplash = false })
+                } else if (biometricLockActive) {
                     BiometricUnlockScreen(
                         viewModel = authViewModel,
                         onUnlocked = { authViewModel.dismissBiometricLock() }
@@ -100,7 +104,11 @@ class MainActivity : FragmentActivity() {
 
                     NavHost(
                         navController = navController,
-                        startDestination = startDestination
+                        startDestination = startDestination,
+                        enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally { it / 4 } },
+                        exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally { -it / 4 } },
+                        popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally { -it / 4 } },
+                        popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally { it / 4 } }
                     ) {
                         composable("login") {
                             LoginScreen(
@@ -124,10 +132,30 @@ class MainActivity : FragmentActivity() {
                                 }
                             )
                         }
-                        composable("dashboard") { MainLayout(navController, "dashboard", authViewModel, dashboardViewModel, teamViewModel) }
-                        composable("plan") { MainLayout(navController, "plan", authViewModel, dashboardViewModel, teamViewModel) }
-                        composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel, teamViewModel) }
-                        composable("team") { MainLayout(navController, "team", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("dashboard",
+                            enterTransition = { fadeIn(tween(250)) },
+                            exitTransition = { fadeOut(tween(250)) },
+                            popEnterTransition = { fadeIn(tween(250)) },
+                            popExitTransition = { fadeOut(tween(250)) }
+                        ) { MainLayout(navController, "dashboard", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("plan",
+                            enterTransition = { fadeIn(tween(250)) },
+                            exitTransition = { fadeOut(tween(250)) },
+                            popEnterTransition = { fadeIn(tween(250)) },
+                            popExitTransition = { fadeOut(tween(250)) }
+                        ) { MainLayout(navController, "plan", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("pay",
+                            enterTransition = { fadeIn(tween(250)) },
+                            exitTransition = { fadeOut(tween(250)) },
+                            popEnterTransition = { fadeIn(tween(250)) },
+                            popExitTransition = { fadeOut(tween(250)) }
+                        ) { MainLayout(navController, "pay", authViewModel, dashboardViewModel, teamViewModel) }
+                        composable("team",
+                            enterTransition = { fadeIn(tween(250)) },
+                            exitTransition = { fadeOut(tween(250)) },
+                            popEnterTransition = { fadeIn(tween(250)) },
+                            popExitTransition = { fadeOut(tween(250)) }
+                        ) { MainLayout(navController, "team", authViewModel, dashboardViewModel, teamViewModel) }
                         composable("jobs") {
                             JobsScreen(
                                 modifier = Modifier,
@@ -175,7 +203,6 @@ class MainActivity : FragmentActivity() {
                         }
                     }
                 }
-                } // end if (!showSplash)
             }
         }
     }
