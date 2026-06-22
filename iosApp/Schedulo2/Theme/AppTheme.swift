@@ -115,3 +115,111 @@ extension EnvironmentValues {
         AppColors(colorScheme: colorScheme)
     }
 }
+
+// MARK: - Shimmer Effect
+
+struct ShimmerModifier: ViewModifier {
+    @State private var phase: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                GeometryReader { geo in
+                    LinearGradient(
+                        colors: [
+                            Color.gray.opacity(0.1),
+                            Color.gray.opacity(0.25),
+                            Color.gray.opacity(0.1)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: geo.size.width * 2)
+                    .offset(x: -geo.size.width + phase * geo.size.width * 3)
+                }
+                .clipped()
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    phase = 1
+                }
+            }
+    }
+}
+
+extension View {
+    func shimmer() -> some View {
+        modifier(ShimmerModifier())
+    }
+}
+
+// MARK: - Stagger Animation
+
+struct StaggeredAppearModifier: ViewModifier {
+    let index: Int
+    @State private var appeared = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 20)
+            .onAppear {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8).delay(Double(index) * 0.08)) {
+                    appeared = true
+                }
+            }
+    }
+}
+
+extension View {
+    func staggeredAppear(index: Int) -> some View {
+        modifier(StaggeredAppearModifier(index: index))
+    }
+}
+
+// MARK: - Press Effect
+
+struct PressEffectModifier: ViewModifier {
+    @State private var isPressed = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isPressed)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in isPressed = true }
+                    .onEnded { _ in isPressed = false }
+            )
+    }
+}
+
+extension View {
+    func pressEffect() -> some View {
+        modifier(PressEffectModifier())
+    }
+}
+
+// MARK: - Shimmer Card Placeholder
+
+struct ShimmerCard: View {
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.gray.opacity(0.15))
+                .frame(height: 16)
+                .frame(maxWidth: 200)
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.gray.opacity(0.1))
+                .frame(height: 12)
+                .frame(maxWidth: 150)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(colorScheme == .dark ? Color.darkSurface : Color.lightSurface)
+        .cornerRadius(16)
+        .shimmer()
+    }
+}
