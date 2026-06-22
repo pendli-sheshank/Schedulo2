@@ -13,6 +13,7 @@ struct MainTabView: View {
     @State private var showInsights = false
     @State private var showJobsView = false
     @State private var editingShiftId: String?
+    @Namespace private var tabNamespace
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -24,33 +25,38 @@ struct MainTabView: View {
                         onNavigateToProfile: { showProfile = true },
                         onNavigateToPay: { selectedTab = 2 }
                     )
+                    .transition(.opacity)
                 case 1:
                     PlanView(
                         onEditShift: { id in editingShiftId = id; showAddShift = true },
                         onAddShift: { editingShiftId = nil; showAddShift = true }
                     )
+                    .transition(.opacity)
                 case 2:
                     PayView()
+                        .transition(.opacity)
                 case 3:
                     TeamView()
+                        .transition(.opacity)
                 default:
                     EmptyView()
                 }
             }
+            .animation(.easeInOut(duration: 0.25), value: selectedTab)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom) {
                 HStack {
-                    TabBarButton(icon: "house.fill", label: "Home", isSelected: selectedTab == 0) {
+                    TabBarButton(icon: "house.fill", label: "Home", isSelected: selectedTab == 0, namespace: tabNamespace) {
                         selectedTab = 0
                     }
-                    TabBarButton(icon: "calendar", label: "Plan", isSelected: selectedTab == 1) {
+                    TabBarButton(icon: "calendar", label: "Plan", isSelected: selectedTab == 1, namespace: tabNamespace) {
                         selectedTab = 1
                     }
                     Spacer().frame(width: 56)
-                    TabBarButton(icon: "dollarsign.circle.fill", label: "Pay", isSelected: selectedTab == 2) {
+                    TabBarButton(icon: "dollarsign.circle.fill", label: "Pay", isSelected: selectedTab == 2, namespace: tabNamespace) {
                         selectedTab = 2
                     }
-                    TabBarButton(icon: "person.3.fill", label: "Team", isSelected: selectedTab == 3) {
+                    TabBarButton(icon: "person.3.fill", label: "Team", isSelected: selectedTab == 3, namespace: tabNamespace) {
                         selectedTab = 3
                     }
                 }
@@ -63,7 +69,6 @@ struct MainTabView: View {
                 )
             }
 
-            // Floating add button
             Button(action: { showAddMenu = true }) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16)
@@ -80,6 +85,8 @@ struct MainTabView: View {
                     Image(systemName: "plus")
                         .font(.system(size: 24, weight: .medium))
                         .foregroundColor(.white)
+                        .rotationEffect(.degrees(showAddMenu ? 45 : 0))
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: showAddMenu)
                 }
             }
             .padding(.bottom, 20)
@@ -147,22 +154,33 @@ private struct TabBarButton: View {
     let label: String
     let isSelected: Bool
     let action: () -> Void
+    var namespace: Namespace.ID? = nil
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 2) {
-                Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(
+                ZStack {
+                    if isSelected, let ns = namespace {
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(isSelected ? Color.primaryGreen.opacity(0.1) : Color.clear)
-                    )
+                            .fill(Color.primaryGreen.opacity(0.1))
+                            .matchedGeometryEffect(id: "tabIndicator", in: ns)
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.clear)
+                    }
+                    Image(systemName: icon)
+                        .font(.system(size: 20))
+                        .scaleEffect(isSelected ? 1.1 : 1.0)
+                }
+                .frame(height: 28)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+
                 Text(label)
                     .font(.system(size: 11, weight: isSelected ? .bold : .medium))
             }
             .foregroundColor(isSelected ? .primaryGreen : .secondary)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         }
         .frame(maxWidth: .infinity)
     }

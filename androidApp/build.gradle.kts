@@ -16,7 +16,7 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "50").toInt()
+    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "51").toInt()
     versionCode = ciVersionCode
     versionName = "$ciVersionCode.0"
 
@@ -92,6 +92,7 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation("androidx.biometric:biometric:1.2.0-alpha05")
+  implementation("androidx.core:core-splashscreen:1.0.1")
   // implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)

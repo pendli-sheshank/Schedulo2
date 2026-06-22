@@ -78,7 +78,7 @@ fun MainLayout(
         },
         floatingActionButton = {
             Box {
-                FabPlaceholder(onClick = { showAddMenu = true })
+                FabPlaceholder(onClick = { showAddMenu = true }, isExpanded = showAddMenu)
                 DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
                     DropdownMenuItem(
                         text = { Text("Add Single Shift") },

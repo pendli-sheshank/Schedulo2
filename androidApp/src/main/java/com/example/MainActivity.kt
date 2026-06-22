@@ -7,8 +7,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,6 +58,7 @@ import androidx.navigation.compose.rememberNavController
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -78,13 +84,24 @@ class MainActivity : ComponentActivity() {
             }
 
             MyApplicationTheme(themeMode = themeMode) {
+                var showSplash by remember { mutableStateOf(true) }
+
+                if (showSplash) {
+                    SplashScreenComposable(onFinished = { showSplash = false })
+                }
+
+                if (!showSplash) {
                 val startDestination = remember {
                     if (authState is AuthState.Authenticated) "dashboard" else "login"
                 }
 
                 NavHost(
                     navController = navController,
-                    startDestination = startDestination
+                    startDestination = startDestination,
+                    enterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally { it / 4 } },
+                    exitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally { -it / 4 } },
+                    popEnterTransition = { fadeIn(animationSpec = tween(300)) + slideInHorizontally { -it / 4 } },
+                    popExitTransition = { fadeOut(animationSpec = tween(300)) + slideOutHorizontally { it / 4 } }
                 ) {
                     composable("login") {
                         LoginScreen(
@@ -108,10 +125,30 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
-                    composable("dashboard") { MainLayout(navController, "dashboard", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("plan") { MainLayout(navController, "plan", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("pay") { MainLayout(navController, "pay", authViewModel, dashboardViewModel, teamViewModel) }
-                    composable("team") { MainLayout(navController, "team", authViewModel, dashboardViewModel, teamViewModel) }
+                    composable("dashboard",
+                        enterTransition = { fadeIn(tween(250)) },
+                        exitTransition = { fadeOut(tween(250)) },
+                        popEnterTransition = { fadeIn(tween(250)) },
+                        popExitTransition = { fadeOut(tween(250)) }
+                    ) { MainLayout(navController, "dashboard", authViewModel, dashboardViewModel, teamViewModel) }
+                    composable("plan",
+                        enterTransition = { fadeIn(tween(250)) },
+                        exitTransition = { fadeOut(tween(250)) },
+                        popEnterTransition = { fadeIn(tween(250)) },
+                        popExitTransition = { fadeOut(tween(250)) }
+                    ) { MainLayout(navController, "plan", authViewModel, dashboardViewModel, teamViewModel) }
+                    composable("pay",
+                        enterTransition = { fadeIn(tween(250)) },
+                        exitTransition = { fadeOut(tween(250)) },
+                        popEnterTransition = { fadeIn(tween(250)) },
+                        popExitTransition = { fadeOut(tween(250)) }
+                    ) { MainLayout(navController, "pay", authViewModel, dashboardViewModel, teamViewModel) }
+                    composable("team",
+                        enterTransition = { fadeIn(tween(250)) },
+                        exitTransition = { fadeOut(tween(250)) },
+                        popEnterTransition = { fadeIn(tween(250)) },
+                        popExitTransition = { fadeOut(tween(250)) }
+                    ) { MainLayout(navController, "team", authViewModel, dashboardViewModel, teamViewModel) }
                     composable("jobs") {
                         JobsScreen(
                             modifier = Modifier,
@@ -143,8 +180,82 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+                } // end if (!showSplash)
             }
         }
+    }
+}
+
+@Composable
+fun SplashScreenComposable(onFinished: () -> Unit) {
+    val logoScale = remember { Animatable(0.5f) }
+    val logoAlpha = remember { Animatable(0f) }
+    val taglineAlpha = remember { Animatable(0f) }
+    val sparkleAlpha = remember { Animatable(0f) }
+
+    LaunchedEffect(Unit) {
+        logoScale.animateTo(1f, animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f))
+    }
+    LaunchedEffect(Unit) {
+        logoAlpha.animateTo(1f, animationSpec = tween(400))
+    }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(400)
+        taglineAlpha.animateTo(1f, animationSpec = tween(500))
+    }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(700)
+        sparkleAlpha.animateTo(1f, animationSpec = tween(300))
+    }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(2000)
+        onFinished()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(Color(0xFF0D9488), Color(0xFF065F56)),
+                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(Float.MAX_VALUE, Float.MAX_VALUE)
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            androidx.compose.foundation.Image(
+                painter = painterResource(id = R.drawable.splash_logo),
+                contentDescription = "Schedulo",
+                modifier = Modifier
+                    .size(120.dp)
+                    .scale(logoScale.value)
+                    .graphicsLayer { alpha = logoAlpha.value }
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "Smarter scheduling.\nStronger teams.",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.graphicsLayer { alpha = taglineAlpha.value }
+            )
+        }
+        // Sparkle accent
+        Text(
+            text = "✦",
+            fontSize = 16.sp,
+            color = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(32.dp)
+                .graphicsLayer { alpha = sparkleAlpha.value }
+        )
     }
 }
 
@@ -816,7 +927,21 @@ fun BottomNavigationBar(currentRoute: String, onNavigate: (String) -> Unit) {
 
 @Composable
 fun NavBarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val color by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(250),
+        label = "navColor"
+    )
+    val pillAlpha by animateFloatAsState(
+        targetValue = if (selected) 0.1f else 0f,
+        animationSpec = tween(250),
+        label = "pillAlpha"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.1f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f),
+        label = "iconScale"
+    )
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -831,14 +956,11 @@ fun NavBarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () 
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .then(
-                    if (selected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                    else Modifier
-                )
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = pillAlpha))
                 .padding(horizontal = 12.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center
         ) {
-            Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(22.dp))
+            Icon(imageVector = icon, contentDescription = label, tint = color, modifier = Modifier.size(22.dp).scale(iconScale))
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
@@ -851,10 +973,22 @@ fun NavBarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () 
 }
 
 @Composable
-fun FabPlaceholder(onClick: () -> Unit = {}) {
+fun FabPlaceholder(onClick: () -> Unit = {}, isExpanded: Boolean = false) {
+    val rotation by animateFloatAsState(
+        targetValue = if (isExpanded) 45f else 0f,
+        animationSpec = spring(dampingRatio = 0.6f),
+        label = "fabRotation"
+    )
+    val fabScale by animateFloatAsState(
+        targetValue = if (isExpanded) 0.9f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f),
+        label = "fabScale"
+    )
+
     Box(
         modifier = Modifier
             .offset(y = 16.dp)
+            .scale(fabScale)
             .shadow(8.dp, RoundedCornerShape(16.dp))
             .size(56.dp)
             .clip(RoundedCornerShape(16.dp))
@@ -864,6 +998,38 @@ fun FabPlaceholder(onClick: () -> Unit = {}) {
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Icon(imageVector = Icons.Default.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(28.dp))
+        Icon(imageVector = Icons.Default.Add, contentDescription = "Add", tint = Color.White, modifier = Modifier.size(28.dp).rotate(rotation))
     }
+}
+
+@Composable
+fun ShimmerCard(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val shimmerOffset by transition.animateFloat(
+        initialValue = -300f,
+        targetValue = 300f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmerOffset"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(80.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Gray.copy(alpha = 0.1f),
+                        Color.Gray.copy(alpha = 0.25f),
+                        Color.Gray.copy(alpha = 0.1f)
+                    ),
+                    startX = shimmerOffset,
+                    endX = shimmerOffset + 300f
+                )
+            )
+    )
 }
