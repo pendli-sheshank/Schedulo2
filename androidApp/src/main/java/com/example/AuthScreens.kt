@@ -40,8 +40,7 @@ private fun isValidEmail(email: String): Boolean =
 private fun isStrongPassword(password: String): Boolean =
     password.length >= 8 && password.any { it.isLetter() } && password.any { it.isDigit() }
 
-private val DarkGreen = Color(0xFF2D3F27)
-private val LightGreenBg = Color(0xFFF0F5EE)
+private val DarkGreenGradientEnd = Color(0xFF2D3F27)
 
 @Composable
 fun LoginScreen(
@@ -75,7 +74,7 @@ fun LoginScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(PrimaryGreen, DarkGreen),
+                    colors = listOf(PrimaryGreen, DarkGreenGradientEnd),
                     startY = 0f,
                     endY = Float.POSITIVE_INFINITY
                 )
@@ -129,7 +128,7 @@ fun LoginScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 4.dp,
                 shadowElevation = 12.dp
             ) {
@@ -141,13 +140,13 @@ fun LoginScreen(
                         text = "Welcome back",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = DarkGreen
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Sign in to continue",
                         fontSize = 14.sp,
-                        color = Color.Gray
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(28.dp))
@@ -159,7 +158,7 @@ fun LoginScreen(
                         leadingIcon = {
                             Icon(Icons.Default.Email, contentDescription = null, tint = PrimaryGreen)
                         },
-                        supportingText = emailError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        supportingText = emailError?.let { { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) } },
                         isError = emailError != null,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
@@ -175,8 +174,8 @@ fun LoginScreen(
                             focusedBorderColor = PrimaryGreen,
                             focusedLabelColor = PrimaryGreen,
                             cursorColor = PrimaryGreen,
-                            unfocusedContainerColor = LightGreenBg,
-                            focusedContainerColor = Color.White
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
 
@@ -194,7 +193,7 @@ fun LoginScreen(
                                 Icon(
                                     imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                                     contentDescription = null,
-                                    tint = Color.Gray
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         },
@@ -216,8 +215,8 @@ fun LoginScreen(
                             focusedBorderColor = PrimaryGreen,
                             focusedLabelColor = PrimaryGreen,
                             cursorColor = PrimaryGreen,
-                            unfocusedContainerColor = LightGreenBg,
-                            focusedContainerColor = Color.White
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
 
@@ -226,7 +225,7 @@ fun LoginScreen(
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFFDECEC)
+                            color = MaterialTheme.colorScheme.errorContainer
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
@@ -235,13 +234,13 @@ fun LoginScreen(
                                 Icon(
                                     Icons.Default.ErrorOutline,
                                     contentDescription = null,
-                                    tint = Color(0xFFD32F2F),
+                                    tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = (authState as AuthState.Error).message,
-                                    color = Color(0xFFD32F2F),
+                                    color = MaterialTheme.colorScheme.error,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp
                                 )
@@ -301,7 +300,7 @@ fun LoginScreen(
 
                     if (biometricAvailable && biometricEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedButton(
                             onClick = {
@@ -379,7 +378,7 @@ fun LoginScreen(
                         )
                         if (resetState is ResetState.Error) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text((resetState as ResetState.Error).message, color = Color(0xFFD32F2F), fontSize = 13.sp)
+                            Text((resetState as ResetState.Error).message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
                         }
                     }
                 }
@@ -425,7 +424,7 @@ fun BiometricUnlockScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(PrimaryGreen, DarkGreen),
+                    colors = listOf(PrimaryGreen, DarkGreenGradientEnd),
                     startY = 0f,
                     endY = Float.POSITIVE_INFINITY
                 )
@@ -535,7 +534,7 @@ fun SignupScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(PrimaryGreen, DarkGreen),
+                    colors = listOf(PrimaryGreen, DarkGreenGradientEnd),
                     startY = 0f,
                     endY = Float.POSITIVE_INFINITY
                 )
@@ -582,7 +581,7 @@ fun SignupScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 4.dp,
                 shadowElevation = 12.dp
             ) {
@@ -594,13 +593,13 @@ fun SignupScreen(
                         text = "Create account",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = DarkGreen
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Start tracking your shifts",
                         fontSize = 14.sp,
-                        color = Color.Gray
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -612,7 +611,7 @@ fun SignupScreen(
                         leadingIcon = {
                             Icon(Icons.Default.Person, contentDescription = null, tint = PrimaryGreen)
                         },
-                        supportingText = nameError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        supportingText = nameError?.let { { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) } },
                         isError = nameError != null,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         keyboardActions = KeyboardActions(
@@ -625,8 +624,8 @@ fun SignupScreen(
                             focusedBorderColor = PrimaryGreen,
                             focusedLabelColor = PrimaryGreen,
                             cursorColor = PrimaryGreen,
-                            unfocusedContainerColor = LightGreenBg,
-                            focusedContainerColor = Color.White
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
 
@@ -639,7 +638,7 @@ fun SignupScreen(
                         leadingIcon = {
                             Icon(Icons.Default.Email, contentDescription = null, tint = PrimaryGreen)
                         },
-                        supportingText = signupEmailError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        supportingText = signupEmailError?.let { { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) } },
                         isError = signupEmailError != null,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
@@ -655,8 +654,8 @@ fun SignupScreen(
                             focusedBorderColor = PrimaryGreen,
                             focusedLabelColor = PrimaryGreen,
                             cursorColor = PrimaryGreen,
-                            unfocusedContainerColor = LightGreenBg,
-                            focusedContainerColor = Color.White
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
 
@@ -674,7 +673,7 @@ fun SignupScreen(
                                 Icon(
                                     imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                                     contentDescription = null,
-                                    tint = Color.Gray
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         },
@@ -683,7 +682,7 @@ fun SignupScreen(
                             keyboardType = KeyboardType.Password,
                             imeAction = ImeAction.Done
                         ),
-                        supportingText = passwordError?.let { { Text(it, color = Color(0xFFD32F2F), fontSize = 12.sp) } },
+                        supportingText = passwordError?.let { { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) } },
                         isError = passwordError != null,
                         keyboardActions = KeyboardActions(
                             onDone = {
@@ -698,8 +697,8 @@ fun SignupScreen(
                             focusedBorderColor = PrimaryGreen,
                             focusedLabelColor = PrimaryGreen,
                             cursorColor = PrimaryGreen,
-                            unfocusedContainerColor = LightGreenBg,
-                            focusedContainerColor = Color.White
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
 
@@ -708,7 +707,7 @@ fun SignupScreen(
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFFDECEC)
+                            color = MaterialTheme.colorScheme.errorContainer
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
@@ -717,13 +716,13 @@ fun SignupScreen(
                                 Icon(
                                     Icons.Default.ErrorOutline,
                                     contentDescription = null,
-                                    tint = Color(0xFFD32F2F),
+                                    tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = (authState as AuthState.Error).message,
-                                    color = Color(0xFFD32F2F),
+                                    color = MaterialTheme.colorScheme.error,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp
                                 )
@@ -766,7 +765,7 @@ fun SignupScreen(
                     Text(
                         text = "By signing up, you agree to our Terms of Service",
                         fontSize = 12.sp,
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }
