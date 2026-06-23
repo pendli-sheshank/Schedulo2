@@ -7,9 +7,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
+import com.schedulo.shared.model.SwapRequest
+import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,10 +46,18 @@ class TeamViewModel : ViewModel() {
     private val _memberJobs = MutableStateFlow<List<Job>>(emptyList())
     val memberJobs = _memberJobs.asStateFlow()
 
+    private val _teamMessages = MutableStateFlow<List<TeamMessage>>(emptyList())
+    val teamMessages = _teamMessages.asStateFlow()
+
+    private val _swapRequests = MutableStateFlow<List<SwapRequest>>(emptyList())
+    val swapRequests = _swapRequests.asStateFlow()
+
     private var teamsListener: ListenerRegistration? = null
     private var membersListener: ListenerRegistration? = null
     private var shiftsListener: ListenerRegistration? = null
     private var memberJobsListener: ListenerRegistration? = null
+    private var messagesListener: ListenerRegistration? = null
+    private var swapRequestsListener: ListenerRegistration? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -216,6 +227,55 @@ class TeamViewModel : ViewModel() {
                     }.sortedByDescending { it.startTime }
                 }
             }
+
+        // Listen for team messages
+        messagesListener?.remove()
+        messagesListener = database.collection("team_messages")
+            .whereEqualTo("teamId", team.id)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { value, error ->
+                if (error != null) return@addSnapshotListener
+                if (value != null) {
+                    _teamMessages.value = value.documents.map { doc ->
+                        TeamMessage(
+                            id = doc.id,
+                            teamId = doc.getString("teamId") ?: "",
+                            senderId = doc.getString("senderId") ?: "",
+                            senderName = doc.getString("senderName") ?: "",
+                            text = doc.getString("text") ?: "",
+                            isAnnouncement = doc.getBoolean("isAnnouncement") ?: false,
+                            isPinned = doc.getBoolean("isPinned") ?: false,
+                            createdAt = doc.getLong("createdAt") ?: 0
+                        )
+                    }
+                }
+            }
+
+        // Listen for swap requests
+        swapRequestsListener?.remove()
+        swapRequestsListener = database.collection("swap_requests")
+            .whereEqualTo("teamId", team.id)
+            .addSnapshotListener { value, error ->
+                if (error != null) return@addSnapshotListener
+                if (value != null) {
+                    _swapRequests.value = value.documents.map { doc ->
+                        SwapRequest(
+                            id = doc.id,
+                            teamId = doc.getString("teamId") ?: "",
+                            requesterId = doc.getString("requesterId") ?: "",
+                            requesterName = doc.getString("requesterName") ?: "",
+                            requesterShiftId = doc.getString("requesterShiftId") ?: "",
+                            targetMemberId = doc.getString("targetMemberId") ?: "",
+                            targetMemberName = doc.getString("targetMemberName") ?: "",
+                            targetShiftId = doc.getString("targetShiftId") ?: "",
+                            status = doc.getString("status") ?: "pending",
+                            createdAt = doc.getLong("createdAt") ?: 0,
+                            resolvedAt = doc.getLong("resolvedAt") ?: 0,
+                            resolvedBy = doc.getString("resolvedBy") ?: ""
+                        )
+                    }.sortedByDescending { it.createdAt }
+                }
+            }
     }
 
     fun createTeam(name: String) {
@@ -378,7 +438,7 @@ class TeamViewModel : ViewModel() {
             "endTime" to endTime,
             "hourlyRate" to hourlyRate,
             "notes" to notes.trim(),
-            "status" to "accepted",
+            "status" to "assigned",
             "tasks" to tasksList
         )
 
@@ -396,7 +456,7 @@ class TeamViewModel : ViewModel() {
                     endTime = endTime,
                     hourlyRate = hourlyRate,
                     notes = notes.trim(),
-                    status = "accepted",
+                    status = "assigned",
                     tasks = tasks
                 )
                 createPersonalShiftFromTeam(teamShift, memberId)
@@ -513,6 +573,225 @@ class TeamViewModel : ViewModel() {
             }
     }
 
+    fun promoteMember(memberDocId: String) {
+        val database = db ?: return
+        val previousMembers = _members.value
+        _members.value = _members.value.map {
+            if (it.id == memberDocId) it.copy(role = "manager") else it
+        }
+        database.collection("team_members").document(memberDocId)
+            .update("role", "manager")
+            .addOnFailureListener { e ->
+                _members.value = previousMembers
+                _errorMessage.value = "Failed to promote member: ${e.message}"
+            }
+    }
+
+    fun demoteMember(memberDocId: String) {
+        val database = db ?: return
+        val previousMembers = _members.value
+        _members.value = _members.value.map {
+            if (it.id == memberDocId) it.copy(role = "member") else it
+        }
+        database.collection("team_members").document(memberDocId)
+            .update("role", "member")
+            .addOnFailureListener { e ->
+                _members.value = previousMembers
+                _errorMessage.value = "Failed to demote member: ${e.message}"
+            }
+    }
+
+    fun removeMember(memberDocId: String, teamId: String) {
+        val database = db ?: return
+        val previousMembers = _members.value
+        _members.value = _members.value.filter { it.id != memberDocId }
+
+        val batch = database.batch()
+        batch.delete(database.collection("team_members").document(memberDocId))
+        batch.update(database.collection("teams").document(teamId), "memberCount", FieldValue.increment(-1))
+
+        batch.commit()
+            .addOnFailureListener { e ->
+                _members.value = previousMembers
+                _errorMessage.value = "Failed to remove member: ${e.message}"
+            }
+    }
+
+    fun sendMessage(text: String, isAnnouncement: Boolean = false) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val team = _currentTeam.value ?: return
+        if (text.isBlank()) return
+
+        val senderName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val messageData = hashMapOf(
+            "teamId" to team.id,
+            "senderId" to uid,
+            "senderName" to senderName,
+            "text" to text.trim(),
+            "isAnnouncement" to isAnnouncement,
+            "isPinned" to false,
+            "createdAt" to System.currentTimeMillis()
+        )
+
+        database.collection("team_messages").document()
+            .set(messageData)
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to send message: ${e.message}"
+            }
+    }
+
+    fun deleteMessage(messageId: String) {
+        val database = db ?: return
+        val previous = _teamMessages.value
+        _teamMessages.value = _teamMessages.value.filter { it.id != messageId }
+        database.collection("team_messages").document(messageId)
+            .delete()
+            .addOnFailureListener { e ->
+                _teamMessages.value = previous
+                _errorMessage.value = "Failed to delete message: ${e.message}"
+            }
+    }
+
+    fun togglePin(messageId: String) {
+        val database = db ?: return
+        val message = _teamMessages.value.find { it.id == messageId } ?: return
+        val newPinned = !message.isPinned
+        val previous = _teamMessages.value
+        _teamMessages.value = _teamMessages.value.map {
+            if (it.id == messageId) it.copy(isPinned = newPinned) else it
+        }
+        database.collection("team_messages").document(messageId)
+            .update("isPinned", newPinned)
+            .addOnFailureListener { e ->
+                _teamMessages.value = previous
+                _errorMessage.value = "Failed to update pin: ${e.message}"
+            }
+    }
+
+    fun updateShiftStatus(shiftId: String, newStatus: String) {
+        val database = db ?: return
+        val previousShifts = _teamShifts.value
+        _teamShifts.value = _teamShifts.value.map {
+            if (it.id == shiftId) it.copy(status = newStatus) else it
+        }
+        database.collection("team_shifts").document(shiftId)
+            .update("status", newStatus)
+            .addOnFailureListener { e ->
+                _teamShifts.value = previousShifts
+                _errorMessage.value = "Failed to update shift status: ${e.message}"
+            }
+    }
+
+    fun requestSwap(myShiftId: String, targetMemberId: String, targetShiftId: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val team = _currentTeam.value ?: return
+
+        val requesterName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val targetMember = _members.value.find { it.userId == targetMemberId }
+        val targetName = targetMember?.displayName?.ifBlank { targetMember.email.substringBefore("@") } ?: ""
+
+        val data = hashMapOf(
+            "teamId" to team.id,
+            "requesterId" to uid,
+            "requesterName" to requesterName,
+            "requesterShiftId" to myShiftId,
+            "targetMemberId" to targetMemberId,
+            "targetMemberName" to targetName,
+            "targetShiftId" to targetShiftId,
+            "status" to "pending",
+            "createdAt" to System.currentTimeMillis(),
+            "resolvedAt" to 0L,
+            "resolvedBy" to ""
+        )
+
+        database.collection("swap_requests").document()
+            .set(data)
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to request swap: ${e.message}"
+            }
+    }
+
+    fun respondToSwap(requestId: String, accept: Boolean) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val newStatus = if (accept) "target_accepted" else "declined"
+        val previous = _swapRequests.value
+        _swapRequests.value = _swapRequests.value.map {
+            if (it.id == requestId) it.copy(status = newStatus, resolvedBy = if (!accept) uid else "", resolvedAt = if (!accept) System.currentTimeMillis() else 0) else it
+        }
+        val updates = hashMapOf<String, Any>("status" to newStatus)
+        if (!accept) {
+            updates["resolvedBy"] = uid
+            updates["resolvedAt"] = System.currentTimeMillis()
+        }
+        database.collection("swap_requests").document(requestId)
+            .update(updates)
+            .addOnFailureListener { e ->
+                _swapRequests.value = previous
+                _errorMessage.value = "Failed to respond to swap: ${e.message}"
+            }
+    }
+
+    fun approveSwap(requestId: String, approve: Boolean) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+
+        if (!approve) {
+            val previous = _swapRequests.value
+            _swapRequests.value = _swapRequests.value.map {
+                if (it.id == requestId) it.copy(status = "declined", resolvedBy = uid, resolvedAt = System.currentTimeMillis()) else it
+            }
+            database.collection("swap_requests").document(requestId)
+                .update(mapOf("status" to "declined", "resolvedBy" to uid, "resolvedAt" to System.currentTimeMillis()))
+                .addOnFailureListener { e ->
+                    _swapRequests.value = previous
+                    _errorMessage.value = "Failed to decline swap: ${e.message}"
+                }
+            return
+        }
+
+        val request = _swapRequests.value.find { it.id == requestId } ?: return
+        executeSwap(request)
+    }
+
+    private fun executeSwap(request: SwapRequest) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+
+        val batch = database.batch()
+        batch.update(
+            database.collection("team_shifts").document(request.requesterShiftId),
+            "assignedTo", request.targetMemberId
+        )
+        batch.update(
+            database.collection("team_shifts").document(request.targetShiftId),
+            "assignedTo", request.requesterId
+        )
+        batch.update(
+            database.collection("swap_requests").document(request.id),
+            mapOf("status" to "approved", "resolvedBy" to uid, "resolvedAt" to System.currentTimeMillis())
+        )
+
+        batch.commit()
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to execute swap: ${e.message}"
+            }
+    }
+
+    fun cancelSwapRequest(requestId: String) {
+        val database = db ?: return
+        val previous = _swapRequests.value
+        _swapRequests.value = _swapRequests.value.filter { it.id != requestId }
+        database.collection("swap_requests").document(requestId)
+            .delete()
+            .addOnFailureListener { e ->
+                _swapRequests.value = previous
+                _errorMessage.value = "Failed to cancel swap: ${e.message}"
+            }
+    }
+
     fun leaveTeam(teamId: String) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
@@ -568,5 +847,7 @@ class TeamViewModel : ViewModel() {
         membersListener?.remove()
         shiftsListener?.remove()
         memberJobsListener?.remove()
+        messagesListener?.remove()
+        swapRequestsListener?.remove()
     }
 }

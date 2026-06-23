@@ -56,6 +56,36 @@ struct TeamShiftInfo: Identifiable, Equatable {
     }
 }
 
+struct TeamMessageInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var teamId: String = ""
+    var senderId: String = ""
+    var senderName: String = ""
+    var text: String = ""
+    var isAnnouncement: Bool = false
+    var isPinned: Bool = false
+    var createdAt: Int64 = 0
+
+    var createdDate: Date {
+        Date(timeIntervalSince1970: Double(createdAt) / 1000.0)
+    }
+}
+
+struct SwapRequestInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var teamId: String = ""
+    var requesterId: String = ""
+    var requesterName: String = ""
+    var requesterShiftId: String = ""
+    var targetMemberId: String = ""
+    var targetMemberName: String = ""
+    var targetShiftId: String = ""
+    var status: String = "pending"
+    var createdAt: Int64 = 0
+    var resolvedAt: Int64 = 0
+    var resolvedBy: String = ""
+}
+
 struct MemberJobInfo: Identifiable, Equatable {
     var id: String = UUID().uuidString
     var title: String = ""
@@ -72,12 +102,16 @@ final class TeamViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var userRole: String = "member"
     @Published var memberJobs: [MemberJobInfo] = []
+    @Published var teamMessages: [TeamMessageInfo] = []
+    @Published var swapRequests: [SwapRequestInfo] = []
 
     private let db = Firestore.firestore(database: "schedulo2")
     private var teamsListener: ListenerRegistration?
     private var membersListener: ListenerRegistration?
     private var shiftsListener: ListenerRegistration?
     private var memberJobsListener: ListenerRegistration?
+    private var messagesListener: ListenerRegistration?
+    private var swapRequestsListener: ListenerRegistration?
 
     var currentUserId: String? { Auth.auth().currentUser?.uid }
     var currentUserEmail: String? { Auth.auth().currentUser?.email }
@@ -155,6 +189,8 @@ final class TeamViewModel: ObservableObject {
         currentTeam = team
         loadMembers(teamId: team.id)
         loadTeamShifts(teamId: team.id)
+        loadTeamMessages(teamId: team.id)
+        loadSwapRequests(teamId: team.id)
         updateUserRole(teamId: team.id)
     }
 
@@ -340,7 +376,7 @@ final class TeamViewModel: ObservableObject {
             "endTime": endTime,
             "hourlyRate": hourlyRate,
             "notes": notes,
-            "status": "accepted",
+            "status": "assigned",
             "tasks": tasksData
         ]
 
@@ -357,7 +393,7 @@ final class TeamViewModel: ObservableObject {
                     endTime: endTime,
                     hourlyRate: hourlyRate,
                     notes: notes,
-                    status: "accepted",
+                    status: "assigned",
                     tasks: tasks
                 )
                 self?.createPersonalShiftFromTeam(teamShift, targetUserId: memberId)
@@ -497,6 +533,278 @@ final class TeamViewModel: ObservableObject {
         db.collection("team_shifts").document(shiftId).delete()
     }
 
+    func promoteMember(memberDocId: String) {
+        let previous = members
+        if let idx = members.firstIndex(where: { $0.id == memberDocId }) {
+            members[idx].role = "manager"
+        }
+        db.collection("team_members").document(memberDocId).updateData(["role": "manager"]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.members = previous
+                    self?.errorMessage = "Failed to promote member: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func demoteMember(memberDocId: String) {
+        let previous = members
+        if let idx = members.firstIndex(where: { $0.id == memberDocId }) {
+            members[idx].role = "member"
+        }
+        db.collection("team_members").document(memberDocId).updateData(["role": "member"]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.members = previous
+                    self?.errorMessage = "Failed to demote member: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func removeMember(memberDocId: String, teamId: String) {
+        let previous = members
+        members.removeAll { $0.id == memberDocId }
+
+        let batch = db.batch()
+        batch.deleteDocument(db.collection("team_members").document(memberDocId))
+        batch.updateData(["memberCount": FieldValue.increment(Int64(-1))], forDocument: db.collection("teams").document(teamId))
+
+        batch.commit { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.members = previous
+                    self?.errorMessage = "Failed to remove member: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func loadTeamMessages(teamId: String) {
+        messagesListener?.remove()
+        messagesListener = db.collection("team_messages")
+            .whereField("teamId", isEqualTo: teamId)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let docs = snapshot?.documents else { return }
+                self?.teamMessages = docs.map { doc in
+                    let data = doc.data()
+                    return TeamMessageInfo(
+                        id: doc.documentID,
+                        teamId: data["teamId"] as? String ?? "",
+                        senderId: data["senderId"] as? String ?? "",
+                        senderName: data["senderName"] as? String ?? "",
+                        text: data["text"] as? String ?? "",
+                        isAnnouncement: data["isAnnouncement"] as? Bool ?? false,
+                        isPinned: data["isPinned"] as? Bool ?? false,
+                        createdAt: (data["createdAt"] as? NSNumber)?.int64Value ?? 0
+                    )
+                }
+            }
+    }
+
+    func sendMessage(text: String, isAnnouncement: Bool = false) {
+        guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let senderName = currentUserEmail ?? ""
+        let data: [String: Any] = [
+            "teamId": teamId,
+            "senderId": uid,
+            "senderName": senderName,
+            "text": trimmed,
+            "isAnnouncement": isAnnouncement,
+            "isPinned": false,
+            "createdAt": Int64(Date().timeIntervalSince1970 * 1000)
+        ]
+
+        db.collection("team_messages").document(UUID().uuidString).setData(data) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Failed to send message: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func deleteMessage(messageId: String) {
+        let previous = teamMessages
+        teamMessages.removeAll { $0.id == messageId }
+        db.collection("team_messages").document(messageId).delete { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.teamMessages = previous
+                    self?.errorMessage = "Failed to delete: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func togglePin(messageId: String) {
+        guard let idx = teamMessages.firstIndex(where: { $0.id == messageId }) else { return }
+        let previous = teamMessages
+        let newPinned = !teamMessages[idx].isPinned
+        teamMessages[idx].isPinned = newPinned
+        db.collection("team_messages").document(messageId).updateData(["isPinned": newPinned]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.teamMessages = previous
+                    self?.errorMessage = "Failed to update pin: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func loadSwapRequests(teamId: String) {
+        swapRequestsListener?.remove()
+        swapRequestsListener = db.collection("swap_requests")
+            .whereField("teamId", isEqualTo: teamId)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let docs = snapshot?.documents else { return }
+                self?.swapRequests = docs.map { doc in
+                    let data = doc.data()
+                    return SwapRequestInfo(
+                        id: doc.documentID,
+                        teamId: data["teamId"] as? String ?? "",
+                        requesterId: data["requesterId"] as? String ?? "",
+                        requesterName: data["requesterName"] as? String ?? "",
+                        requesterShiftId: data["requesterShiftId"] as? String ?? "",
+                        targetMemberId: data["targetMemberId"] as? String ?? "",
+                        targetMemberName: data["targetMemberName"] as? String ?? "",
+                        targetShiftId: data["targetShiftId"] as? String ?? "",
+                        status: data["status"] as? String ?? "pending",
+                        createdAt: (data["createdAt"] as? NSNumber)?.int64Value ?? 0,
+                        resolvedAt: (data["resolvedAt"] as? NSNumber)?.int64Value ?? 0,
+                        resolvedBy: data["resolvedBy"] as? String ?? ""
+                    )
+                }.sorted { $0.createdAt > $1.createdAt }
+            }
+    }
+
+    func requestSwap(myShiftId: String, targetMemberId: String, targetShiftId: String) {
+        guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
+
+        let requesterName = currentUserEmail ?? ""
+        let targetMember = members.first { $0.userId == targetMemberId }
+        let targetName = targetMember?.displayName.isEmpty == false ? targetMember!.displayName : (targetMember?.email ?? "")
+
+        let data: [String: Any] = [
+            "teamId": teamId,
+            "requesterId": uid,
+            "requesterName": requesterName,
+            "requesterShiftId": myShiftId,
+            "targetMemberId": targetMemberId,
+            "targetMemberName": targetName,
+            "targetShiftId": targetShiftId,
+            "status": "pending",
+            "createdAt": Int64(Date().timeIntervalSince1970 * 1000),
+            "resolvedAt": Int64(0),
+            "resolvedBy": ""
+        ]
+
+        db.collection("swap_requests").document(UUID().uuidString).setData(data) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async { self?.errorMessage = "Failed to request swap: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func respondToSwap(requestId: String, accept: Bool) {
+        guard let uid = currentUserId else { return }
+        let newStatus = accept ? "target_accepted" : "declined"
+        let previous = swapRequests
+        if let idx = swapRequests.firstIndex(where: { $0.id == requestId }) {
+            swapRequests[idx].status = newStatus
+        }
+        var updates: [String: Any] = ["status": newStatus]
+        if !accept {
+            updates["resolvedBy"] = uid
+            updates["resolvedAt"] = Int64(Date().timeIntervalSince1970 * 1000)
+        }
+        db.collection("swap_requests").document(requestId).updateData(updates) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.swapRequests = previous
+                    self?.errorMessage = "Failed to respond: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func approveSwap(requestId: String, approve: Bool) {
+        guard let uid = currentUserId else { return }
+        if !approve {
+            let previous = swapRequests
+            if let idx = swapRequests.firstIndex(where: { $0.id == requestId }) {
+                swapRequests[idx].status = "declined"
+            }
+            db.collection("swap_requests").document(requestId).updateData([
+                "status": "declined",
+                "resolvedBy": uid,
+                "resolvedAt": Int64(Date().timeIntervalSince1970 * 1000)
+            ]) { [weak self] error in
+                if let error = error {
+                    DispatchQueue.main.async {
+                        self?.swapRequests = previous
+                        self?.errorMessage = "Failed to decline: \(error.localizedDescription)"
+                    }
+                }
+            }
+            return
+        }
+
+        guard let request = swapRequests.first(where: { $0.id == requestId }) else { return }
+        executeSwap(request)
+    }
+
+    private func executeSwap(_ request: SwapRequestInfo) {
+        guard let uid = currentUserId else { return }
+        let batch = db.batch()
+        batch.updateData(["assignedTo": request.targetMemberId], forDocument: db.collection("team_shifts").document(request.requesterShiftId))
+        batch.updateData(["assignedTo": request.requesterId], forDocument: db.collection("team_shifts").document(request.targetShiftId))
+        batch.updateData([
+            "status": "approved",
+            "resolvedBy": uid,
+            "resolvedAt": Int64(Date().timeIntervalSince1970 * 1000)
+        ], forDocument: db.collection("swap_requests").document(request.id))
+
+        batch.commit { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async { self?.errorMessage = "Failed to execute swap: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func cancelSwapRequest(requestId: String) {
+        let previous = swapRequests
+        swapRequests.removeAll { $0.id == requestId }
+        db.collection("swap_requests").document(requestId).delete { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.swapRequests = previous
+                    self?.errorMessage = "Failed to cancel: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func updateShiftStatus(shiftId: String, newStatus: String) {
+        let previous = teamShifts
+        if let idx = teamShifts.firstIndex(where: { $0.id == shiftId }) {
+            teamShifts[idx].status = newStatus
+        }
+        db.collection("team_shifts").document(shiftId).updateData(["status": newStatus]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.teamShifts = previous
+                    self?.errorMessage = "Failed to update shift status: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func leaveTeam(teamId: String) {
         guard let uid = currentUserId else { return }
         db.collection("team_members")
@@ -525,6 +833,8 @@ final class TeamViewModel: ObservableObject {
         membersListener?.remove()
         shiftsListener?.remove()
         memberJobsListener?.remove()
+        messagesListener?.remove()
+        swapRequestsListener?.remove()
     }
 
     private func generateInviteCode() -> String {

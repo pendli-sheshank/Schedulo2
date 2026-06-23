@@ -25,6 +25,32 @@ data class ShiftTask(
     var isCompleted: Boolean = false
 )
 
+data class TeamMessage(
+    var id: String = "",
+    var teamId: String = "",
+    var senderId: String = "",
+    var senderName: String = "",
+    var text: String = "",
+    var isAnnouncement: Boolean = false,
+    var isPinned: Boolean = false,
+    var createdAt: Long = 0
+)
+
+data class SwapRequest(
+    var id: String = "",
+    var teamId: String = "",
+    var requesterId: String = "",
+    var requesterName: String = "",
+    var requesterShiftId: String = "",
+    var targetMemberId: String = "",
+    var targetMemberName: String = "",
+    var targetShiftId: String = "",
+    var status: String = "pending",
+    var createdAt: Long = 0,
+    var resolvedAt: Long = 0,
+    var resolvedBy: String = ""
+)
+
 data class TeamShift(
     var id: String = "",
     var teamId: String = "",

@@ -6,6 +6,8 @@ struct TeamScheduleDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showAssignShift = false
     @State private var showWeekPlan = false
+    @State private var showSwapPicker = false
+    @State private var swapSourceShift: TeamShiftInfo?
 
     var body: some View {
         NavigationStack {
@@ -31,6 +33,10 @@ struct TeamScheduleDetailView: View {
                 TeamWeekPlanView()
                     .environmentObject(teamViewModel)
                     .environmentObject(dashboardViewModel)
+            }
+            .sheet(isPresented: $showSwapPicker) {
+                SwapPickerView(sourceShift: swapSourceShift)
+                    .environmentObject(teamViewModel)
             }
         }
     }
@@ -126,6 +132,63 @@ struct TeamScheduleDetailView: View {
                 .padding(.top, 4)
             }
 
+            if shift.assignedTo == teamViewModel.currentUserId && shift.status == "assigned" {
+                HStack(spacing: 8) {
+                    Button(action: {
+                        teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "accepted")
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Accept")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primaryGreen))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "declined")
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Decline")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.red, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 6)
+            }
+
+            if shift.assignedTo == teamViewModel.currentUserId && (shift.status == "accepted" || shift.status == "assigned") {
+                Button(action: {
+                    swapSourceShift = shift
+                    showSwapPicker = true
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.swap")
+                            .font(.system(size: 12))
+                        Text("Request Swap")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(.accentOrange)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
+
         }
         .padding(12)
         .background(
@@ -152,5 +215,83 @@ struct TeamScheduleDetailView: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(color.opacity(0.15))
             )
+    }
+}
+
+struct SwapPickerView: View {
+    @EnvironmentObject var teamViewModel: TeamViewModel
+    @Environment(\.dismiss) private var dismiss
+    var sourceShift: TeamShiftInfo?
+
+    private var otherMemberShifts: [TeamShiftInfo] {
+        guard let source = sourceShift else { return [] }
+        return teamViewModel.teamShifts.filter {
+            $0.assignedTo != teamViewModel.currentUserId &&
+            $0.id != source.id &&
+            ($0.status == "accepted" || $0.status == "assigned")
+        }
+    }
+
+    private let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM dd, h:mm a"
+        return f
+    }()
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 8) {
+                    if otherMemberShifts.isEmpty {
+                        Text("No available shifts to swap with")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                            .padding(32)
+                    } else {
+                        Text("Select a shift to swap with:")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.bottom, 4)
+
+                        ForEach(otherMemberShifts) { shift in
+                            let member = teamViewModel.members.first { $0.userId == shift.assignedTo }
+                            Button(action: {
+                                guard let source = sourceShift else { return }
+                                teamViewModel.requestSwap(
+                                    requesterShiftId: source.id,
+                                    targetMemberId: shift.assignedTo,
+                                    targetShiftId: shift.id
+                                )
+                                dismiss()
+                            }) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(member?.displayName ?? shift.assignedTo)
+                                        .font(.system(size: 14, weight: .semibold))
+                                    Text("\(shift.company) · \(timeFmt.string(from: shift.startDate))")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color(UIColor.secondarySystemBackground))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Pick a Shift to Swap")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
     }
 }

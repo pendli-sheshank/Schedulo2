@@ -127,6 +127,12 @@ service cloud.firestore {
           || (request.resource.data.role == "manager"
             && (!exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
               || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid)));
+      allow update: if request.auth != null
+        && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.role is string
+        && (request.resource.data.role == "member" || request.resource.data.role == "manager");
       allow delete: if request.auth != null
         && (resource.data.userId == request.auth.uid
           || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
@@ -149,9 +155,7 @@ service cloud.firestore {
         && request.resource.data.status is string
         && (request.resource.data.status == "assigned" || request.resource.data.status == "accepted" || request.resource.data.status == "declined");
       allow update: if request.auth != null
-        && (resource.data.assignedBy == request.auth.uid || resource.data.assignedTo == request.auth.uid)
         && request.resource.data.teamId == resource.data.teamId
-        && request.resource.data.assignedTo == resource.data.assignedTo
         && request.resource.data.assignedBy == resource.data.assignedBy
         && request.resource.data.company == resource.data.company
         && request.resource.data.role == resource.data.role
@@ -159,9 +163,76 @@ service cloud.firestore {
         && request.resource.data.endTime == resource.data.endTime
         && request.resource.data.hourlyRate == resource.data.hourlyRate
         && request.resource.data.notes == resource.data.notes
-        && request.resource.data.status == resource.data.status;
+        && (
+          // Manager (assignedBy) can update mutable fields including status and assignedTo (for swaps)
+          (resource.data.assignedBy == request.auth.uid
+            || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid)
+          // Assigned member can only change status to accepted or declined (assignedTo must stay same)
+          || (resource.data.assignedTo == request.auth.uid
+            && request.resource.data.assignedTo == resource.data.assignedTo
+            && (request.resource.data.status == "accepted" || request.resource.data.status == "declined"))
+        );
       allow delete: if request.auth != null
         && resource.data.assignedBy == request.auth.uid;
+    }
+
+    // Team Messages: authenticated users can read; sender or owner can delete
+    match /team_messages/{messageId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.teamId is string
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.isAnnouncement is bool
+        && request.resource.data.isPinned is bool
+        && request.resource.data.createdAt is int
+        && (!request.resource.data.isAnnouncement
+          || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid);
+      allow update: if request.auth != null
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.text == resource.data.text
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (resource.data.senderId == request.auth.uid
+          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
+      allow delete: if request.auth != null
+        && (resource.data.senderId == request.auth.uid
+          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
+    }
+
+    // Swap Requests: requester creates, target responds, manager approves
+    match /swap_requests/{requestId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.teamId is string
+        && request.resource.data.requesterShiftId is string
+        && request.resource.data.targetMemberId is string
+        && request.resource.data.targetShiftId is string
+        && request.resource.data.createdAt is int;
+      allow update: if request.auth != null
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.requesterId == resource.data.requesterId
+        && request.resource.data.requesterShiftId == resource.data.requesterShiftId
+        && request.resource.data.targetMemberId == resource.data.targetMemberId
+        && request.resource.data.targetShiftId == resource.data.targetShiftId
+        && (
+          // Target member can accept or decline a pending request
+          (resource.data.targetMemberId == request.auth.uid
+            && resource.data.status == "pending"
+            && (request.resource.data.status == "target_accepted" || request.resource.data.status == "declined"))
+          // Manager can approve or decline after target accepted
+          || (get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+            && resource.data.status == "target_accepted"
+            && (request.resource.data.status == "approved" || request.resource.data.status == "declined"))
+        );
+      allow delete: if request.auth != null
+        && resource.data.requesterId == request.auth.uid
+        && resource.data.status == "pending";
     }
   }
 }

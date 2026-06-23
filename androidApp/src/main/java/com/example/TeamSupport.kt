@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -378,6 +379,34 @@ fun TeamScreen(
                                     onClick = { onNavigateToDetail("tasks") }
                                 )
                             }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                BentoTile(
+                                    modifier = Modifier.weight(1f).height(100.dp),
+                                    title = "Team Roster",
+                                    subtitle = "Weekly grid",
+                                    icon = Icons.Default.ViewWeek,
+                                    tint = SecondaryGreen,
+                                    onClick = { onNavigateToDetail("roster") }
+                                )
+                                BentoTile(
+                                    modifier = Modifier.weight(1f).height(100.dp),
+                                    title = "Team Chat",
+                                    subtitle = "Messages",
+                                    icon = Icons.AutoMirrored.Filled.Chat,
+                                    tint = AccentBlue,
+                                    onClick = { onNavigateToDetail("chat") }
+                                )
+                            }
+                            BentoTile(
+                                modifier = Modifier.fillMaxWidth().height(90.dp),
+                                title = "Shift Swaps",
+                                subtitle = "Request & manage swaps",
+                                icon = Icons.Default.SwapHoriz,
+                                tint = AccentOrange,
+                                onClick = { onNavigateToDetail("swaps") }
+                            )
                         }
                     }
                 }
@@ -541,7 +570,14 @@ fun BentoTile(
 }
 
 @Composable
-fun MemberCard(member: TeamMember) {
+fun MemberCard(
+    member: TeamMember,
+    isOwner: Boolean = false,
+    currentUserId: String = "",
+    onPromote: (() -> Unit)? = null,
+    onDemote: (() -> Unit)? = null,
+    onRemove: (() -> Unit)? = null
+) {
     val initials = remember(member.displayName, member.email) {
         if (member.displayName.isNotBlank()) {
             val parts = member.displayName.trim().split(" ")
@@ -602,6 +638,37 @@ fun MemberCard(member: TeamMember) {
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
+            if (isOwner && member.userId != currentUserId) {
+                var menuExpanded by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.MoreVert, "Member options", modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        if (member.role == "member" && onPromote != null) {
+                            DropdownMenuItem(
+                                text = { Text("Promote to Manager") },
+                                leadingIcon = { Icon(Icons.Default.Star, null, tint = PrimaryGreen) },
+                                onClick = { menuExpanded = false; onPromote() }
+                            )
+                        }
+                        if (member.role == "manager" && onDemote != null) {
+                            DropdownMenuItem(
+                                text = { Text("Demote to Member") },
+                                leadingIcon = { Icon(Icons.Default.PersonRemove, null, tint = AccentOrange) },
+                                onClick = { menuExpanded = false; onDemote() }
+                            )
+                        }
+                        if (onRemove != null) {
+                            DropdownMenuItem(
+                                text = { Text("Remove from Team") },
+                                leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = { menuExpanded = false; onRemove() }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -613,7 +680,10 @@ fun TeamShiftCard(
     isManager: Boolean,
     currentUserId: String,
     onDelete: () -> Unit,
-    onToggleTask: (String) -> Unit = {}
+    onToggleTask: (String) -> Unit = {},
+    onAccept: (() -> Unit)? = null,
+    onDecline: (() -> Unit)? = null,
+    onRequestSwap: (() -> Unit)? = null
 ) {
     val assignedMember = members.find { it.userId == shift.assignedTo }
     val assignedName = assignedMember?.displayName?.ifBlank { assignedMember.email.substringBefore("@") } ?: "Unknown"
@@ -723,6 +793,50 @@ fun TeamShiftCard(
                             color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
                         )
                     }
+                }
+            }
+
+            if (isAssignedToMe && shift.status == "assigned") {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (onAccept != null) {
+                        Button(
+                            onClick = onAccept,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Accept", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (onDecline != null) {
+                        OutlinedButton(
+                            onClick = onDecline,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Decline", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
+            if (!isAssignedToMe && shift.assignedTo != currentUserId && onRequestSwap != null && shift.status == "accepted") {
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(
+                    onClick = onRequestSwap,
+                    colors = ButtonDefaults.textButtonColors(contentColor = AccentBlue),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Request Swap", fontSize = 12.sp)
                 }
             }
 

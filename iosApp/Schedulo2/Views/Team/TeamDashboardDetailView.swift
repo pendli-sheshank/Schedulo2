@@ -45,6 +45,10 @@ struct TeamDashboardDetailView: View {
         )
     }
 
+    private var isOwner: Bool {
+        teamViewModel.currentTeam?.ownerId == teamViewModel.currentUserId
+    }
+
     private var membersSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Members")
@@ -64,6 +68,29 @@ struct TeamDashboardDetailView: View {
                             .foregroundColor(.secondary)
                     }
                     Spacer()
+                    if isOwner && member.userId != teamViewModel.currentUserId {
+                        Menu {
+                            if member.role == "member" {
+                                Button(action: { teamViewModel.promoteMember(memberDocId: member.id) }) {
+                                    Label("Promote to Manager", systemImage: "star.fill")
+                                }
+                            }
+                            if member.role == "manager" {
+                                Button(action: { teamViewModel.demoteMember(memberDocId: member.id) }) {
+                                    Label("Demote to Member", systemImage: "person.fill")
+                                }
+                            }
+                            Button(role: .destructive, action: {
+                                teamViewModel.removeMember(memberDocId: member.id, teamId: teamViewModel.currentTeam?.id ?? "")
+                            }) {
+                                Label("Remove from Team", systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 18))
+                        }
+                    }
                 }
                 .padding(12)
                 .background(

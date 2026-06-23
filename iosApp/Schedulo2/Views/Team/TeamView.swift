@@ -12,6 +12,9 @@ struct TeamView: View {
     @State private var showDashboardDetail = false
     @State private var showScheduleDetail = false
     @State private var showTasksDetail = false
+    @State private var showRosterDetail = false
+    @State private var showChatDetail = false
+    @State private var showSwapRequests = false
 
     var body: some View {
         NavigationStack {
@@ -87,6 +90,18 @@ struct TeamView: View {
             }
             .sheet(isPresented: $showTasksDetail) {
                 TeamTasksDetailView()
+                    .environmentObject(teamViewModel)
+            }
+            .sheet(isPresented: $showRosterDetail) {
+                TeamRosterView()
+                    .environmentObject(teamViewModel)
+            }
+            .sheet(isPresented: $showChatDetail) {
+                TeamChatView()
+                    .environmentObject(teamViewModel)
+            }
+            .sheet(isPresented: $showSwapRequests) {
+                TeamSwapRequestsView()
                     .environmentObject(teamViewModel)
             }
             .alert("Leave Team", isPresented: $showLeaveConfirm) {
@@ -277,6 +292,36 @@ struct TeamView: View {
                 )
                 .frame(height: 130)
             }
+
+            HStack(spacing: 12) {
+                BentoTile(
+                    title: "Team Roster",
+                    subtitle: "Weekly grid",
+                    systemImage: "rectangle.split.3x3",
+                    tint: .secondaryGreen,
+                    action: { showRosterDetail = true }
+                )
+                .frame(height: 100)
+
+                BentoTile(
+                    title: "Team Chat",
+                    subtitle: "Messages",
+                    systemImage: "bubble.left.and.bubble.right.fill",
+                    tint: .accentBlue,
+                    action: { showChatDetail = true }
+                )
+                .frame(height: 100)
+            }
+
+            let pendingSwaps = teamViewModel.swapRequests.filter { $0.status != "approved" && $0.status != "declined" }.count
+            BentoTile(
+                title: "Shift Swaps",
+                subtitle: pendingSwaps > 0 ? "\(pendingSwaps) pending" : "No requests",
+                systemImage: "arrow.triangle.swap",
+                tint: .accentOrange,
+                action: { showSwapRequests = true }
+            )
+            .frame(height: 100)
         }
     }
 }
