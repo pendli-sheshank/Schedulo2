@@ -132,7 +132,8 @@ fun TeamDetailScreen(
             "roster" -> RosterDetailContent(
                 modifier = Modifier.padding(padding),
                 teamShifts = teamShifts,
-                members = members
+                members = members,
+                weeklyCycleStartDay = currentTeam?.weeklyCycleStartDay ?: "Monday"
             )
             "chat" -> ChatDetailContent(
                 modifier = Modifier.padding(padding),
@@ -192,7 +193,8 @@ fun TeamDetailScreen(
             },
             members = members,
             jobs = jobs,
-            teamViewModel = teamViewModel
+            teamViewModel = teamViewModel,
+            weeklyCycleStartDay = currentTeam?.weeklyCycleStartDay ?: "Monday"
         )
     }
 }
@@ -454,14 +456,19 @@ private fun TasksDetailContent(
 private fun RosterDetailContent(
     modifier: Modifier,
     teamShifts: List<TeamShift>,
-    members: List<TeamMember>
+    members: List<TeamMember>,
+    weeklyCycleStartDay: String = "Monday"
 ) {
     var weekOffset by remember { mutableIntStateOf(0) }
 
-    val weekStartMillis = remember(weekOffset) {
+    val calendarDayOfWeek = remember(weeklyCycleStartDay) {
+        dayNameToCalendar(weeklyCycleStartDay)
+    }
+
+    val weekStartMillis = remember(weekOffset, calendarDayOfWeek) {
         Calendar.getInstance().apply {
-            firstDayOfWeek = Calendar.MONDAY
-            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            firstDayOfWeek = calendarDayOfWeek
+            set(Calendar.DAY_OF_WEEK, calendarDayOfWeek)
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             add(Calendar.WEEK_OF_YEAR, weekOffset)
         }.timeInMillis
@@ -1024,4 +1031,15 @@ private fun SwapRequestsContent(
             }
         }
     }
+}
+
+private fun dayNameToCalendar(dayName: String): Int = when (dayName) {
+    "Sunday" -> Calendar.SUNDAY
+    "Monday" -> Calendar.MONDAY
+    "Tuesday" -> Calendar.TUESDAY
+    "Wednesday" -> Calendar.WEDNESDAY
+    "Thursday" -> Calendar.THURSDAY
+    "Friday" -> Calendar.FRIDAY
+    "Saturday" -> Calendar.SATURDAY
+    else -> Calendar.MONDAY
 }

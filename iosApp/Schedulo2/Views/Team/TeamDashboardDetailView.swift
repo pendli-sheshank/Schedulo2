@@ -102,8 +102,8 @@ struct TeamDashboardDetailView: View {
     }
 
     private var managerDashboardSection: some View {
-        let acceptedShifts = teamViewModel.teamShifts.filter { $0.status == "accepted" }
-        let memberShifts = Dictionary(grouping: acceptedShifts) { $0.assignedTo }
+        let acceptedShifts: [TeamShiftInfo] = teamViewModel.teamShifts.filter { $0.status == "accepted" }
+        let memberShifts: [String: [TeamShiftInfo]] = Dictionary(grouping: acceptedShifts) { $0.assignedTo }
 
         return VStack(alignment: .leading, spacing: 8) {
             Text("Manager Dashboard")
@@ -112,72 +112,84 @@ struct TeamDashboardDetailView: View {
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
 
-            ForEach(teamViewModel.members) { member in
-                let shifts = memberShifts[member.userId] ?? []
-                let totalHours = shifts.reduce(0.0) { $0 + $1.durationHours }
-                let totalEarnings = shifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
-                let memberName = member.displayName.isEmpty ? member.email : member.displayName
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(memberName)
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("\(member.role.capitalized) · \(shifts.count) shifts")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("\(String(format: "%.1f", totalHours)) hrs")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.primaryGreen)
-                            Text("$\(String(format: "%.2f", totalEarnings))")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                    }
-
-                    if !shifts.isEmpty {
-                        let byCompany = Dictionary(grouping: shifts) { $0.company }
-                        ForEach(Array(byCompany.keys.sorted()), id: \.self) { company in
-                            let companyShifts = byCompany[company] ?? []
-                            let companyHours = companyShifts.reduce(0.0) { $0 + $1.durationHours }
-                            let companyPay = companyShifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
-                            let latestEnd = companyShifts.map { $0.endTime }.max() ?? 0
-                            let now = Int64(Date().timeIntervalSince1970 * 1000)
-                            let payDue = latestEnd + 4 * 24 * 3600 * 1000 < now
-
-                            HStack {
-                                HStack(spacing: 4) {
-                                    Text(company)
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
-                                    if payDue {
-                                        Text("PAY DUE")
-                                            .font(.system(size: 9, weight: .bold))
-                                            .foregroundColor(.accentOrange)
-                                            .padding(.horizontal, 4)
-                                            .padding(.vertical, 1)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 3)
-                                                    .fill(Color.accentOrange.opacity(0.15))
-                                            )
-                                    }
-                                }
-                                Spacer()
-                                Text("\(companyShifts.count) shifts · \(String(format: "%.1f", companyHours)) hrs · $\(String(format: "%.2f", companyPay))")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(UIColor.secondarySystemBackground))
-                )
+            ForEach(teamViewModel.members) { (member: TeamMemberInfo) in
+                ManagerMemberCardView(member: member, shifts: memberShifts[member.userId] ?? [])
             }
+        }
+    }
+}
+
+private struct ManagerMemberCardView: View {
+    let member: TeamMemberInfo
+    let shifts: [TeamShiftInfo]
+
+    var body: some View {
+        let totalHours: Double = shifts.reduce(0.0) { $0 + $1.durationHours }
+        let totalEarnings: Double = shifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
+        let memberName: String = member.displayName.isEmpty ? member.email : member.displayName
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(memberName)
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("\(member.role.capitalized) · \(shifts.count) shifts")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("\(String(format: "%.1f", totalHours)) hrs")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.primaryGreen)
+                    Text("$\(String(format: "%.2f", totalEarnings))")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+
+            if !shifts.isEmpty {
+                let byCompany: [String: [TeamShiftInfo]] = Dictionary(grouping: shifts) { $0.company }
+                ForEach(Array(byCompany.keys.sorted()), id: \.self) { (company: String) in
+                    companyRow(company: company, companyShifts: byCompany[company] ?? [])
+                }
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(UIColor.secondarySystemBackground))
+        )
+    }
+
+    private func companyRow(company: String, companyShifts: [TeamShiftInfo]) -> some View {
+        let companyHours: Double = companyShifts.reduce(0.0) { $0 + $1.durationHours }
+        let companyPay: Double = companyShifts.reduce(0.0) { $0 + $1.hourlyRate * $1.durationHours }
+        let latestEnd: Int64 = companyShifts.map { $0.endTime }.max() ?? 0
+        let now: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+        let fourDaysMs: Int64 = 4 * 24 * 3600 * 1000
+        let payDue: Bool = latestEnd + fourDaysMs < now
+
+        return HStack {
+            HStack(spacing: 4) {
+                Text(company)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                if payDue {
+                    Text("PAY DUE")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.accentOrange)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.accentOrange.opacity(0.15))
+                        )
+                }
+            }
+            Spacer()
+            Text("\(companyShifts.count) shifts · \(String(format: "%.1f", companyHours)) hrs · $\(String(format: "%.2f", companyPay))")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
         }
     }
 }

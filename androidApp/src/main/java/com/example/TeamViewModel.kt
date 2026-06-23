@@ -123,7 +123,8 @@ class TeamViewModel : ViewModel() {
                                     ownerId = doc.getString("ownerId") ?: "",
                                     inviteCode = doc.getString("inviteCode") ?: "",
                                     createdAt = doc.getLong("createdAt") ?: 0,
-                                    memberCount = doc.getLong("memberCount")?.toInt() ?: 0
+                                    memberCount = doc.getLong("memberCount")?.toInt() ?: 0,
+                                    weeklyCycleStartDay = doc.getString("weeklyCycleStartDay") ?: "Monday"
                                 )
                                 allTeams.add(team)
                             }
@@ -297,7 +298,8 @@ class TeamViewModel : ViewModel() {
             "ownerId" to uid,
             "inviteCode" to inviteCode,
             "createdAt" to now,
-            "memberCount" to 1
+            "memberCount" to 1,
+            "weeklyCycleStartDay" to "Monday"
         )
 
         val email = auth?.currentUser?.email ?: ""
@@ -499,6 +501,21 @@ class TeamViewModel : ViewModel() {
             .addOnSuccessListener { loadTeams() }
             .addOnFailureListener { e ->
                 _errorMessage.value = "Failed to update team name: ${e.message}"
+            }
+    }
+
+    fun updateWeeklyCycleStartDay(teamId: String, day: String) {
+        val database = db ?: return
+        database.collection("teams").document(teamId)
+            .update("weeklyCycleStartDay", day)
+            .addOnSuccessListener {
+                val current = _currentTeam.value
+                if (current?.id == teamId) {
+                    _currentTeam.value = current.copy(weeklyCycleStartDay = day)
+                }
+            }
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to update week start day: ${e.message}"
             }
     }
 

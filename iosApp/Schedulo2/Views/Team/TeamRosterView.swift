@@ -5,15 +5,28 @@ struct TeamRosterView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var weekOffset = 0
 
+    private static func weekdayNumber(for dayName: String) -> Int {
+        switch dayName {
+        case "Sunday": return 1
+        case "Monday": return 2
+        case "Tuesday": return 3
+        case "Wednesday": return 4
+        case "Thursday": return 5
+        case "Friday": return 6
+        case "Saturday": return 7
+        default: return 2
+        }
+    }
+
     private var weekStartDate: Date {
-        var cal = Calendar.current
-        cal.firstWeekday = 2 // Monday
+        let cal = Calendar.current
+        let cycleDay: String = teamViewModel.currentTeam?.weeklyCycleStartDay ?? "Monday"
+        let targetWeekday: Int = Self.weekdayNumber(for: cycleDay)
         let today = Date()
-        let weekday = cal.component(.weekday, from: today)
-        let daysToMonday = (weekday + 5) % 7
-        let monday = cal.date(byAdding: .day, value: -daysToMonday, to: today)!
-        let startOfMonday = cal.startOfDay(for: monday)
-        return cal.date(byAdding: .weekOfYear, value: weekOffset, to: startOfMonday)!
+        let todayWeekday: Int = cal.component(.weekday, from: today)
+        let diff: Int = (todayWeekday - targetWeekday + 7) % 7
+        let cycleStart: Date = cal.startOfDay(for: cal.date(byAdding: .day, value: -diff, to: today)!)
+        return cal.date(byAdding: .weekOfYear, value: weekOffset, to: cycleStart)!
     }
 
     private var daysInWeek: [Date] {
@@ -133,17 +146,18 @@ struct TeamRosterView: View {
     }
 
     private func memberRow(_ member: TeamMemberInfo) -> some View {
-        let memberName = member.displayName.isEmpty ? member.email : member.displayName
+        let memberName: String = member.displayName.isEmpty ? member.email : member.displayName
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 Text(memberName)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
                     .frame(width: 90, alignment: .leading)
-                ForEach(daysInWeek, id: \.self) { day in
-                    let dayStart = Int64(Calendar.current.startOfDay(for: day).timeIntervalSince1970 * 1000)
-                    let dayEnd = dayStart + 24 * 3600 * 1000
-                    let dayShifts = weekShifts.filter {
+                ForEach(daysInWeek, id: \.self) { (day: Date) in
+                    let dayStartDate: Date = Calendar.current.startOfDay(for: day)
+                    let dayStart: Int64 = Int64(dayStartDate.timeIntervalSince1970 * 1000)
+                    let dayEnd: Int64 = dayStart + 24 * 3600 * 1000
+                    let dayShifts: [TeamShiftInfo] = weekShifts.filter {
                         $0.assignedTo == member.userId && $0.startTime < dayEnd && $0.endTime > dayStart
                     }
                     VStack(spacing: 2) {

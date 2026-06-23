@@ -18,12 +18,6 @@ struct TeamChatView: View {
         teamViewModel.teamMessages.sorted { $0.createdAt > $1.createdAt }
     }
 
-    private let timeFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MMM dd, h:mm a"
-        return f
-    }()
-
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -90,72 +84,11 @@ struct TeamChatView: View {
     }
 
     private func chatBubble(_ message: TeamMessageInfo) -> some View {
-        let isMe = message.senderId == teamViewModel.currentUserId
-        let bgColor: Color = {
-            if message.isAnnouncement { return .accentOrange.opacity(0.12) }
-            if isMe { return .primaryGreen.opacity(0.12) }
-            return Color(UIColor.secondarySystemBackground)
-        }()
-
-        return VStack(alignment: isMe ? .trailing : .leading, spacing: 2) {
-            HStack {
-                if isMe { Spacer(minLength: 60) }
-                VStack(alignment: .leading, spacing: 4) {
-                    if message.isAnnouncement {
-                        HStack(spacing: 4) {
-                            Image(systemName: "megaphone.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(.accentOrange)
-                            Text("Announcement")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.accentOrange)
-                        }
-                    }
-                    if !isMe {
-                        Text(message.senderName.isEmpty ? "Unknown" : message.senderName)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.secondary)
-                    }
-                    Text(message.text)
-                        .font(.system(size: 14))
-                    HStack(spacing: 4) {
-                        Text(timeFmt.string(from: message.createdDate))
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        if message.isPinned {
-                            Image(systemName: "pin.fill")
-                                .font(.system(size: 9))
-                                .foregroundColor(.accentOrange)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(bgColor)
-                )
-                if !isMe { Spacer(minLength: 60) }
-            }
-
-            if isMe || isOwner {
-                HStack(spacing: 12) {
-                    if isOwner {
-                        Button(action: { teamViewModel.togglePin(messageId: message.id) }) {
-                            Image(systemName: message.isPinned ? "pin.slash" : "pin")
-                                .font(.system(size: 12))
-                                .foregroundColor(message.isPinned ? .accentOrange : .secondary)
-                        }
-                    }
-                    Button(action: { teamViewModel.deleteMessage(messageId: message.id) }) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 12))
-                            .foregroundColor(.red.opacity(0.6))
-                    }
-                }
-                .padding(.horizontal, 4)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
+        ChatBubbleView(
+            message: message,
+            isMe: message.senderId == teamViewModel.currentUserId,
+            isOwner: isOwner
+        )
     }
 
     private var announceToggle: some View {
@@ -201,5 +134,101 @@ struct TeamChatView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+}
+
+private extension DateFormatter {
+    static let chatTime: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM dd, h:mm a"
+        return f
+    }()
+}
+
+private struct ChatBubbleView: View {
+    let message: TeamMessageInfo
+    let isMe: Bool
+    let isOwner: Bool
+    @EnvironmentObject var teamViewModel: TeamViewModel
+
+    private var bgColor: Color {
+        if message.isAnnouncement { return .accentOrange.opacity(0.12) }
+        if isMe { return .primaryGreen.opacity(0.12) }
+        return Color(UIColor.secondarySystemBackground)
+    }
+
+    var body: some View {
+        VStack(alignment: isMe ? .trailing : .leading, spacing: 2) {
+            HStack {
+                if isMe { Spacer(minLength: 60) }
+                VStack(alignment: .leading, spacing: 4) {
+                    if message.isAnnouncement {
+                        announcementBadge
+                    }
+                    if !isMe {
+                        let senderName: String = message.senderName.isEmpty ? "Unknown" : message.senderName
+                        Text(senderName)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    Text(message.text)
+                        .font(.system(size: 14))
+                    timestampRow
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(bgColor)
+                )
+                if !isMe { Spacer(minLength: 60) }
+            }
+
+            if isMe || isOwner {
+                actionButtons
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: isMe ? .trailing : .leading)
+    }
+
+    private var announcementBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "megaphone.fill")
+                .font(.system(size: 11))
+                .foregroundColor(.accentOrange)
+            Text("Announcement")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.accentOrange)
+        }
+    }
+
+    private var timestampRow: some View {
+        HStack(spacing: 4) {
+            Text(DateFormatter.chatTime.string(from: message.createdDate))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            if message.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundColor(.accentOrange)
+            }
+        }
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 12) {
+            if isOwner {
+                Button(action: { teamViewModel.togglePin(messageId: message.id) }) {
+                    Image(systemName: message.isPinned ? "pin.slash" : "pin")
+                        .font(.system(size: 12))
+                        .foregroundColor(message.isPinned ? .accentOrange : .secondary)
+                }
+            }
+            Button(action: { teamViewModel.deleteMessage(messageId: message.id) }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundColor(.red.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 4)
     }
 }

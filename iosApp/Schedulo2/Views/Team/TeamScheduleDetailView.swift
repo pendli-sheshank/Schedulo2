@@ -1,5 +1,23 @@
 import SwiftUI
 
+private extension DateFormatter {
+    static let teamTime: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "hh:mm a"
+        return f
+    }()
+    static let teamDay: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM dd"
+        return f
+    }()
+    static let swapPickerTime: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM dd, h:mm a"
+        return f
+    }()
+}
+
 struct TeamScheduleDetailView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
@@ -63,7 +81,7 @@ struct TeamScheduleDetailView: View {
                 }
             }
 
-            let myShifts = teamViewModel.teamShifts.filter { shift in
+            let myShifts: [TeamShiftInfo] = teamViewModel.teamShifts.filter { shift in
                 teamViewModel.isManager || shift.assignedTo == teamViewModel.currentUserId
             }
 
@@ -74,121 +92,47 @@ struct TeamScheduleDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else {
-                ForEach(myShifts) { shift in
-                    teamShiftCard(shift)
+                ForEach(myShifts) { (shift: TeamShiftInfo) in
+                    TeamShiftCardView(
+                        shift: shift,
+                        onRequestSwap: {
+                            swapSourceShift = shift
+                            showSwapPicker = true
+                        }
+                    )
                 }
             }
         }
     }
+}
 
-    private func teamShiftCard(_ shift: TeamShiftInfo) -> some View {
-        let timeFmt = DateFormatter()
-        timeFmt.dateFormat = "hh:mm a"
-        let dayFmt = DateFormatter()
-        dayFmt.dateFormat = "EEE, MMM dd"
-        let assignee = teamViewModel.members.first { $0.userId == shift.assignedTo }
+private struct TeamShiftCardView: View {
+    let shift: TeamShiftInfo
+    var onRequestSwap: (() -> Void)?
+    @EnvironmentObject var teamViewModel: TeamViewModel
 
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(shift.company)
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                statusBadge(shift.status)
-            }
-            Text("\(dayFmt.string(from: shift.startDate)) \(timeFmt.string(from: shift.startDate)) - \(timeFmt.string(from: shift.endDate))")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
+    var body: some View {
+        let assignee: TeamMemberInfo? = teamViewModel.members.first { $0.userId == shift.assignedTo }
+        let isMyShift: Bool = shift.assignedTo == teamViewModel.currentUserId
+
+        VStack(alignment: .leading, spacing: 6) {
+            headerRow
+            dateRow
             if let assignee = assignee {
-                Text("Assigned to: \(assignee.displayName.isEmpty ? assignee.email : assignee.displayName)")
+                let name: String = assignee.displayName.isEmpty ? assignee.email : assignee.displayName
+                Text("Assigned to: \(name)")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
-
             if !shift.tasks.isEmpty {
-                let completedCount = shift.tasks.filter { $0.isCompleted }.count
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(completedCount)/\(shift.tasks.count) tasks done")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(completedCount == shift.tasks.count ? .primaryGreen : .secondary)
-                    ForEach(shift.tasks) { task in
-                        Button(action: {
-                            if shift.assignedTo == teamViewModel.currentUserId || teamViewModel.isManager {
-                                teamViewModel.toggleTaskCompletion(shiftId: shift.id, taskId: task.id)
-                            }
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(task.isCompleted ? .primaryGreen : .secondary)
-                                    .font(.system(size: 14))
-                                Text(task.title)
-                                    .font(.system(size: 13))
-                                    .foregroundColor(task.isCompleted ? .secondary : .primary)
-                                    .strikethrough(task.isCompleted)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.top, 4)
+                tasksSection
             }
-
-            if shift.assignedTo == teamViewModel.currentUserId && shift.status == "assigned" {
-                HStack(spacing: 8) {
-                    Button(action: {
-                        teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "accepted")
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Accept")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primaryGreen))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: {
-                        teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "declined")
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Decline")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundColor(.red)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.red, lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.top, 6)
+            if isMyShift && shift.status == "assigned" {
+                acceptDeclineButtons
             }
-
-            if shift.assignedTo == teamViewModel.currentUserId && (shift.status == "accepted" || shift.status == "assigned") {
-                Button(action: {
-                    swapSourceShift = shift
-                    showSwapPicker = true
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.triangle.swap")
-                            .font(.system(size: 12))
-                        Text("Request Swap")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .foregroundColor(.accentOrange)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
+            if isMyShift && (shift.status == "accepted" || shift.status == "assigned") {
+                swapButton
             }
-
         }
         .padding(12)
         .background(
@@ -197,16 +141,120 @@ struct TeamScheduleDetailView: View {
         )
     }
 
-    private func statusBadge(_ status: String) -> some View {
-        let color: Color = {
-            switch status {
-            case "accepted": return .green
-            case "declined": return .red
-            default: return .orange
-            }
-        }()
+    private var headerRow: some View {
+        HStack {
+            Text(shift.company)
+                .font(.system(size: 14, weight: .semibold))
+            Spacer()
+            StatusBadgeView(status: shift.status)
+        }
+    }
 
-        return Text(status.capitalized)
+    private var dateRow: some View {
+        let dayStr: String = DateFormatter.teamDay.string(from: shift.startDate)
+        let startStr: String = DateFormatter.teamTime.string(from: shift.startDate)
+        let endStr: String = DateFormatter.teamTime.string(from: shift.endDate)
+        return Text("\(dayStr) \(startStr) - \(endStr)")
+            .font(.system(size: 12))
+            .foregroundColor(.secondary)
+    }
+
+    private var tasksSection: some View {
+        let completedCount: Int = shift.tasks.filter { $0.isCompleted }.count
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("\(completedCount)/\(shift.tasks.count) tasks done")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(completedCount == shift.tasks.count ? .primaryGreen : .secondary)
+            ForEach(shift.tasks) { task in
+                Button(action: {
+                    if shift.assignedTo == teamViewModel.currentUserId || teamViewModel.isManager {
+                        teamViewModel.toggleTaskCompletion(shiftId: shift.id, taskId: task.id)
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(task.isCompleted ? .primaryGreen : .secondary)
+                            .font(.system(size: 14))
+                        Text(task.title)
+                            .font(.system(size: 13))
+                            .foregroundColor(task.isCompleted ? .secondary : .primary)
+                            .strikethrough(task.isCompleted)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private var acceptDeclineButtons: some View {
+        HStack(spacing: 8) {
+            Button(action: {
+                teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "accepted")
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Accept")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primaryGreen))
+            }
+            .buttonStyle(.plain)
+
+            Button(action: {
+                teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "declined")
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Decline")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundColor(.red)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.red, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 6)
+    }
+
+    private var swapButton: some View {
+        Button(action: { onRequestSwap?() }) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.swap")
+                    .font(.system(size: 12))
+                Text("Request Swap")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundColor(.accentOrange)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+    }
+}
+
+private struct StatusBadgeView: View {
+    let status: String
+
+    private var color: Color {
+        switch status {
+        case "accepted": return .green
+        case "declined": return .red
+        default: return .orange
+        }
+    }
+
+    var body: some View {
+        Text(status.capitalized)
             .font(.system(size: 11, weight: .semibold))
             .foregroundColor(color)
             .padding(.horizontal, 8)
@@ -232,12 +280,6 @@ struct SwapPickerView: View {
         }
     }
 
-    private let timeFmt: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MMM dd, h:mm a"
-        return f
-    }()
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -254,32 +296,8 @@ struct SwapPickerView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, 4)
 
-                        ForEach(otherMemberShifts) { shift in
-                            let member = teamViewModel.members.first { $0.userId == shift.assignedTo }
-                            Button(action: {
-                                guard let source = sourceShift else { return }
-                                teamViewModel.requestSwap(
-                                    requesterShiftId: source.id,
-                                    targetMemberId: shift.assignedTo,
-                                    targetShiftId: shift.id
-                                )
-                                dismiss()
-                            }) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(member?.displayName ?? shift.assignedTo)
-                                        .font(.system(size: 14, weight: .semibold))
-                                    Text("\(shift.company) · \(timeFmt.string(from: shift.startDate))")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color(UIColor.secondarySystemBackground))
-                                )
-                            }
-                            .buttonStyle(.plain)
+                        ForEach(otherMemberShifts) { (shift: TeamShiftInfo) in
+                            swapOptionRow(shift)
                         }
                     }
                 }
@@ -293,5 +311,36 @@ struct SwapPickerView: View {
                 }
             }
         }
+    }
+
+    private func swapOptionRow(_ shift: TeamShiftInfo) -> some View {
+        let member: TeamMemberInfo? = teamViewModel.members.first { $0.userId == shift.assignedTo }
+        let displayName: String = member?.displayName ?? shift.assignedTo
+        let timeStr: String = DateFormatter.swapPickerTime.string(from: shift.startDate)
+
+        return Button(action: {
+            guard let source = sourceShift else { return }
+            teamViewModel.requestSwap(
+                requesterShiftId: source.id,
+                targetMemberId: shift.assignedTo,
+                targetShiftId: shift.id
+            )
+            dismiss()
+        }) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                Text("\(shift.company) · \(timeStr)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(UIColor.secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
