@@ -340,7 +340,7 @@ final class TeamViewModel: ObservableObject {
             "endTime": endTime,
             "hourlyRate": hourlyRate,
             "notes": notes,
-            "status": "accepted",
+            "status": "assigned",
             "tasks": tasksData
         ]
 
@@ -357,7 +357,7 @@ final class TeamViewModel: ObservableObject {
                     endTime: endTime,
                     hourlyRate: hourlyRate,
                     notes: notes,
-                    status: "accepted",
+                    status: "assigned",
                     tasks: tasks
                 )
                 self?.createPersonalShiftFromTeam(teamShift, targetUserId: memberId)
@@ -495,6 +495,69 @@ final class TeamViewModel: ObservableObject {
 
     func deleteTeamShift(shiftId: String) {
         db.collection("team_shifts").document(shiftId).delete()
+    }
+
+    func promoteMember(memberDocId: String) {
+        let previous = members
+        if let idx = members.firstIndex(where: { $0.id == memberDocId }) {
+            members[idx].role = "manager"
+        }
+        db.collection("team_members").document(memberDocId).updateData(["role": "manager"]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.members = previous
+                    self?.errorMessage = "Failed to promote member: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func demoteMember(memberDocId: String) {
+        let previous = members
+        if let idx = members.firstIndex(where: { $0.id == memberDocId }) {
+            members[idx].role = "member"
+        }
+        db.collection("team_members").document(memberDocId).updateData(["role": "member"]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.members = previous
+                    self?.errorMessage = "Failed to demote member: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func removeMember(memberDocId: String, teamId: String) {
+        let previous = members
+        members.removeAll { $0.id == memberDocId }
+
+        let batch = db.batch()
+        batch.deleteDocument(db.collection("team_members").document(memberDocId))
+        batch.updateData(["memberCount": FieldValue.increment(Int64(-1))], forDocument: db.collection("teams").document(teamId))
+
+        batch.commit { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.members = previous
+                    self?.errorMessage = "Failed to remove member: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func updateShiftStatus(shiftId: String, newStatus: String) {
+        let previous = teamShifts
+        if let idx = teamShifts.firstIndex(where: { $0.id == shiftId }) {
+            teamShifts[idx].status = newStatus
+        }
+        db.collection("team_shifts").document(shiftId).updateData(["status": newStatus]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.teamShifts = previous
+                    self?.errorMessage = "Failed to update shift status: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
     func leaveTeam(teamId: String) {

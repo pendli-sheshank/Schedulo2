@@ -93,7 +93,9 @@ fun TeamDetailScreen(
                 members = members,
                 jobs = jobs,
                 isManager = isManager,
-                currentTeam = currentTeam
+                currentTeam = currentTeam,
+                currentUserId = currentUserId,
+                teamViewModel = teamViewModel
             )
             "schedule" -> ScheduleDetailContent(
                 modifier = Modifier.padding(padding),
@@ -164,8 +166,11 @@ private fun DashboardDetailContent(
     members: List<TeamMember>,
     jobs: List<Job>,
     isManager: Boolean,
-    currentTeam: Team?
+    currentTeam: Team?,
+    currentUserId: String = "",
+    teamViewModel: TeamViewModel? = null
 ) {
+    val isOwner = currentTeam?.ownerId == currentUserId
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp)
@@ -203,7 +208,22 @@ private fun DashboardDetailContent(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
-        items(members, key = { it.id }) { member -> MemberCard(member = member) }
+        items(members, key = { it.id }) { member ->
+            MemberCard(
+                member = member,
+                isOwner = isOwner,
+                currentUserId = currentUserId,
+                onPromote = if (isOwner && member.userId != currentUserId && member.role == "member") {
+                    { teamViewModel?.promoteMember(member.id) }
+                } else null,
+                onDemote = if (isOwner && member.userId != currentUserId && member.role == "manager") {
+                    { teamViewModel?.demoteMember(member.id) }
+                } else null,
+                onRemove = if (isOwner && member.userId != currentUserId) {
+                    { teamViewModel?.removeMember(member.id, currentTeam?.id ?: "") }
+                } else null
+            )
+        }
     }
 }
 
@@ -240,7 +260,13 @@ private fun ScheduleDetailContent(
                     isManager = isManager,
                     currentUserId = currentUserId,
                     onDelete = { teamViewModel.deleteTeamShift(shift.id) },
-                    onToggleTask = { taskId -> teamViewModel.toggleTaskCompletion(shift.id, taskId) }
+                    onToggleTask = { taskId -> teamViewModel.toggleTaskCompletion(shift.id, taskId) },
+                    onAccept = if (shift.assignedTo == currentUserId && shift.status == "assigned") {
+                        { teamViewModel.updateShiftStatus(shift.id, "accepted") }
+                    } else null,
+                    onDecline = if (shift.assignedTo == currentUserId && shift.status == "assigned") {
+                        { teamViewModel.updateShiftStatus(shift.id, "declined") }
+                    } else null
                 )
             }
         }

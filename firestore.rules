@@ -127,6 +127,12 @@ service cloud.firestore {
           || (request.resource.data.role == "manager"
             && (!exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
               || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid)));
+      allow update: if request.auth != null
+        && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.role is string
+        && (request.resource.data.role == "member" || request.resource.data.role == "manager");
       allow delete: if request.auth != null
         && (resource.data.userId == request.auth.uid
           || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
@@ -149,7 +155,6 @@ service cloud.firestore {
         && request.resource.data.status is string
         && (request.resource.data.status == "assigned" || request.resource.data.status == "accepted" || request.resource.data.status == "declined");
       allow update: if request.auth != null
-        && (resource.data.assignedBy == request.auth.uid || resource.data.assignedTo == request.auth.uid)
         && request.resource.data.teamId == resource.data.teamId
         && request.resource.data.assignedTo == resource.data.assignedTo
         && request.resource.data.assignedBy == resource.data.assignedBy
@@ -159,7 +164,13 @@ service cloud.firestore {
         && request.resource.data.endTime == resource.data.endTime
         && request.resource.data.hourlyRate == resource.data.hourlyRate
         && request.resource.data.notes == resource.data.notes
-        && request.resource.data.status == resource.data.status;
+        && (
+          // Manager (assignedBy) can update any mutable field including status
+          resource.data.assignedBy == request.auth.uid
+          // Assigned member can only change status to accepted or declined
+          || (resource.data.assignedTo == request.auth.uid
+            && (request.resource.data.status == "accepted" || request.resource.data.status == "declined"))
+        );
       allow delete: if request.auth != null
         && resource.data.assignedBy == request.auth.uid;
     }

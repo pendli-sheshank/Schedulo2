@@ -126,6 +126,46 @@ struct TeamScheduleDetailView: View {
                 .padding(.top, 4)
             }
 
+            if shift.assignedTo == teamViewModel.currentUserId && shift.status == "assigned" {
+                HStack(spacing: 8) {
+                    Button(action: {
+                        teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "accepted")
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Accept")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primaryGreen))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "declined")
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Decline")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.red, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 6)
+            }
+
         }
         .padding(12)
         .background(

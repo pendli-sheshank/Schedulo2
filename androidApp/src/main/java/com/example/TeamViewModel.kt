@@ -378,7 +378,7 @@ class TeamViewModel : ViewModel() {
             "endTime" to endTime,
             "hourlyRate" to hourlyRate,
             "notes" to notes.trim(),
-            "status" to "accepted",
+            "status" to "assigned",
             "tasks" to tasksList
         )
 
@@ -396,7 +396,7 @@ class TeamViewModel : ViewModel() {
                     endTime = endTime,
                     hourlyRate = hourlyRate,
                     notes = notes.trim(),
-                    status = "accepted",
+                    status = "assigned",
                     tasks = tasks
                 )
                 createPersonalShiftFromTeam(teamShift, memberId)
@@ -510,6 +510,64 @@ class TeamViewModel : ViewModel() {
             .update("tasks", tasksList)
             .addOnFailureListener { e ->
                 _errorMessage.value = "Failed to update task: ${e.message}"
+            }
+    }
+
+    fun promoteMember(memberDocId: String) {
+        val database = db ?: return
+        val previousMembers = _members.value
+        _members.value = _members.value.map {
+            if (it.id == memberDocId) it.copy(role = "manager") else it
+        }
+        database.collection("team_members").document(memberDocId)
+            .update("role", "manager")
+            .addOnFailureListener { e ->
+                _members.value = previousMembers
+                _errorMessage.value = "Failed to promote member: ${e.message}"
+            }
+    }
+
+    fun demoteMember(memberDocId: String) {
+        val database = db ?: return
+        val previousMembers = _members.value
+        _members.value = _members.value.map {
+            if (it.id == memberDocId) it.copy(role = "member") else it
+        }
+        database.collection("team_members").document(memberDocId)
+            .update("role", "member")
+            .addOnFailureListener { e ->
+                _members.value = previousMembers
+                _errorMessage.value = "Failed to demote member: ${e.message}"
+            }
+    }
+
+    fun removeMember(memberDocId: String, teamId: String) {
+        val database = db ?: return
+        val previousMembers = _members.value
+        _members.value = _members.value.filter { it.id != memberDocId }
+
+        val batch = database.batch()
+        batch.delete(database.collection("team_members").document(memberDocId))
+        batch.update(database.collection("teams").document(teamId), "memberCount", FieldValue.increment(-1))
+
+        batch.commit()
+            .addOnFailureListener { e ->
+                _members.value = previousMembers
+                _errorMessage.value = "Failed to remove member: ${e.message}"
+            }
+    }
+
+    fun updateShiftStatus(shiftId: String, newStatus: String) {
+        val database = db ?: return
+        val previousShifts = _teamShifts.value
+        _teamShifts.value = _teamShifts.value.map {
+            if (it.id == shiftId) it.copy(status = newStatus) else it
+        }
+        database.collection("team_shifts").document(shiftId)
+            .update("status", newStatus)
+            .addOnFailureListener { e ->
+                _teamShifts.value = previousShifts
+                _errorMessage.value = "Failed to update shift status: ${e.message}"
             }
     }
 
