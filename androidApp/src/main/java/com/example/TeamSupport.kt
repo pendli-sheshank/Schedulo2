@@ -399,6 +399,14 @@ fun TeamScreen(
                                     onClick = { onNavigateToDetail("chat") }
                                 )
                             }
+                            BentoTile(
+                                modifier = Modifier.fillMaxWidth().height(90.dp),
+                                title = "Shift Swaps",
+                                subtitle = "Request & manage swaps",
+                                icon = Icons.Default.SwapHoriz,
+                                tint = AccentOrange,
+                                onClick = { onNavigateToDetail("swaps") }
+                            )
                         }
                     }
                 }
@@ -674,7 +682,8 @@ fun TeamShiftCard(
     onDelete: () -> Unit,
     onToggleTask: (String) -> Unit = {},
     onAccept: (() -> Unit)? = null,
-    onDecline: (() -> Unit)? = null
+    onDecline: (() -> Unit)? = null,
+    onRequestSwap: (() -> Unit)? = null
 ) {
     val assignedMember = members.find { it.userId == shift.assignedTo }
     val assignedName = assignedMember?.displayName?.ifBlank { assignedMember.email.substringBefore("@") } ?: "Unknown"
@@ -815,6 +824,19 @@ fun TeamShiftCard(
                             Text("Decline", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
+                }
+            }
+
+            if (!isAssignedToMe && shift.assignedTo != currentUserId && onRequestSwap != null && shift.status == "accepted") {
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(
+                    onClick = onRequestSwap,
+                    colors = ButtonDefaults.textButtonColors(contentColor = AccentBlue),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Request Swap", fontSize = 12.sp)
                 }
             }
 

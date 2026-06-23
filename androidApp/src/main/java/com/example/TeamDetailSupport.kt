@@ -28,6 +28,7 @@ import com.example.ui.theme.AccentOrange
 import com.example.ui.theme.PrimaryGreen
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
+import com.schedulo.shared.model.SwapRequest
 import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,7 @@ fun TeamDetailScreen(
     var scheduleMenuExpanded by remember { mutableStateOf(false) }
 
     val teamMessages by teamViewModel.teamMessages.collectAsState()
+    val swapRequests by teamViewModel.swapRequests.collectAsState()
 
     val title = when (section) {
         "dashboard" -> "Team Dashboard"
@@ -63,6 +65,7 @@ fun TeamDetailScreen(
         "tasks" -> "Team Tasks"
         "roster" -> "Team Roster"
         "chat" -> "Team Chat"
+        "swaps" -> "Swap Requests"
         else -> "Team"
     }
 
@@ -137,6 +140,15 @@ fun TeamDetailScreen(
                 isManager = isManager,
                 currentUserId = currentUserId,
                 currentTeam = currentTeam,
+                teamViewModel = teamViewModel
+            )
+            "swaps" -> SwapRequestsContent(
+                modifier = Modifier.padding(padding),
+                swapRequests = swapRequests,
+                teamShifts = teamShifts,
+                members = members,
+                isManager = isManager,
+                currentUserId = currentUserId,
                 teamViewModel = teamViewModel
             )
         }
@@ -262,6 +274,11 @@ private fun ScheduleDetailContent(
     currentUserId: String,
     teamViewModel: TeamViewModel
 ) {
+    var swapTargetShift by remember { mutableStateOf<TeamShift?>(null) }
+    val myAcceptedShifts = remember(teamShifts, currentUserId) {
+        teamShifts.filter { it.assignedTo == currentUserId && it.status == "accepted" }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
@@ -292,10 +309,26 @@ private fun ScheduleDetailContent(
                     } else null,
                     onDecline = if (shift.assignedTo == currentUserId && shift.status == "assigned") {
                         { teamViewModel.updateShiftStatus(shift.id, "declined") }
+                    } else null,
+                    onRequestSwap = if (shift.assignedTo != currentUserId && shift.status == "accepted" && myAcceptedShifts.isNotEmpty()) {
+                        { swapTargetShift = shift }
                     } else null
                 )
             }
         }
+    }
+
+    if (swapTargetShift != null) {
+        SwapPickerDialog(
+            targetShift = swapTargetShift!!,
+            myShifts = myAcceptedShifts,
+            members = members,
+            onDismiss = { swapTargetShift = null },
+            onConfirm = { myShiftId ->
+                teamViewModel.requestSwap(myShiftId, swapTargetShift!!.assignedTo, swapTargetShift!!.id)
+                swapTargetShift = null
+            }
+        )
     }
 }
 
@@ -797,6 +830,197 @@ private fun ChatBubble(
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
                     modifier = Modifier.size(14.dp).clickable { onDelete() }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SwapPickerDialog(
+    targetShift: TeamShift,
+    myShifts: List<TeamShift>,
+    members: List<TeamMember>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var selectedShiftId by remember { mutableStateOf(myShifts.firstOrNull()?.id ?: "") }
+    val timeFormat = remember { java.text.SimpleDateFormat("MMM dd, h:mm a", java.util.Locale.US) }
+    val targetMember = members.find { it.userId == targetShift.assignedTo }
+    val targetName = targetMember?.displayName?.ifBlank { targetMember.email.substringBefore("@") } ?: "Unknown"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Request Swap", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Swap with $targetName's shift:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${targetShift.company} · ${timeFormat.format(java.util.Date(targetShift.startTime))}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Select your shift to offer:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                myShifts.forEach { shift ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedShiftId = shift.id }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (selectedShiftId == shift.id) Icons.Default.RadioButtonChecked else Icons.Default.RadioButtonUnchecked,
+                            null,
+                            tint = if (selectedShiftId == shift.id) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(shift.company, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(timeFormat.format(java.util.Date(shift.startTime)), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(selectedShiftId) },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                enabled = selectedShiftId.isNotBlank()
+            ) { Text("Request Swap", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@Composable
+private fun SwapRequestsContent(
+    modifier: Modifier,
+    swapRequests: List<SwapRequest>,
+    teamShifts: List<TeamShift>,
+    members: List<TeamMember>,
+    isManager: Boolean,
+    currentUserId: String,
+    teamViewModel: TeamViewModel
+) {
+    val timeFormat = remember { java.text.SimpleDateFormat("MMM dd, h:mm a", java.util.Locale.US) }
+    val activeRequests = remember(swapRequests) { swapRequests.filter { it.status != "approved" && it.status != "declined" } }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (activeRequests.isEmpty()) {
+            item {
+                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("No pending swap requests", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            items(activeRequests, key = { it.id }) { request ->
+                val requesterShift = teamShifts.find { it.id == request.requesterShiftId }
+                val targetShift = teamShifts.find { it.id == request.targetShiftId }
+
+                val statusColor = when (request.status) {
+                    "pending" -> AccentOrange
+                    "target_accepted" -> AccentBlue
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Shift Swap", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = statusColor.copy(alpha = 0.1f)
+                            ) {
+                                Text(
+                                    when (request.status) {
+                                        "pending" -> "Pending"
+                                        "target_accepted" -> "Awaiting Manager"
+                                        else -> request.status.replaceFirstChar { it.uppercase() }
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = statusColor,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("${request.requesterName} offers:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (requesterShift != null) {
+                            Text("${requesterShift.company} · ${timeFormat.format(java.util.Date(requesterShift.startTime))}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Icon(Icons.Default.SwapVert, null, tint = AccentBlue, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("${request.targetMemberName} offers:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (targetShift != null) {
+                            Text("${targetShift.company} · ${timeFormat.format(java.util.Date(targetShift.startTime))}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Target member can accept/decline pending requests
+                        if (request.status == "pending" && request.targetMemberId == currentUserId) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { teamViewModel.respondToSwap(request.id, true) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) { Text("Accept", fontSize = 13.sp) }
+                                OutlinedButton(
+                                    onClick = { teamViewModel.respondToSwap(request.id, false) },
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) { Text("Decline", fontSize = 13.sp) }
+                            }
+                        }
+
+                        // Manager can approve/decline after target accepted
+                        if (request.status == "target_accepted" && isManager) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { teamViewModel.approveSwap(request.id, true) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) { Text("Approve Swap", fontSize = 13.sp) }
+                                OutlinedButton(
+                                    onClick = { teamViewModel.approveSwap(request.id, false) },
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) { Text("Decline", fontSize = 13.sp) }
+                            }
+                        }
+
+                        // Requester can cancel pending requests
+                        if (request.status == "pending" && request.requesterId == currentUserId) {
+                            TextButton(
+                                onClick = { teamViewModel.cancelSwapRequest(request.id) },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                contentPadding = PaddingValues(0.dp)
+                            ) { Text("Cancel Request", fontSize = 12.sp) }
+                        }
+                    }
+                }
             }
         }
     }

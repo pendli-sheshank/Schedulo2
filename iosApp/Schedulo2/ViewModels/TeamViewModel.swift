@@ -71,6 +71,21 @@ struct TeamMessageInfo: Identifiable, Equatable {
     }
 }
 
+struct SwapRequestInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var teamId: String = ""
+    var requesterId: String = ""
+    var requesterName: String = ""
+    var requesterShiftId: String = ""
+    var targetMemberId: String = ""
+    var targetMemberName: String = ""
+    var targetShiftId: String = ""
+    var status: String = "pending"
+    var createdAt: Int64 = 0
+    var resolvedAt: Int64 = 0
+    var resolvedBy: String = ""
+}
+
 struct MemberJobInfo: Identifiable, Equatable {
     var id: String = UUID().uuidString
     var title: String = ""
@@ -88,6 +103,7 @@ final class TeamViewModel: ObservableObject {
     @Published var userRole: String = "member"
     @Published var memberJobs: [MemberJobInfo] = []
     @Published var teamMessages: [TeamMessageInfo] = []
+    @Published var swapRequests: [SwapRequestInfo] = []
 
     private let db = Firestore.firestore(database: "schedulo2")
     private var teamsListener: ListenerRegistration?
@@ -95,6 +111,7 @@ final class TeamViewModel: ObservableObject {
     private var shiftsListener: ListenerRegistration?
     private var memberJobsListener: ListenerRegistration?
     private var messagesListener: ListenerRegistration?
+    private var swapRequestsListener: ListenerRegistration?
 
     var currentUserId: String? { Auth.auth().currentUser?.uid }
     var currentUserEmail: String? { Auth.auth().currentUser?.email }
@@ -173,6 +190,7 @@ final class TeamViewModel: ObservableObject {
         loadMembers(teamId: team.id)
         loadTeamShifts(teamId: team.id)
         loadTeamMessages(teamId: team.id)
+        loadSwapRequests(teamId: team.id)
         updateUserRole(teamId: team.id)
     }
 
@@ -639,6 +657,139 @@ final class TeamViewModel: ObservableObject {
         }
     }
 
+    func loadSwapRequests(teamId: String) {
+        swapRequestsListener?.remove()
+        swapRequestsListener = db.collection("swap_requests")
+            .whereField("teamId", isEqualTo: teamId)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let docs = snapshot?.documents else { return }
+                self?.swapRequests = docs.map { doc in
+                    let data = doc.data()
+                    return SwapRequestInfo(
+                        id: doc.documentID,
+                        teamId: data["teamId"] as? String ?? "",
+                        requesterId: data["requesterId"] as? String ?? "",
+                        requesterName: data["requesterName"] as? String ?? "",
+                        requesterShiftId: data["requesterShiftId"] as? String ?? "",
+                        targetMemberId: data["targetMemberId"] as? String ?? "",
+                        targetMemberName: data["targetMemberName"] as? String ?? "",
+                        targetShiftId: data["targetShiftId"] as? String ?? "",
+                        status: data["status"] as? String ?? "pending",
+                        createdAt: (data["createdAt"] as? NSNumber)?.int64Value ?? 0,
+                        resolvedAt: (data["resolvedAt"] as? NSNumber)?.int64Value ?? 0,
+                        resolvedBy: data["resolvedBy"] as? String ?? ""
+                    )
+                }.sorted { $0.createdAt > $1.createdAt }
+            }
+    }
+
+    func requestSwap(myShiftId: String, targetMemberId: String, targetShiftId: String) {
+        guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
+
+        let requesterName = currentUserEmail ?? ""
+        let targetMember = members.first { $0.userId == targetMemberId }
+        let targetName = targetMember?.displayName.isEmpty == false ? targetMember!.displayName : (targetMember?.email ?? "")
+
+        let data: [String: Any] = [
+            "teamId": teamId,
+            "requesterId": uid,
+            "requesterName": requesterName,
+            "requesterShiftId": myShiftId,
+            "targetMemberId": targetMemberId,
+            "targetMemberName": targetName,
+            "targetShiftId": targetShiftId,
+            "status": "pending",
+            "createdAt": Int64(Date().timeIntervalSince1970 * 1000),
+            "resolvedAt": Int64(0),
+            "resolvedBy": ""
+        ]
+
+        db.collection("swap_requests").document(UUID().uuidString).setData(data) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async { self?.errorMessage = "Failed to request swap: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func respondToSwap(requestId: String, accept: Bool) {
+        guard let uid = currentUserId else { return }
+        let newStatus = accept ? "target_accepted" : "declined"
+        let previous = swapRequests
+        if let idx = swapRequests.firstIndex(where: { $0.id == requestId }) {
+            swapRequests[idx].status = newStatus
+        }
+        var updates: [String: Any] = ["status": newStatus]
+        if !accept {
+            updates["resolvedBy"] = uid
+            updates["resolvedAt"] = Int64(Date().timeIntervalSince1970 * 1000)
+        }
+        db.collection("swap_requests").document(requestId).updateData(updates) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.swapRequests = previous
+                    self?.errorMessage = "Failed to respond: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func approveSwap(requestId: String, approve: Bool) {
+        guard let uid = currentUserId else { return }
+        if !approve {
+            let previous = swapRequests
+            if let idx = swapRequests.firstIndex(where: { $0.id == requestId }) {
+                swapRequests[idx].status = "declined"
+            }
+            db.collection("swap_requests").document(requestId).updateData([
+                "status": "declined",
+                "resolvedBy": uid,
+                "resolvedAt": Int64(Date().timeIntervalSince1970 * 1000)
+            ]) { [weak self] error in
+                if let error = error {
+                    DispatchQueue.main.async {
+                        self?.swapRequests = previous
+                        self?.errorMessage = "Failed to decline: \(error.localizedDescription)"
+                    }
+                }
+            }
+            return
+        }
+
+        guard let request = swapRequests.first(where: { $0.id == requestId }) else { return }
+        executeSwap(request)
+    }
+
+    private func executeSwap(_ request: SwapRequestInfo) {
+        guard let uid = currentUserId else { return }
+        let batch = db.batch()
+        batch.updateData(["assignedTo": request.targetMemberId], forDocument: db.collection("team_shifts").document(request.requesterShiftId))
+        batch.updateData(["assignedTo": request.requesterId], forDocument: db.collection("team_shifts").document(request.targetShiftId))
+        batch.updateData([
+            "status": "approved",
+            "resolvedBy": uid,
+            "resolvedAt": Int64(Date().timeIntervalSince1970 * 1000)
+        ], forDocument: db.collection("swap_requests").document(request.id))
+
+        batch.commit { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async { self?.errorMessage = "Failed to execute swap: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func cancelSwapRequest(requestId: String) {
+        let previous = swapRequests
+        swapRequests.removeAll { $0.id == requestId }
+        db.collection("swap_requests").document(requestId).delete { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.swapRequests = previous
+                    self?.errorMessage = "Failed to cancel: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func updateShiftStatus(shiftId: String, newStatus: String) {
         let previous = teamShifts
         if let idx = teamShifts.firstIndex(where: { $0.id == shiftId }) {
@@ -683,6 +834,7 @@ final class TeamViewModel: ObservableObject {
         shiftsListener?.remove()
         memberJobsListener?.remove()
         messagesListener?.remove()
+        swapRequestsListener?.remove()
     }
 
     private func generateInviteCode() -> String {

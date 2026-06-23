@@ -36,6 +36,21 @@ data class TeamMessage(
     var createdAt: Long = 0
 )
 
+data class SwapRequest(
+    var id: String = "",
+    var teamId: String = "",
+    var requesterId: String = "",
+    var requesterName: String = "",
+    var requesterShiftId: String = "",
+    var targetMemberId: String = "",
+    var targetMemberName: String = "",
+    var targetShiftId: String = "",
+    var status: String = "pending",
+    var createdAt: Long = 0,
+    var resolvedAt: Long = 0,
+    var resolvedBy: String = ""
+)
+
 data class TeamShift(
     var id: String = "",
     var teamId: String = "",

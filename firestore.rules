@@ -156,7 +156,6 @@ service cloud.firestore {
         && (request.resource.data.status == "assigned" || request.resource.data.status == "accepted" || request.resource.data.status == "declined");
       allow update: if request.auth != null
         && request.resource.data.teamId == resource.data.teamId
-        && request.resource.data.assignedTo == resource.data.assignedTo
         && request.resource.data.assignedBy == resource.data.assignedBy
         && request.resource.data.company == resource.data.company
         && request.resource.data.role == resource.data.role
@@ -165,10 +164,12 @@ service cloud.firestore {
         && request.resource.data.hourlyRate == resource.data.hourlyRate
         && request.resource.data.notes == resource.data.notes
         && (
-          // Manager (assignedBy) can update any mutable field including status
-          resource.data.assignedBy == request.auth.uid
-          // Assigned member can only change status to accepted or declined
+          // Manager (assignedBy) can update mutable fields including status and assignedTo (for swaps)
+          (resource.data.assignedBy == request.auth.uid
+            || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid)
+          // Assigned member can only change status to accepted or declined (assignedTo must stay same)
           || (resource.data.assignedTo == request.auth.uid
+            && request.resource.data.assignedTo == resource.data.assignedTo
             && (request.resource.data.status == "accepted" || request.resource.data.status == "declined"))
         );
       allow delete: if request.auth != null
@@ -200,6 +201,38 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && (resource.data.senderId == request.auth.uid
           || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
+    }
+
+    // Swap Requests: requester creates, target responds, manager approves
+    match /swap_requests/{requestId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.teamId is string
+        && request.resource.data.requesterShiftId is string
+        && request.resource.data.targetMemberId is string
+        && request.resource.data.targetShiftId is string
+        && request.resource.data.createdAt is int;
+      allow update: if request.auth != null
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.requesterId == resource.data.requesterId
+        && request.resource.data.requesterShiftId == resource.data.requesterShiftId
+        && request.resource.data.targetMemberId == resource.data.targetMemberId
+        && request.resource.data.targetShiftId == resource.data.targetShiftId
+        && (
+          // Target member can accept or decline a pending request
+          (resource.data.targetMemberId == request.auth.uid
+            && resource.data.status == "pending"
+            && (request.resource.data.status == "target_accepted" || request.resource.data.status == "declined"))
+          // Manager can approve or decline after target accepted
+          || (get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+            && resource.data.status == "target_accepted"
+            && (request.resource.data.status == "approved" || request.resource.data.status == "declined"))
+        );
+      allow delete: if request.auth != null
+        && resource.data.requesterId == request.auth.uid
+        && resource.data.status == "pending";
     }
   }
 }

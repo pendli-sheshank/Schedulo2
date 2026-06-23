@@ -11,6 +11,7 @@ import com.google.firebase.firestore.Query
 import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
+import com.schedulo.shared.model.SwapRequest
 import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,11 +49,15 @@ class TeamViewModel : ViewModel() {
     private val _teamMessages = MutableStateFlow<List<TeamMessage>>(emptyList())
     val teamMessages = _teamMessages.asStateFlow()
 
+    private val _swapRequests = MutableStateFlow<List<SwapRequest>>(emptyList())
+    val swapRequests = _swapRequests.asStateFlow()
+
     private var teamsListener: ListenerRegistration? = null
     private var membersListener: ListenerRegistration? = null
     private var shiftsListener: ListenerRegistration? = null
     private var memberJobsListener: ListenerRegistration? = null
     private var messagesListener: ListenerRegistration? = null
+    private var swapRequestsListener: ListenerRegistration? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -243,6 +248,32 @@ class TeamViewModel : ViewModel() {
                             createdAt = doc.getLong("createdAt") ?: 0
                         )
                     }
+                }
+            }
+
+        // Listen for swap requests
+        swapRequestsListener?.remove()
+        swapRequestsListener = database.collection("swap_requests")
+            .whereEqualTo("teamId", team.id)
+            .addSnapshotListener { value, error ->
+                if (error != null) return@addSnapshotListener
+                if (value != null) {
+                    _swapRequests.value = value.documents.map { doc ->
+                        SwapRequest(
+                            id = doc.id,
+                            teamId = doc.getString("teamId") ?: "",
+                            requesterId = doc.getString("requesterId") ?: "",
+                            requesterName = doc.getString("requesterName") ?: "",
+                            requesterShiftId = doc.getString("requesterShiftId") ?: "",
+                            targetMemberId = doc.getString("targetMemberId") ?: "",
+                            targetMemberName = doc.getString("targetMemberName") ?: "",
+                            targetShiftId = doc.getString("targetShiftId") ?: "",
+                            status = doc.getString("status") ?: "pending",
+                            createdAt = doc.getLong("createdAt") ?: 0,
+                            resolvedAt = doc.getLong("resolvedAt") ?: 0,
+                            resolvedBy = doc.getString("resolvedBy") ?: ""
+                        )
+                    }.sortedByDescending { it.createdAt }
                 }
             }
     }
@@ -652,6 +683,115 @@ class TeamViewModel : ViewModel() {
             }
     }
 
+    fun requestSwap(myShiftId: String, targetMemberId: String, targetShiftId: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val team = _currentTeam.value ?: return
+
+        val requesterName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val targetMember = _members.value.find { it.userId == targetMemberId }
+        val targetName = targetMember?.displayName?.ifBlank { targetMember.email.substringBefore("@") } ?: ""
+
+        val data = hashMapOf(
+            "teamId" to team.id,
+            "requesterId" to uid,
+            "requesterName" to requesterName,
+            "requesterShiftId" to myShiftId,
+            "targetMemberId" to targetMemberId,
+            "targetMemberName" to targetName,
+            "targetShiftId" to targetShiftId,
+            "status" to "pending",
+            "createdAt" to System.currentTimeMillis(),
+            "resolvedAt" to 0L,
+            "resolvedBy" to ""
+        )
+
+        database.collection("swap_requests").document()
+            .set(data)
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to request swap: ${e.message}"
+            }
+    }
+
+    fun respondToSwap(requestId: String, accept: Boolean) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val newStatus = if (accept) "target_accepted" else "declined"
+        val previous = _swapRequests.value
+        _swapRequests.value = _swapRequests.value.map {
+            if (it.id == requestId) it.copy(status = newStatus, resolvedBy = if (!accept) uid else "", resolvedAt = if (!accept) System.currentTimeMillis() else 0) else it
+        }
+        val updates = hashMapOf<String, Any>("status" to newStatus)
+        if (!accept) {
+            updates["resolvedBy"] = uid
+            updates["resolvedAt"] = System.currentTimeMillis()
+        }
+        database.collection("swap_requests").document(requestId)
+            .update(updates)
+            .addOnFailureListener { e ->
+                _swapRequests.value = previous
+                _errorMessage.value = "Failed to respond to swap: ${e.message}"
+            }
+    }
+
+    fun approveSwap(requestId: String, approve: Boolean) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+
+        if (!approve) {
+            val previous = _swapRequests.value
+            _swapRequests.value = _swapRequests.value.map {
+                if (it.id == requestId) it.copy(status = "declined", resolvedBy = uid, resolvedAt = System.currentTimeMillis()) else it
+            }
+            database.collection("swap_requests").document(requestId)
+                .update(mapOf("status" to "declined", "resolvedBy" to uid, "resolvedAt" to System.currentTimeMillis()))
+                .addOnFailureListener { e ->
+                    _swapRequests.value = previous
+                    _errorMessage.value = "Failed to decline swap: ${e.message}"
+                }
+            return
+        }
+
+        val request = _swapRequests.value.find { it.id == requestId } ?: return
+        executeSwap(request)
+    }
+
+    private fun executeSwap(request: SwapRequest) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+
+        val batch = database.batch()
+        batch.update(
+            database.collection("team_shifts").document(request.requesterShiftId),
+            "assignedTo", request.targetMemberId
+        )
+        batch.update(
+            database.collection("team_shifts").document(request.targetShiftId),
+            "assignedTo", request.requesterId
+        )
+        batch.update(
+            database.collection("swap_requests").document(request.id),
+            mapOf("status" to "approved", "resolvedBy" to uid, "resolvedAt" to System.currentTimeMillis())
+        )
+
+        batch.commit()
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to execute swap: ${e.message}"
+            }
+    }
+
+    fun cancelSwapRequest(requestId: String) {
+        val database = db ?: return
+        val previous = _swapRequests.value
+        _swapRequests.value = _swapRequests.value.filter { it.id != requestId }
+        database.collection("swap_requests").document(requestId)
+            .delete()
+            .addOnFailureListener { e ->
+                _swapRequests.value = previous
+                _errorMessage.value = "Failed to cancel swap: ${e.message}"
+            }
+    }
+
     fun leaveTeam(teamId: String) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
@@ -708,5 +848,6 @@ class TeamViewModel : ViewModel() {
         shiftsListener?.remove()
         memberJobsListener?.remove()
         messagesListener?.remove()
+        swapRequestsListener?.remove()
     }
 }

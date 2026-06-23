@@ -14,6 +14,7 @@ struct TeamView: View {
     @State private var showTasksDetail = false
     @State private var showRosterDetail = false
     @State private var showChatDetail = false
+    @State private var showSwapRequests = false
 
     var body: some View {
         NavigationStack {
@@ -97,6 +98,10 @@ struct TeamView: View {
             }
             .sheet(isPresented: $showChatDetail) {
                 TeamChatView()
+                    .environmentObject(teamViewModel)
+            }
+            .sheet(isPresented: $showSwapRequests) {
+                TeamSwapRequestsView()
                     .environmentObject(teamViewModel)
             }
             .alert("Leave Team", isPresented: $showLeaveConfirm) {
@@ -307,6 +312,16 @@ struct TeamView: View {
                 )
                 .frame(height: 100)
             }
+
+            let pendingSwaps = teamViewModel.swapRequests.filter { $0.status != "approved" && $0.status != "declined" }.count
+            BentoTile(
+                title: "Shift Swaps",
+                subtitle: pendingSwaps > 0 ? "\(pendingSwaps) pending" : "No requests",
+                systemImage: "arrow.triangle.swap",
+                tint: .accentOrange,
+                action: { showSwapRequests = true }
+            )
+            .frame(height: 100)
         }
     }
 }
