@@ -321,7 +321,7 @@ struct SwapPickerView: View {
         return Button(action: {
             guard let source = sourceShift else { return }
             teamViewModel.requestSwap(
-                requesterShiftId: source.id,
+                myShiftId: source.id,
                 targetMemberId: shift.assignedTo,
                 targetShiftId: shift.id
             )
