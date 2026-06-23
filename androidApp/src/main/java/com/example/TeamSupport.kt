@@ -378,6 +378,14 @@ fun TeamScreen(
                                     onClick = { onNavigateToDetail("tasks") }
                                 )
                             }
+                            BentoTile(
+                                modifier = Modifier.fillMaxWidth().height(100.dp),
+                                title = "Team Roster",
+                                subtitle = "Weekly schedule grid",
+                                icon = Icons.Default.ViewWeek,
+                                tint = SecondaryGreen,
+                                onClick = { onNavigateToDetail("roster") }
+                            )
                         }
                     }
                 }

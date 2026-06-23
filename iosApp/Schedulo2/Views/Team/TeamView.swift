@@ -12,6 +12,7 @@ struct TeamView: View {
     @State private var showDashboardDetail = false
     @State private var showScheduleDetail = false
     @State private var showTasksDetail = false
+    @State private var showRosterDetail = false
 
     var body: some View {
         NavigationStack {
@@ -87,6 +88,10 @@ struct TeamView: View {
             }
             .sheet(isPresented: $showTasksDetail) {
                 TeamTasksDetailView()
+                    .environmentObject(teamViewModel)
+            }
+            .sheet(isPresented: $showRosterDetail) {
+                TeamRosterView()
                     .environmentObject(teamViewModel)
             }
             .alert("Leave Team", isPresented: $showLeaveConfirm) {
@@ -277,6 +282,15 @@ struct TeamView: View {
                 )
                 .frame(height: 130)
             }
+
+            BentoTile(
+                title: "Team Roster",
+                subtitle: "Weekly schedule grid",
+                systemImage: "rectangle.split.3x3",
+                tint: .secondaryGreen,
+                action: { showRosterDetail = true }
+            )
+            .frame(height: 100)
         }
     }
 }

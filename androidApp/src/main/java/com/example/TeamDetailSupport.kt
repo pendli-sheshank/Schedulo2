@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,12 +18,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import com.example.ui.theme.AccentBlue
 import com.example.ui.theme.AccentOrange
 import com.example.ui.theme.PrimaryGreen
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
 import com.schedulo.shared.model.TeamShift
 import kotlinx.coroutines.flow.MutableStateFlow
+import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +56,7 @@ fun TeamDetailScreen(
         "dashboard" -> "Team Dashboard"
         "schedule" -> "Team Schedule"
         "tasks" -> "Team Tasks"
+        "roster" -> "Team Roster"
         else -> "Team"
     }
 
@@ -112,6 +119,11 @@ fun TeamDetailScreen(
                 isManager = isManager,
                 currentUserId = currentUserId,
                 teamViewModel = teamViewModel
+            )
+            "roster" -> RosterDetailContent(
+                modifier = Modifier.padding(padding),
+                teamShifts = teamShifts,
+                members = members
             )
         }
     }
@@ -385,6 +397,194 @@ private fun TasksDetailContent(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RosterDetailContent(
+    modifier: Modifier,
+    teamShifts: List<TeamShift>,
+    members: List<TeamMember>
+) {
+    var weekOffset by remember { mutableIntStateOf(0) }
+
+    val weekStartMillis = remember(weekOffset) {
+        Calendar.getInstance().apply {
+            firstDayOfWeek = Calendar.MONDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            add(Calendar.WEEK_OF_YEAR, weekOffset)
+        }.timeInMillis
+    }
+    val weekEndMillis = weekStartMillis + 7L * 24 * 60 * 60 * 1000L
+
+    val dayFormat = remember { SimpleDateFormat("EEE", Locale.US) }
+    val dateFormat = remember { SimpleDateFormat("M/dd", Locale.US) }
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.US) }
+    val weekLabelFormat = remember { SimpleDateFormat("MMM dd", Locale.US) }
+
+    val daysMillis = remember(weekStartMillis) {
+        (0..6).map { weekStartMillis + it.toLong() * 24 * 60 * 60 * 1000L }
+    }
+
+    val weekShifts = remember(teamShifts, weekStartMillis, weekEndMillis) {
+        teamShifts.filter { it.startTime < weekEndMillis && it.endTime > weekStartMillis }
+    }
+
+    val statusColor = @Composable { status: String ->
+        when (status) {
+            "accepted" -> PrimaryGreen
+            "declined" -> MaterialTheme.colorScheme.error
+            else -> AccentOrange
+        }
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { weekOffset-- }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Previous week")
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "${weekLabelFormat.format(Date(weekStartMillis))} – ${weekLabelFormat.format(Date(weekEndMillis - 24 * 60 * 60 * 1000L))}",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    when (weekOffset) {
+                        0 -> "This Week"
+                        1 -> "Next Week"
+                        -1 -> "Last Week"
+                        else -> if (weekOffset > 0) "In $weekOffset weeks" else "${-weekOffset} weeks ago"
+                    },
+                    fontSize = 12.sp,
+                    color = AccentBlue,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            IconButton(onClick = { weekOffset++ }) {
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, "Next week")
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp)
+        ) {
+            Box(
+                modifier = Modifier.width(100.dp).padding(4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Member", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            daysMillis.forEach { dayMillis ->
+                Box(
+                    modifier = Modifier.width(100.dp).padding(4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(dayFormat.format(Date(dayMillis)), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(dateFormat.format(Date(dayMillis)), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp))
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            if (members.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("No members", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                items(members, key = { it.id }) { member ->
+                    val memberName = member.displayName.ifBlank { member.email.substringBefore("@") }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.width(100.dp).padding(4.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Text(
+                                memberName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        daysMillis.forEach { dayMillis ->
+                            val dayEnd = dayMillis + 24L * 60 * 60 * 1000L
+                            val dayShifts = weekShifts.filter {
+                                it.assignedTo == member.userId && it.startTime < dayEnd && it.endTime > dayMillis
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .width(100.dp)
+                                    .heightIn(min = 48.dp)
+                                    .padding(2.dp),
+                                contentAlignment = Alignment.TopCenter
+                            ) {
+                                if (dayShifts.isEmpty()) {
+                                    Text("—", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                                } else {
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        dayShifts.forEach { shift ->
+                                            val color = statusColor(shift.status)
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = color.copy(alpha = 0.12f),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    Text(
+                                                        timeFormat.format(Date(shift.startTime)),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = color
+                                                    )
+                                                    Text(
+                                                        timeFormat.format(Date(shift.endTime)),
+                                                        fontSize = 9.sp,
+                                                        color = color.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
                 }
             }
         }
