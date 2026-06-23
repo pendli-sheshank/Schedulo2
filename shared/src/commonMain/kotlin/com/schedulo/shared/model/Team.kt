@@ -6,7 +6,8 @@ data class Team(
     var ownerId: String = "",
     var inviteCode: String = "",
     var createdAt: Long = 0,
-    var memberCount: Int = 0
+    var memberCount: Int = 0,
+    var weeklyCycleStartDay: String = "Monday"
 )
 
 data class TeamMember(

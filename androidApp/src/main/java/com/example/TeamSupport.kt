@@ -67,6 +67,7 @@ fun TeamScreen(
     var showJoinDialog by remember { mutableStateOf(false) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var showEditTeamDialog by remember { mutableStateOf(false) }
+    var showWeekStartDayDialog by remember { mutableStateOf(false) }
     var showDeleteTeamConfirm by remember { mutableStateOf(false) }
     var teamSelectorExpanded by remember { mutableStateOf(false) }
     var overflowMenuExpanded by remember { mutableStateOf(false) }
@@ -112,6 +113,11 @@ fun TeamScreen(
                                         text = { Text("Edit Team Name") },
                                         leadingIcon = { Icon(Icons.Default.Edit, null) },
                                         onClick = { overflowMenuExpanded = false; showEditTeamDialog = true }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Week Start Day") },
+                                        leadingIcon = { Icon(Icons.Default.DateRange, null) },
+                                        onClick = { overflowMenuExpanded = false; showWeekStartDayDialog = true }
                                     )
                                 }
                                 DropdownMenuItem(
@@ -481,6 +487,46 @@ fun TeamScreen(
                 ) { Text("Save", fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { showEditTeamDialog = false }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showWeekStartDayDialog && currentTeam != null) {
+        val allDays = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+        var selectedDay by remember { mutableStateOf(currentTeam!!.weeklyCycleStartDay) }
+        AlertDialog(
+            onDismissRequest = { showWeekStartDayDialog = false },
+            title = { Text("Week Start Day", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Select which day the team's weekly schedule starts:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    Spacer(Modifier.height(12.dp))
+                    allDays.forEach { day ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedDay = day }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = selectedDay == day, onClick = { selectedDay = day })
+                            Spacer(Modifier.width(8.dp))
+                            Text(day, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        teamViewModel.updateWeeklyCycleStartDay(currentTeam!!.id, selectedDay)
+                        showWeekStartDayDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+                ) { Text("Save", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showWeekStartDayDialog = false }) { Text("Cancel") } },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(16.dp)
         )
@@ -1239,7 +1285,8 @@ fun TeamWeekPlanDialog(
     onAssignShifts: (memberId: String, company: String, role: String, hourlyRate: Double, notes: String, tasks: List<ShiftTask>, weekStartMillis: Long, dayEntries: List<TeamWeekDayEntry>) -> Unit,
     members: List<TeamMember>,
     jobs: List<Job> = emptyList(),
-    teamViewModel: TeamViewModel? = null
+    teamViewModel: TeamViewModel? = null,
+    weeklyCycleStartDay: String = "Monday"
 ) {
     var selectedMember by remember { mutableStateOf<TeamMember?>(null) }
     var memberDropdownExpanded by remember { mutableStateOf(false) }
@@ -1260,13 +1307,26 @@ fun TeamWeekPlanDialog(
 
     val memberJobs by (teamViewModel?.memberJobs ?: MutableStateFlow(emptyList<Job>())).collectAsState()
 
-    val daysOfWeek = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
+    val allDays = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
+    val daysOfWeek = remember(weeklyCycleStartDay) {
+        val idx = allDays.indexOf(weeklyCycleStartDay).coerceAtLeast(0)
+        allDays.subList(idx, allDays.size) + allDays.subList(0, idx)
+    }
     val dayFormat = remember { SimpleDateFormat("M/dd", Locale.US) }
 
-    val weekStartMillis = remember(weekOffset) {
+    val calendarDayOfWeek = remember(weeklyCycleStartDay) {
+        when (weeklyCycleStartDay) {
+            "Sunday" -> Calendar.SUNDAY; "Monday" -> Calendar.MONDAY; "Tuesday" -> Calendar.TUESDAY
+            "Wednesday" -> Calendar.WEDNESDAY; "Thursday" -> Calendar.THURSDAY
+            "Friday" -> Calendar.FRIDAY; "Saturday" -> Calendar.SATURDAY
+            else -> Calendar.MONDAY
+        }
+    }
+
+    val weekStartMillis = remember(weekOffset, calendarDayOfWeek) {
         Calendar.getInstance().apply {
-            firstDayOfWeek = Calendar.MONDAY
-            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            firstDayOfWeek = calendarDayOfWeek
+            set(Calendar.DAY_OF_WEEK, calendarDayOfWeek)
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             add(Calendar.WEEK_OF_YEAR, weekOffset)
         }.timeInMillis

@@ -10,6 +10,7 @@ struct TeamInfo: Identifiable, Equatable {
     var inviteCode: String = ""
     var createdAt: Int64 = 0
     var memberCount: Int = 0
+    var weeklyCycleStartDay: String = "Monday"
 }
 
 struct TeamMemberInfo: Identifiable, Equatable {
@@ -171,7 +172,8 @@ final class TeamViewModel: ObservableObject {
                     ownerId: data["ownerId"] as? String ?? "",
                     inviteCode: data["inviteCode"] as? String ?? "",
                     createdAt: data["createdAt"] as? Int64 ?? 0,
-                    memberCount: data["memberCount"] as? Int ?? 0
+                    memberCount: data["memberCount"] as? Int ?? 0,
+                    weeklyCycleStartDay: data["weeklyCycleStartDay"] as? String ?? "Monday"
                 )
                 fetched.append(team)
             }
@@ -274,7 +276,8 @@ final class TeamViewModel: ObservableObject {
             "ownerId": uid,
             "inviteCode": inviteCode,
             "createdAt": Int64(Date().timeIntervalSince1970 * 1000),
-            "memberCount": 1
+            "memberCount": 1,
+            "weeklyCycleStartDay": "Monday"
         ]
 
         let memberData: [String: Any] = [
@@ -465,6 +468,22 @@ final class TeamViewModel: ObservableObject {
             if error == nil {
                 DispatchQueue.main.async {
                     self?.loadTeams()
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self?.errorMessage = error?.localizedDescription
+                }
+            }
+        }
+    }
+
+    func updateWeeklyCycleStartDay(teamId: String, day: String) {
+        db.collection("teams").document(teamId).updateData(["weeklyCycleStartDay": day]) { [weak self] error in
+            if error == nil {
+                DispatchQueue.main.async {
+                    if self?.currentTeam?.id == teamId {
+                        self?.currentTeam?.weeklyCycleStartDay = day
+                    }
                 }
             } else {
                 DispatchQueue.main.async {

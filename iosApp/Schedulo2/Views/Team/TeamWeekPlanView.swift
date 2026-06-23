@@ -19,14 +19,39 @@ struct TeamWeekPlanView: View {
         Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: Date()) ?? Date()
     }
 
-    private let daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    private static let allDays: [String] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+    private var cycleStartDay: String {
+        teamViewModel.currentTeam?.weeklyCycleStartDay ?? "Monday"
+    }
+
+    private var daysOfWeek: [String] {
+        let all = Self.allDays
+        let idx: Int = all.firstIndex(of: cycleStartDay) ?? 0
+        return Array(all[idx...]) + Array(all[..<idx])
+    }
+
+    private static func weekdayNumber(for dayName: String) -> Int {
+        switch dayName {
+        case "Sunday": return 1
+        case "Monday": return 2
+        case "Tuesday": return 3
+        case "Wednesday": return 4
+        case "Thursday": return 5
+        case "Friday": return 6
+        case "Saturday": return 7
+        default: return 2
+        }
+    }
 
     private var weekStartDate: Date {
         let cal = Calendar.current
-        var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
-        comps.weekday = 2
-        let thisMonday = cal.date(from: comps) ?? Date()
-        return cal.date(byAdding: .weekOfYear, value: weekOffset, to: thisMonday) ?? thisMonday
+        let targetWeekday: Int = Self.weekdayNumber(for: cycleStartDay)
+        let today = Date()
+        let todayWeekday: Int = cal.component(.weekday, from: today)
+        let diff: Int = (todayWeekday - targetWeekday + 7) % 7
+        let cycleStart: Date = cal.startOfDay(for: cal.date(byAdding: .day, value: -diff, to: today)!)
+        return cal.date(byAdding: .weekOfYear, value: weekOffset, to: cycleStart) ?? cycleStart
     }
 
     private func dayDate(for index: Int) -> Date {
@@ -294,12 +319,17 @@ struct TeamWeekPlanView: View {
         for i in 0..<7 {
             guard dayEnabled[i] else { continue }
 
-            let dayStart = cal.startOfDay(for: dayDate(for: i))
-            let startComps = cal.dateComponents([.hour, .minute], from: dayStartTimes[i])
-            let endComps = cal.dateComponents([.hour, .minute], from: dayEndTimes[i])
+            let dayStart: Date = cal.startOfDay(for: dayDate(for: i))
+            let startComps: DateComponents = cal.dateComponents([.hour, .minute], from: dayStartTimes[i])
+            let endComps: DateComponents = cal.dateComponents([.hour, .minute], from: dayEndTimes[i])
 
-            let actualStart = cal.date(bySettingHour: startComps.hour ?? 9, minute: startComps.minute ?? 0, second: 0, of: dayStart) ?? dayStart
-            var actualEnd = cal.date(bySettingHour: endComps.hour ?? 17, minute: endComps.minute ?? 0, second: 0, of: dayStart) ?? dayStart
+            let startHour: Int = startComps.hour ?? 9
+            let startMinute: Int = startComps.minute ?? 0
+            let endHour: Int = endComps.hour ?? 17
+            let endMinute: Int = endComps.minute ?? 0
+
+            let actualStart: Date = cal.date(bySettingHour: startHour, minute: startMinute, second: 0, of: dayStart) ?? dayStart
+            var actualEnd: Date = cal.date(bySettingHour: endHour, minute: endMinute, second: 0, of: dayStart) ?? dayStart
 
             if actualEnd <= actualStart {
                 actualEnd = actualEnd.addingTimeInterval(86400)
