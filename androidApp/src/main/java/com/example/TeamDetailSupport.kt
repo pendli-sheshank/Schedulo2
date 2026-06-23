@@ -5,10 +5,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +28,7 @@ import com.example.ui.theme.AccentOrange
 import com.example.ui.theme.PrimaryGreen
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
+import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.text.SimpleDateFormat
@@ -52,11 +55,14 @@ fun TeamDetailScreen(
     var showWeekPlanDialog by remember { mutableStateOf(false) }
     var scheduleMenuExpanded by remember { mutableStateOf(false) }
 
+    val teamMessages by teamViewModel.teamMessages.collectAsState()
+
     val title = when (section) {
         "dashboard" -> "Team Dashboard"
         "schedule" -> "Team Schedule"
         "tasks" -> "Team Tasks"
         "roster" -> "Team Roster"
+        "chat" -> "Team Chat"
         else -> "Team"
     }
 
@@ -124,6 +130,14 @@ fun TeamDetailScreen(
                 modifier = Modifier.padding(padding),
                 teamShifts = teamShifts,
                 members = members
+            )
+            "chat" -> ChatDetailContent(
+                modifier = Modifier.padding(padding),
+                messages = teamMessages,
+                isManager = isManager,
+                currentUserId = currentUserId,
+                currentTeam = currentTeam,
+                teamViewModel = teamViewModel
             )
         }
     }
@@ -586,6 +600,203 @@ private fun RosterDetailContent(
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatDetailContent(
+    modifier: Modifier,
+    messages: List<TeamMessage>,
+    isManager: Boolean,
+    currentUserId: String,
+    currentTeam: Team?,
+    teamViewModel: TeamViewModel
+) {
+    var messageText by remember { mutableStateOf("") }
+    var isAnnouncement by remember { mutableStateOf(false) }
+    val isOwner = currentTeam?.ownerId == currentUserId
+    val listState = rememberLazyListState()
+    val timeFormat = remember { java.text.SimpleDateFormat("MMM dd, h:mm a", java.util.Locale.US) }
+
+    val pinnedMessages = remember(messages) { messages.filter { it.isPinned } }
+    val sortedMessages = remember(messages) { messages.sortedByDescending { it.createdAt } }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (pinnedMessages.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = AccentOrange.copy(alpha = 0.1f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.PushPin, null, tint = AccentOrange, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Pinned", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AccentOrange)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    pinnedMessages.take(3).forEach { msg ->
+                        Text(
+                            "${msg.senderName.ifBlank { "Unknown" }}: ${msg.text}",
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            state = listState,
+            reverseLayout = true,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(sortedMessages, key = { it.id }) { message ->
+                val isMe = message.senderId == currentUserId
+                ChatBubble(
+                    message = message,
+                    isMe = isMe,
+                    isOwner = isOwner,
+                    timeFormat = timeFormat,
+                    onDelete = { teamViewModel.deleteMessage(message.id) },
+                    onTogglePin = { teamViewModel.togglePin(message.id) }
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        if (isManager) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = isAnnouncement,
+                    onClick = { isAnnouncement = !isAnnouncement },
+                    label = { Text("Announce", fontSize = 11.sp) },
+                    leadingIcon = if (isAnnouncement) {
+                        { Icon(Icons.Default.Campaign, null, modifier = Modifier.size(14.dp)) }
+                    } else null,
+                    modifier = Modifier.height(28.dp)
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = messageText,
+                onValueChange = { if (it.length <= 2000) messageText = it },
+                placeholder = { Text("Type a message...", fontSize = 14.sp) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(24.dp),
+                maxLines = 3,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = {
+                    if (messageText.isNotBlank()) {
+                        teamViewModel.sendMessage(messageText, isAnnouncement)
+                        messageText = ""
+                        isAnnouncement = false
+                    }
+                },
+                enabled = messageText.isNotBlank()
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    "Send",
+                    tint = if (messageText.isNotBlank()) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatBubble(
+    message: TeamMessage,
+    isMe: Boolean,
+    isOwner: Boolean,
+    timeFormat: java.text.SimpleDateFormat,
+    onDelete: () -> Unit,
+    onTogglePin: () -> Unit
+) {
+    val bgColor = when {
+        message.isAnnouncement -> AccentOrange.copy(alpha = 0.12f)
+        isMe -> PrimaryGreen.copy(alpha = 0.12f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
+    ) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = bgColor),
+            modifier = Modifier.widthIn(max = 280.dp)
+        ) {
+            Column(modifier = Modifier.padding(10.dp)) {
+                if (message.isAnnouncement) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Campaign, null, tint = AccentOrange, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Announcement", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AccentOrange)
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
+                if (!isMe) {
+                    Text(
+                        message.senderName.ifBlank { "Unknown" },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(message.text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        timeFormat.format(java.util.Date(message.createdAt)),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (message.isPinned) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.Default.PushPin, null, tint = AccentOrange, modifier = Modifier.size(10.dp))
+                    }
+                }
+            }
+        }
+        if (isMe || isOwner) {
+            Row(modifier = Modifier.padding(top = 2.dp)) {
+                if (isOwner) {
+                    Icon(
+                        if (message.isPinned) Icons.Default.PushPin else Icons.Default.PushPin,
+                        if (message.isPinned) "Unpin" else "Pin",
+                        tint = if (message.isPinned) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp).clickable { onTogglePin() }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Icon(
+                    Icons.Default.Delete,
+                    "Delete",
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                    modifier = Modifier.size(14.dp).clickable { onDelete() }
+                )
             }
         }
     }

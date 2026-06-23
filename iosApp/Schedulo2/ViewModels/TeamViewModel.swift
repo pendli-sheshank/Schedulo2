@@ -56,6 +56,21 @@ struct TeamShiftInfo: Identifiable, Equatable {
     }
 }
 
+struct TeamMessageInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var teamId: String = ""
+    var senderId: String = ""
+    var senderName: String = ""
+    var text: String = ""
+    var isAnnouncement: Bool = false
+    var isPinned: Bool = false
+    var createdAt: Int64 = 0
+
+    var createdDate: Date {
+        Date(timeIntervalSince1970: Double(createdAt) / 1000.0)
+    }
+}
+
 struct MemberJobInfo: Identifiable, Equatable {
     var id: String = UUID().uuidString
     var title: String = ""
@@ -72,12 +87,14 @@ final class TeamViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var userRole: String = "member"
     @Published var memberJobs: [MemberJobInfo] = []
+    @Published var teamMessages: [TeamMessageInfo] = []
 
     private let db = Firestore.firestore(database: "schedulo2")
     private var teamsListener: ListenerRegistration?
     private var membersListener: ListenerRegistration?
     private var shiftsListener: ListenerRegistration?
     private var memberJobsListener: ListenerRegistration?
+    private var messagesListener: ListenerRegistration?
 
     var currentUserId: String? { Auth.auth().currentUser?.uid }
     var currentUserEmail: String? { Auth.auth().currentUser?.email }
@@ -155,6 +172,7 @@ final class TeamViewModel: ObservableObject {
         currentTeam = team
         loadMembers(teamId: team.id)
         loadTeamShifts(teamId: team.id)
+        loadTeamMessages(teamId: team.id)
         updateUserRole(teamId: team.id)
     }
 
@@ -545,6 +563,82 @@ final class TeamViewModel: ObservableObject {
         }
     }
 
+    func loadTeamMessages(teamId: String) {
+        messagesListener?.remove()
+        messagesListener = db.collection("team_messages")
+            .whereField("teamId", isEqualTo: teamId)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let docs = snapshot?.documents else { return }
+                self?.teamMessages = docs.map { doc in
+                    let data = doc.data()
+                    return TeamMessageInfo(
+                        id: doc.documentID,
+                        teamId: data["teamId"] as? String ?? "",
+                        senderId: data["senderId"] as? String ?? "",
+                        senderName: data["senderName"] as? String ?? "",
+                        text: data["text"] as? String ?? "",
+                        isAnnouncement: data["isAnnouncement"] as? Bool ?? false,
+                        isPinned: data["isPinned"] as? Bool ?? false,
+                        createdAt: (data["createdAt"] as? NSNumber)?.int64Value ?? 0
+                    )
+                }
+            }
+    }
+
+    func sendMessage(text: String, isAnnouncement: Bool = false) {
+        guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let senderName = currentUserEmail ?? ""
+        let data: [String: Any] = [
+            "teamId": teamId,
+            "senderId": uid,
+            "senderName": senderName,
+            "text": trimmed,
+            "isAnnouncement": isAnnouncement,
+            "isPinned": false,
+            "createdAt": Int64(Date().timeIntervalSince1970 * 1000)
+        ]
+
+        db.collection("team_messages").document(UUID().uuidString).setData(data) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.errorMessage = "Failed to send message: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func deleteMessage(messageId: String) {
+        let previous = teamMessages
+        teamMessages.removeAll { $0.id == messageId }
+        db.collection("team_messages").document(messageId).delete { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.teamMessages = previous
+                    self?.errorMessage = "Failed to delete: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func togglePin(messageId: String) {
+        guard let idx = teamMessages.firstIndex(where: { $0.id == messageId }) else { return }
+        let previous = teamMessages
+        let newPinned = !teamMessages[idx].isPinned
+        teamMessages[idx].isPinned = newPinned
+        db.collection("team_messages").document(messageId).updateData(["isPinned": newPinned]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.teamMessages = previous
+                    self?.errorMessage = "Failed to update pin: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func updateShiftStatus(shiftId: String, newStatus: String) {
         let previous = teamShifts
         if let idx = teamShifts.firstIndex(where: { $0.id == shiftId }) {
@@ -588,6 +682,7 @@ final class TeamViewModel: ObservableObject {
         membersListener?.remove()
         shiftsListener?.remove()
         memberJobsListener?.remove()
+        messagesListener?.remove()
     }
 
     private func generateInviteCode() -> String {

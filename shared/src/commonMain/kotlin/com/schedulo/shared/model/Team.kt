@@ -25,6 +25,17 @@ data class ShiftTask(
     var isCompleted: Boolean = false
 )
 
+data class TeamMessage(
+    var id: String = "",
+    var teamId: String = "",
+    var senderId: String = "",
+    var senderName: String = "",
+    var text: String = "",
+    var isAnnouncement: Boolean = false,
+    var isPinned: Boolean = false,
+    var createdAt: Long = 0
+)
+
 data class TeamShift(
     var id: String = "",
     var teamId: String = "",

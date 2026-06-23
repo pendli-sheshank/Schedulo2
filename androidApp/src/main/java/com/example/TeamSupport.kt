@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -378,14 +379,26 @@ fun TeamScreen(
                                     onClick = { onNavigateToDetail("tasks") }
                                 )
                             }
-                            BentoTile(
-                                modifier = Modifier.fillMaxWidth().height(100.dp),
-                                title = "Team Roster",
-                                subtitle = "Weekly schedule grid",
-                                icon = Icons.Default.ViewWeek,
-                                tint = SecondaryGreen,
-                                onClick = { onNavigateToDetail("roster") }
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                BentoTile(
+                                    modifier = Modifier.weight(1f).height(100.dp),
+                                    title = "Team Roster",
+                                    subtitle = "Weekly grid",
+                                    icon = Icons.Default.ViewWeek,
+                                    tint = SecondaryGreen,
+                                    onClick = { onNavigateToDetail("roster") }
+                                )
+                                BentoTile(
+                                    modifier = Modifier.weight(1f).height(100.dp),
+                                    title = "Team Chat",
+                                    subtitle = "Messages",
+                                    icon = Icons.AutoMirrored.Filled.Chat,
+                                    tint = AccentBlue,
+                                    onClick = { onNavigateToDetail("chat") }
+                                )
+                            }
                         }
                     }
                 }

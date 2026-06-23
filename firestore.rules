@@ -174,5 +174,32 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && resource.data.assignedBy == request.auth.uid;
     }
+
+    // Team Messages: authenticated users can read; sender or owner can delete
+    match /team_messages/{messageId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.teamId is string
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.isAnnouncement is bool
+        && request.resource.data.isPinned is bool
+        && request.resource.data.createdAt is int
+        && (!request.resource.data.isAnnouncement
+          || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid);
+      allow update: if request.auth != null
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.text == resource.data.text
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (resource.data.senderId == request.auth.uid
+          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
+      allow delete: if request.auth != null
+        && (resource.data.senderId == request.auth.uid
+          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
+    }
   }
 }

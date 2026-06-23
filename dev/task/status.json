@@ -2,10 +2,9 @@
   "finished": [
     "Phase 0: Fix Notifications + Widgets",
     "Phase 1: Team Permissions + Shift Accept/Decline",
-    "Phase 2: Team Roster/Calendar View"
+    "Phase 2: Team Roster/Calendar View",
+    "Phase 3: Team Chat/Announcements"
   ],
-  "current": "Phase 3: Team Chat/Announcements",
-  "pending": [
-    "Phase 4: Shift Swap Requests + Manager Approval"
-  ]
+  "current": "Phase 4: Shift Swap Requests + Manager Approval",
+  "pending": []
 }

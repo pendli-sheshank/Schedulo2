@@ -7,9 +7,11 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
+import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,10 +45,14 @@ class TeamViewModel : ViewModel() {
     private val _memberJobs = MutableStateFlow<List<Job>>(emptyList())
     val memberJobs = _memberJobs.asStateFlow()
 
+    private val _teamMessages = MutableStateFlow<List<TeamMessage>>(emptyList())
+    val teamMessages = _teamMessages.asStateFlow()
+
     private var teamsListener: ListenerRegistration? = null
     private var membersListener: ListenerRegistration? = null
     private var shiftsListener: ListenerRegistration? = null
     private var memberJobsListener: ListenerRegistration? = null
+    private var messagesListener: ListenerRegistration? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -214,6 +220,29 @@ class TeamViewModel : ViewModel() {
                             tasks = tasks
                         )
                     }.sortedByDescending { it.startTime }
+                }
+            }
+
+        // Listen for team messages
+        messagesListener?.remove()
+        messagesListener = database.collection("team_messages")
+            .whereEqualTo("teamId", team.id)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { value, error ->
+                if (error != null) return@addSnapshotListener
+                if (value != null) {
+                    _teamMessages.value = value.documents.map { doc ->
+                        TeamMessage(
+                            id = doc.id,
+                            teamId = doc.getString("teamId") ?: "",
+                            senderId = doc.getString("senderId") ?: "",
+                            senderName = doc.getString("senderName") ?: "",
+                            text = doc.getString("text") ?: "",
+                            isAnnouncement = doc.getBoolean("isAnnouncement") ?: false,
+                            isPinned = doc.getBoolean("isPinned") ?: false,
+                            createdAt = doc.getLong("createdAt") ?: 0
+                        )
+                    }
                 }
             }
     }
@@ -557,6 +586,58 @@ class TeamViewModel : ViewModel() {
             }
     }
 
+    fun sendMessage(text: String, isAnnouncement: Boolean = false) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val team = _currentTeam.value ?: return
+        if (text.isBlank()) return
+
+        val senderName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val messageData = hashMapOf(
+            "teamId" to team.id,
+            "senderId" to uid,
+            "senderName" to senderName,
+            "text" to text.trim(),
+            "isAnnouncement" to isAnnouncement,
+            "isPinned" to false,
+            "createdAt" to System.currentTimeMillis()
+        )
+
+        database.collection("team_messages").document()
+            .set(messageData)
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to send message: ${e.message}"
+            }
+    }
+
+    fun deleteMessage(messageId: String) {
+        val database = db ?: return
+        val previous = _teamMessages.value
+        _teamMessages.value = _teamMessages.value.filter { it.id != messageId }
+        database.collection("team_messages").document(messageId)
+            .delete()
+            .addOnFailureListener { e ->
+                _teamMessages.value = previous
+                _errorMessage.value = "Failed to delete message: ${e.message}"
+            }
+    }
+
+    fun togglePin(messageId: String) {
+        val database = db ?: return
+        val message = _teamMessages.value.find { it.id == messageId } ?: return
+        val newPinned = !message.isPinned
+        val previous = _teamMessages.value
+        _teamMessages.value = _teamMessages.value.map {
+            if (it.id == messageId) it.copy(isPinned = newPinned) else it
+        }
+        database.collection("team_messages").document(messageId)
+            .update("isPinned", newPinned)
+            .addOnFailureListener { e ->
+                _teamMessages.value = previous
+                _errorMessage.value = "Failed to update pin: ${e.message}"
+            }
+    }
+
     fun updateShiftStatus(shiftId: String, newStatus: String) {
         val database = db ?: return
         val previousShifts = _teamShifts.value
@@ -626,5 +707,6 @@ class TeamViewModel : ViewModel() {
         membersListener?.remove()
         shiftsListener?.remove()
         memberJobsListener?.remove()
+        messagesListener?.remove()
     }
 }
