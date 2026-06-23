@@ -46,19 +46,11 @@ struct MainTabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom) {
                 HStack {
-                    TabBarButton(icon: "house.fill", label: "Home", isSelected: selectedTab == 0, namespace: tabNamespace) {
-                        selectedTab = 0
-                    }
-                    TabBarButton(icon: "calendar", label: "Plan", isSelected: selectedTab == 1, namespace: tabNamespace) {
-                        selectedTab = 1
-                    }
+                    TabBarButton(icon: "house.fill", label: "Home", isSelected: selectedTab == 0, action: { selectedTab = 0 }, namespace: tabNamespace)
+                    TabBarButton(icon: "calendar", label: "Plan", isSelected: selectedTab == 1, action: { selectedTab = 1 }, namespace: tabNamespace)
                     Spacer().frame(width: 56)
-                    TabBarButton(icon: "dollarsign.circle.fill", label: "Pay", isSelected: selectedTab == 2, namespace: tabNamespace) {
-                        selectedTab = 2
-                    }
-                    TabBarButton(icon: "person.3.fill", label: "Team", isSelected: selectedTab == 3, namespace: tabNamespace) {
-                        selectedTab = 3
-                    }
+                    TabBarButton(icon: "dollarsign.circle.fill", label: "Pay", isSelected: selectedTab == 2, action: { selectedTab = 2 }, namespace: tabNamespace)
+                    TabBarButton(icon: "person.3.fill", label: "Team", isSelected: selectedTab == 3, action: { selectedTab = 3 }, namespace: tabNamespace)
                 }
                 .padding(.horizontal, 8)
                 .frame(height: 64)
