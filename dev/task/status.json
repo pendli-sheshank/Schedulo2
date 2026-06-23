@@ -1,0 +1,11 @@
+{
+  "finished": [
+    "Phase 0: Fix Notifications + Widgets"
+  ],
+  "current": "Phase 1: Team Permissions + Shift Accept/Decline",
+  "pending": [
+    "Phase 2: Team Roster/Calendar View",
+    "Phase 3: Team Chat/Announcements",
+    "Phase 4: Shift Swap Requests + Manager Approval"
+  ]
+}

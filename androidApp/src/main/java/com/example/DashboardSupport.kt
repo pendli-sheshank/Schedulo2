@@ -592,6 +592,7 @@ class DashboardViewModel : ViewModel() {
             .addOnSuccessListener {
                 if (context != null) {
                     try { CalendarService.removeShiftFromCalendar(context, shiftId) } catch (_: Exception) {}
+                    try { NotificationHelper.cancelReminder(context, shiftId) } catch (_: Exception) {}
                 }
             }
             .addOnFailureListener { e ->

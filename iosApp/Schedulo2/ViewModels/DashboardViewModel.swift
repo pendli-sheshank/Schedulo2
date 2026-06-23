@@ -52,6 +52,7 @@ final class DashboardViewModel: ObservableObject {
     private let service = FirebaseService.shared
     private var cancellables = Set<AnyCancellable>()
     private var loadedForUserId: String?
+    private var hasRescheduledReminders = false
 
     init() {
         updateWidgetData(shifts: [])
@@ -60,8 +61,13 @@ final class DashboardViewModel: ObservableObject {
         service.shiftsSubject
             .receive(on: DispatchQueue.main)
             .sink { [weak self] shifts in
-                self?.shifts = shifts
-                self?.updateWidgetData(shifts: shifts)
+                guard let self = self else { return }
+                self.shifts = shifts
+                self.updateWidgetData(shifts: shifts)
+                if !self.hasRescheduledReminders && !shifts.isEmpty {
+                    self.hasRescheduledReminders = true
+                    NotificationService.shared.rescheduleAllReminders(shifts: shifts)
+                }
             }
             .store(in: &cancellables)
 
@@ -182,6 +188,7 @@ final class DashboardViewModel: ObservableObject {
         defaults.set(weekShifts.reduce(0.0) { $0 + $1.totalEarned }, forKey: "weeklyEarnings")
         defaults.set(weekShifts.reduce(0.0) { $0 + $1.durationHours }, forKey: "weeklyHours")
         defaults.set(weekShifts.count, forKey: "weeklyShiftCount")
+        defaults.synchronize()
 
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -212,6 +219,10 @@ final class DashboardViewModel: ObservableObject {
         shifts = (shifts + [shift]).sorted { $0.startTime > $1.startTime }
         service.addShift(shift)
 
+        if shift.reminderBeforeMinutes > 0 {
+            NotificationService.shared.scheduleReminder(shift: shift)
+        }
+
         if CalendarService.shared.calendarSyncEnabled {
             CalendarService.shared.syncShiftToCalendar(shift: shift)
         }
@@ -236,6 +247,11 @@ final class DashboardViewModel: ObservableObject {
         shifts = shifts.map { $0.id == shiftId ? updated : $0 }.sorted { $0.startTime > $1.startTime }
         service.updateShift(updated)
 
+        NotificationService.shared.cancelReminder(shiftId: shiftId)
+        if updated.reminderBeforeMinutes > 0 {
+            NotificationService.shared.scheduleReminder(shift: updated)
+        }
+
         if CalendarService.shared.calendarSyncEnabled {
             CalendarService.shared.syncShiftToCalendar(shift: updated)
         }
@@ -244,6 +260,7 @@ final class DashboardViewModel: ObservableObject {
     func deleteShift(shiftId: String) {
         shifts = shifts.filter { $0.id != shiftId }
         service.deleteShift(shiftId)
+        NotificationService.shared.cancelReminder(shiftId: shiftId)
 
         if CalendarService.shared.calendarSyncEnabled {
             CalendarService.shared.removeShiftFromCalendar(shiftId: shiftId)
