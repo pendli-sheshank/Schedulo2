@@ -561,6 +561,10 @@ class TeamViewModel : ViewModel() {
         val database = db ?: return
         val previousShifts = _teamShifts.value
         _teamShifts.value = _teamShifts.value.filter { it.id != shiftId }
+        database.collection("shifts").whereEqualTo("teamShiftId", shiftId).get()
+            .addOnSuccessListener { snapshot ->
+                snapshot.documents.forEach { it.reference.delete() }
+            }
         database.collection("team_shifts").document(shiftId)
             .delete()
             .addOnFailureListener { e ->
