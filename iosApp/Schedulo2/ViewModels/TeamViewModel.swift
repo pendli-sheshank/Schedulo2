@@ -549,6 +549,10 @@ final class TeamViewModel: ObservableObject {
     }
 
     func deleteTeamShift(shiftId: String) {
+        teamShifts = teamShifts.filter { $0.id != shiftId }
+        db.collection("shifts").whereField("teamShiftId", isEqualTo: shiftId).getDocuments { [weak self] snapshot, _ in
+            snapshot?.documents.forEach { $0.reference.delete() }
+        }
         db.collection("team_shifts").document(shiftId).delete()
     }
 
