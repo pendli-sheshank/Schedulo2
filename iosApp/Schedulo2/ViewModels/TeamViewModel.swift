@@ -1,7 +1,10 @@
 import Foundation
 import Combine
+import UIKit
+import UserNotifications
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseStorage
 
 struct TeamInfo: Identifiable, Equatable {
     var id: String = UUID().uuidString
@@ -65,6 +68,8 @@ struct TeamMessageInfo: Identifiable, Equatable {
     var text: String = ""
     var isAnnouncement: Bool = false
     var isPinned: Bool = false
+    var imageUrl: String = ""
+    var seenBy: [String] = []
     var createdAt: Int64 = 0
 
     var createdDate: Date {
@@ -106,7 +111,10 @@ final class TeamViewModel: ObservableObject {
     @Published var teamMessages: [TeamMessageInfo] = []
     @Published var swapRequests: [SwapRequestInfo] = []
 
+    @Published var isUploadingImage = false
+
     private let db = Firestore.firestore(database: "schedulo2")
+    private let storageRef = Storage.storage().reference()
     private var teamsListener: ListenerRegistration?
     private var membersListener: ListenerRegistration?
     private var shiftsListener: ListenerRegistration?
@@ -611,7 +619,9 @@ final class TeamViewModel: ObservableObject {
             .order(by: "createdAt", descending: true)
             .addSnapshotListener { [weak self] snapshot, _ in
                 guard let docs = snapshot?.documents else { return }
-                self?.teamMessages = docs.map { doc in
+                let uid = self?.currentUserId
+                let oldIds: Set<String> = Set(self?.teamMessages.map { $0.id } ?? [])
+                let newMessages: [TeamMessageInfo] = docs.map { doc in
                     let data = doc.data()
                     return TeamMessageInfo(
                         id: doc.documentID,
@@ -621,10 +631,28 @@ final class TeamViewModel: ObservableObject {
                         text: data["text"] as? String ?? "",
                         isAnnouncement: data["isAnnouncement"] as? Bool ?? false,
                         isPinned: data["isPinned"] as? Bool ?? false,
+                        imageUrl: data["imageUrl"] as? String ?? "",
+                        seenBy: data["seenBy"] as? [String] ?? [],
                         createdAt: (data["createdAt"] as? NSNumber)?.int64Value ?? 0
                     )
                 }
+                if !oldIds.isEmpty {
+                    for msg in newMessages where !oldIds.contains(msg.id) && msg.senderId != uid {
+                        let preview = msg.imageUrl.isEmpty ? msg.text : "Sent a photo"
+                        self?.postChatNotification(sender: msg.senderName, body: preview)
+                    }
+                }
+                self?.teamMessages = newMessages
             }
+    }
+
+    private func postChatNotification(sender: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Team Chat – \(currentTeam?.name ?? "Team")"
+        content.body = "\(sender): \(body)"
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     func sendMessage(text: String, isAnnouncement: Bool = false) {
@@ -652,8 +680,84 @@ final class TeamViewModel: ObservableObject {
         }
     }
 
+    func sendImage(_ image: UIImage) {
+        guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
+        isUploadingImage = true
+
+        let senderName = currentUserEmail ?? ""
+        let messageId = UUID().uuidString
+        let maxDim: CGFloat = 800
+        let scale: CGFloat = min(maxDim / image.size.width, maxDim / image.size.height, 1)
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        let resized: UIImage = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
+        guard let data = resized.jpegData(compressionQuality: 0.5) else {
+            isUploadingImage = false
+            errorMessage = "Failed to compress image"
+            return
+        }
+
+        let ref = storageRef.child("chat_images/\(teamId)/\(messageId).jpg")
+        ref.putData(data, metadata: nil) { [weak self] _, error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.isUploadingImage = false
+                    self?.errorMessage = "Upload failed: \(error.localizedDescription)"
+                }
+                return
+            }
+            ref.downloadURL { [weak self] url, _ in
+                DispatchQueue.main.async { self?.isUploadingImage = false }
+                guard let downloadUrl = url else { return }
+                let msgData: [String: Any] = [
+                    "teamId": teamId,
+                    "senderId": uid,
+                    "senderName": senderName,
+                    "text": "",
+                    "isAnnouncement": false,
+                    "isPinned": false,
+                    "imageUrl": downloadUrl.absoluteString,
+                    "seenBy": [uid],
+                    "createdAt": Int64(Date().timeIntervalSince1970 * 1000)
+                ]
+                self?.db.collection("team_messages").document(messageId).setData(msgData)
+            }
+        }
+    }
+
+    func markMessageSeen(messageId: String) {
+        guard let uid = currentUserId else { return }
+        let message = teamMessages.first { $0.id == messageId }
+        guard let msg = message, !msg.seenBy.contains(uid) else { return }
+        db.collection("team_messages").document(messageId).updateData([
+            "seenBy": FieldValue.arrayUnion([uid])
+        ]) { [weak self] _ in
+            self?.checkAutoDelete(messageId: messageId)
+        }
+    }
+
+    private func checkAutoDelete(messageId: String) {
+        let memberCount = members.count
+        guard memberCount > 0 else { return }
+        db.collection("team_messages").document(messageId).getDocument { [weak self] doc, _ in
+            guard let data = doc?.data() else { return }
+            let seenBy = data["seenBy"] as? [String] ?? []
+            let imageUrl = data["imageUrl"] as? String ?? ""
+            if !imageUrl.isEmpty && seenBy.count >= memberCount {
+                Storage.storage().reference(forURL: imageUrl).delete(completion: nil)
+                self?.db.collection("team_messages").document(messageId).updateData([
+                    "imageUrl": "", "text": "Image expired"
+                ])
+            }
+        }
+    }
+
     func deleteMessage(messageId: String) {
         let previous = teamMessages
+        let deleted = previous.first { $0.id == messageId }
+        if let url = deleted?.imageUrl, !url.isEmpty {
+            Storage.storage().reference(forURL: url).delete(completion: nil)
+        }
         teamMessages.removeAll { $0.id == messageId }
         db.collection("team_messages").document(messageId).delete { [weak self] error in
             if let error = error {

@@ -16,7 +16,7 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "64").toInt()
+    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "65").toInt()
     versionCode = ciVersionCode
     versionName = "$ciVersionCode.0"
 
@@ -78,6 +78,7 @@ dependencies {
   implementation(libs.firebase.auth)
   implementation(libs.firebase.crashlytics)
   implementation(libs.firebase.firestore)
+  implementation(libs.firebase.storage)
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
   // implementation(libs.androidx.camera.camera2)

@@ -20,9 +20,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.theme.AccentBlue
 import com.example.ui.theme.AccentOrange
 import com.example.ui.theme.PrimaryGreen
@@ -659,9 +667,20 @@ private fun ChatDetailContent(
     val isOwner = currentTeam?.ownerId == currentUserId
     val listState = rememberLazyListState()
     val timeFormat = remember { java.text.SimpleDateFormat("MMM dd, h:mm a", java.util.Locale.US) }
+    val context = LocalContext.current
+    val isUploading by teamViewModel.isUploadingImage.collectAsState()
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
 
     val pinnedMessages = remember(messages) { messages.filter { it.isPinned } }
     val sortedMessages = remember(messages) { messages.sortedByDescending { it.createdAt } }
+
+    LaunchedEffect(sortedMessages) {
+        sortedMessages.filter { it.imageUrl.isNotEmpty() && currentUserId !in it.seenBy }
+            .forEach { teamViewModel.markMessageSeen(it.id) }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         if (pinnedMessages.isNotEmpty()) {
@@ -728,12 +747,25 @@ private fun ChatDetailContent(
             }
         }
 
+        if (isUploading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                color = PrimaryGreen
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = !isUploading
+            ) {
+                Icon(Icons.Default.Image, "Send photo", tint = PrimaryGreen)
+            }
             OutlinedTextField(
                 value = messageText,
                 onValueChange = { if (it.length <= 2000) messageText = it },
@@ -806,7 +838,40 @@ private fun ChatBubble(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text(message.text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                if (message.imageUrl.isNotEmpty()) {
+                    var bmp by remember(message.imageUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
+                    LaunchedEffect(message.imageUrl) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val url = java.net.URL(message.imageUrl)
+                                val connection = url.openConnection()
+                                connection.connectTimeout = 5000
+                                val stream = connection.getInputStream()
+                                bmp = BitmapFactory.decodeStream(stream)
+                            } catch (_: Exception) {}
+                        }
+                    }
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp!!.asImageBitmap(),
+                            contentDescription = "Shared photo",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.FillWidth
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    } else {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally),
+                            color = PrimaryGreen,
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+                if (message.text.isNotEmpty()) {
+                    Text(message.text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         timeFormat.format(java.util.Date(message.createdAt)),

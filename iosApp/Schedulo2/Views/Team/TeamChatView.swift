@@ -1,10 +1,12 @@
 import SwiftUI
+import PhotosUI
 
 struct TeamChatView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var messageText = ""
     @State private var isAnnouncement = false
+    @State private var selectedPhoto: PhotosPickerItem?
 
     private var isOwner: Bool {
         teamViewModel.currentTeam?.ownerId == teamViewModel.currentUserId
@@ -26,6 +28,11 @@ struct TeamChatView: View {
                 }
                 messageList
                 Divider()
+                if teamViewModel.isUploadingImage {
+                    ProgressView()
+                        .tint(.primaryGreen)
+                        .padding(.vertical, 4)
+                }
                 if teamViewModel.isManager {
                     announceToggle
                 }
@@ -37,6 +44,17 @@ struct TeamChatView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .onChange(of: selectedPhoto) { newItem in
+                guard let item = newItem else { return }
+                item.loadTransferable(type: Data.self) { result in
+                    if case .success(let data) = result, let data = data, let image = UIImage(data: data) {
+                        DispatchQueue.main.async {
+                            teamViewModel.sendImage(image)
+                        }
+                    }
+                }
+                selectedPhoto = nil
             }
         }
     }
@@ -52,7 +70,8 @@ struct TeamChatView: View {
                     .foregroundColor(.accentOrange)
             }
             ForEach(pinnedMessages.prefix(3)) { msg in
-                Text("\(msg.senderName.isEmpty ? "Unknown" : msg.senderName): \(msg.text)")
+                let preview: String = msg.imageUrl.isEmpty ? msg.text : "Sent a photo"
+                Text("\(msg.senderName.isEmpty ? "Unknown" : msg.senderName): \(preview)")
                     .font(.system(size: 12))
                     .lineLimit(1)
             }
@@ -72,8 +91,17 @@ struct TeamChatView: View {
             ScrollViewReader { proxy in
                 LazyVStack(spacing: 6) {
                     ForEach(sortedMessages.reversed()) { message in
-                        chatBubble(message)
-                            .id(message.id)
+                        ChatBubbleView(
+                            message: message,
+                            isMe: message.senderId == teamViewModel.currentUserId,
+                            isOwner: isOwner
+                        )
+                        .id(message.id)
+                        .onAppear {
+                            if !message.imageUrl.isEmpty {
+                                teamViewModel.markMessageSeen(messageId: message.id)
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -81,14 +109,6 @@ struct TeamChatView: View {
             }
         }
         .frame(maxHeight: .infinity)
-    }
-
-    private func chatBubble(_ message: TeamMessageInfo) -> some View {
-        ChatBubbleView(
-            message: message,
-            isMe: message.senderId == teamViewModel.currentUserId,
-            isOwner: isOwner
-        )
     }
 
     private var announceToggle: some View {
@@ -116,6 +136,13 @@ struct TeamChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 8) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Image(systemName: "photo.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.primaryGreen)
+            }
+            .disabled(teamViewModel.isUploadingImage)
+
             TextField("Type a message...", text: $messageText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...3)
@@ -171,8 +198,29 @@ private struct ChatBubbleView: View {
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.secondary)
                     }
-                    Text(message.text)
-                        .font(.system(size: 14))
+                    if !message.imageUrl.isEmpty {
+                        AsyncImage(url: URL(string: message.imageUrl)) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(maxWidth: 220, maxHeight: 220)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            case .failure:
+                                Text("Image expired")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            default:
+                                ProgressView()
+                                    .frame(width: 100, height: 100)
+                            }
+                        }
+                    }
+                    if !message.text.isEmpty {
+                        Text(message.text)
+                            .font(.system(size: 14))
+                    }
                     timestampRow
                 }
                 .padding(10)
@@ -210,6 +258,11 @@ private struct ChatBubbleView: View {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 9))
                     .foregroundColor(.accentOrange)
+            }
+            if !message.seenBy.isEmpty && !message.imageUrl.isEmpty {
+                Text("Seen by \(message.seenBy.count)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
             }
         }
     }

@@ -81,6 +81,24 @@ class MainActivity : FragmentActivity() {
             val dashboardViewModel: DashboardViewModel = viewModel()
             val teamViewModel: TeamViewModel = viewModel()
             dashboardViewModel.setAppContext(this@MainActivity)
+
+            LaunchedEffect(Unit) {
+                val channel = android.app.NotificationChannel(
+                    "team_chat", "Team Chat", android.app.NotificationManager.IMPORTANCE_HIGH
+                ).apply { description = "Team chat message notifications" }
+                val nm = getSystemService(android.app.NotificationManager::class.java)
+                nm?.createNotificationChannel(channel)
+
+                teamViewModel.chatNotificationCallback = { sender, body ->
+                    val notification = android.app.Notification.Builder(this@MainActivity, "team_chat")
+                        .setSmallIcon(android.R.drawable.ic_dialog_email)
+                        .setContentTitle("Team Chat")
+                        .setContentText("$sender: $body")
+                        .setAutoCancel(true)
+                        .build()
+                    nm?.notify(System.currentTimeMillis().toInt(), notification)
+                }
+            }
             val themeMode by dashboardViewModel.themeMode.collectAsState()
 
             MyApplicationTheme(themeMode = themeMode) {
