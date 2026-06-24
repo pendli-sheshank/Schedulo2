@@ -73,6 +73,7 @@ targets:
           - FirebaseAuth
           - FirebaseFirestore
           - FirebaseCrashlytics
+          - FirebaseStorage
       - target: ScheduloWidget
     entitlements:
       path: Schedulo2/Schedulo2.entitlements

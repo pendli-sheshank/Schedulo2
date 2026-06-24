@@ -1,5 +1,6 @@
 package com.example
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import com.example.ui.theme.PrimaryGreen
 import com.google.firebase.FirebaseApp
@@ -8,6 +9,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.google.firebase.storage.FirebaseStorage
 import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
@@ -58,6 +60,12 @@ class TeamViewModel : ViewModel() {
     private var memberJobsListener: ListenerRegistration? = null
     private var messagesListener: ListenerRegistration? = null
     private var swapRequestsListener: ListenerRegistration? = null
+
+    private val storage by lazy { try { FirebaseStorage.getInstance() } catch (e: Exception) { null } }
+    private val _isUploadingImage = MutableStateFlow(false)
+    val isUploadingImage = _isUploadingImage.asStateFlow()
+
+    var chatNotificationCallback: ((String, String) -> Unit)? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -237,7 +245,9 @@ class TeamViewModel : ViewModel() {
             .addSnapshotListener { value, error ->
                 if (error != null) return@addSnapshotListener
                 if (value != null) {
-                    _teamMessages.value = value.documents.map { doc ->
+                    val uid = auth?.currentUser?.uid
+                    val oldIds = _teamMessages.value.map { it.id }.toSet()
+                    val newMessages = value.documents.map { doc ->
                         TeamMessage(
                             id = doc.id,
                             teamId = doc.getString("teamId") ?: "",
@@ -246,9 +256,18 @@ class TeamViewModel : ViewModel() {
                             text = doc.getString("text") ?: "",
                             isAnnouncement = doc.getBoolean("isAnnouncement") ?: false,
                             isPinned = doc.getBoolean("isPinned") ?: false,
+                            imageUrl = doc.getString("imageUrl") ?: "",
+                            seenBy = (doc.get("seenBy") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
                             createdAt = doc.getLong("createdAt") ?: 0
                         )
                     }
+                    if (oldIds.isNotEmpty()) {
+                        newMessages.filter { it.id !in oldIds && it.senderId != uid }.forEach { msg ->
+                            val preview = if (msg.imageUrl.isNotEmpty()) "Sent a photo" else msg.text
+                            chatNotificationCallback?.invoke(msg.senderName, preview)
+                        }
+                    }
+                    _teamMessages.value = newMessages
                 }
             }
 
@@ -662,9 +681,99 @@ class TeamViewModel : ViewModel() {
             }
     }
 
+    fun sendImage(imageUri: Uri, context: android.content.Context) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val storageRef = storage ?: return
+        val team = _currentTeam.value ?: return
+        _isUploadingImage.value = true
+
+        val senderName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val messageId = UUID.randomUUID().toString()
+        val ref = storageRef.reference.child("chat_images/${team.id}/$messageId.jpg")
+
+        val compressed = compressImage(context, imageUri) ?: run {
+            _isUploadingImage.value = false
+            _errorMessage.value = "Failed to compress image"
+            return
+        }
+        ref.putBytes(compressed)
+            .addOnSuccessListener {
+                ref.downloadUrl.addOnSuccessListener { downloadUrl ->
+                    val messageData = hashMapOf(
+                        "teamId" to team.id,
+                        "senderId" to uid,
+                        "senderName" to senderName,
+                        "text" to "",
+                        "isAnnouncement" to false,
+                        "isPinned" to false,
+                        "imageUrl" to downloadUrl.toString(),
+                        "seenBy" to listOf(uid),
+                        "createdAt" to System.currentTimeMillis()
+                    )
+                    database.collection("team_messages").document(messageId)
+                        .set(messageData)
+                        .addOnFailureListener { e -> _errorMessage.value = "Failed to send image: ${e.message}" }
+                    _isUploadingImage.value = false
+                }
+            }
+            .addOnFailureListener { e ->
+                _isUploadingImage.value = false
+                _errorMessage.value = "Failed to upload image: ${e.message}"
+            }
+    }
+
+    private fun compressImage(context: android.content.Context, uri: Uri): ByteArray? {
+        return try {
+            val input = context.contentResolver.openInputStream(uri) ?: return null
+            val original = android.graphics.BitmapFactory.decodeStream(input)
+            input.close()
+            val maxDim = 800
+            val scale = minOf(maxDim.toFloat() / original.width, maxDim.toFloat() / original.height, 1f)
+            val w = (original.width * scale).toInt()
+            val h = (original.height * scale).toInt()
+            val scaled = android.graphics.Bitmap.createScaledBitmap(original, w, h, true)
+            val out = java.io.ByteArrayOutputStream()
+            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 50, out)
+            if (scaled !== original) scaled.recycle()
+            original.recycle()
+            out.toByteArray()
+        } catch (e: Exception) { null }
+    }
+
+    fun markMessageSeen(messageId: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val message = _teamMessages.value.find { it.id == messageId } ?: return
+        if (uid in message.seenBy) return
+        database.collection("team_messages").document(messageId)
+            .update("seenBy", FieldValue.arrayUnion(uid))
+            .addOnSuccessListener { checkAutoDelete(messageId) }
+    }
+
+    private fun checkAutoDelete(messageId: String) {
+        val database = db ?: return
+        val memberCount = _members.value.size
+        if (memberCount == 0) return
+        database.collection("team_messages").document(messageId).get()
+            .addOnSuccessListener { doc ->
+                val seenBy = (doc.get("seenBy") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                val imageUrl = doc.getString("imageUrl") ?: ""
+                if (imageUrl.isNotEmpty() && seenBy.size >= memberCount) {
+                    try { storage?.getReferenceFromUrl(imageUrl)?.delete() } catch (_: Exception) {}
+                    database.collection("team_messages").document(messageId)
+                        .update(mapOf("imageUrl" to "", "text" to "Image expired"))
+                }
+            }
+    }
+
     fun deleteMessage(messageId: String) {
         val database = db ?: return
         val previous = _teamMessages.value
+        val deleted = previous.find { it.id == messageId }
+        if (deleted != null && deleted.imageUrl.isNotEmpty()) {
+            try { storage?.getReferenceFromUrl(deleted.imageUrl)?.delete() } catch (_: Exception) {}
+        }
         _teamMessages.value = _teamMessages.value.filter { it.id != messageId }
         database.collection("team_messages").document(messageId)
             .delete()

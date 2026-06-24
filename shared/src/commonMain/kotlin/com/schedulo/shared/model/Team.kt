@@ -34,6 +34,8 @@ data class TeamMessage(
     var text: String = "",
     var isAnnouncement: Boolean = false,
     var isPinned: Boolean = false,
+    var imageUrl: String = "",
+    var seenBy: List<String> = emptyList(),
     var createdAt: Long = 0
 )
 
