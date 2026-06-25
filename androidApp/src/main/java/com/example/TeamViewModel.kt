@@ -1061,14 +1061,33 @@ class TeamViewModel : ViewModel() {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
 
+        // A swap should trade only the time-slots, never the pay rate. Each person's
+        // hourly rate must move with them, otherwise whoever takes a shift would be
+        // paid the other person's rate. We read both shifts' current rates and swap
+        // them alongside assignedTo so nobody's pay rate changes because of the swap.
+        val requesterShift = _teamShifts.value.find { it.id == request.requesterShiftId }
+        val targetShift = _teamShifts.value.find { it.id == request.targetShiftId }
+        if (requesterShift == null || targetShift == null) {
+            _errorMessage.value = "Couldn't load the shift details to swap. Please try again."
+            return
+        }
+        val requesterRate = requesterShift.hourlyRate
+        val targetRate = targetShift.hourlyRate
+
         val batch = database.batch()
         batch.update(
             database.collection("team_shifts").document(request.requesterShiftId),
-            "assignedTo", request.targetMemberId
+            mapOf(
+                "assignedTo" to request.targetMemberId,
+                "hourlyRate" to targetRate
+            )
         )
         batch.update(
             database.collection("team_shifts").document(request.targetShiftId),
-            "assignedTo", request.requesterId
+            mapOf(
+                "assignedTo" to request.requesterId,
+                "hourlyRate" to requesterRate
+            )
         )
         batch.update(
             database.collection("swap_requests").document(request.id),

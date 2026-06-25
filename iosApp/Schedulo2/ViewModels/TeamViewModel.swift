@@ -1030,9 +1030,28 @@ final class TeamViewModel: ObservableObject {
 
     private func executeSwap(_ request: SwapRequestInfo) {
         guard let uid = currentUserId else { return }
+
+        // A swap trades only the time-slots, never the pay rate. Each person's hourly
+        // rate must move with them, otherwise whoever takes a shift would be paid the
+        // other person's rate. Read both shifts' current rates and swap them alongside
+        // assignedTo so nobody's pay rate changes because of the swap.
+        guard let requesterShift = teamShifts.first(where: { $0.id == request.requesterShiftId }),
+              let targetShift = teamShifts.first(where: { $0.id == request.targetShiftId }) else {
+            errorMessage = "Couldn't load the shift details to swap. Please try again."
+            return
+        }
+        let requesterRate = requesterShift.hourlyRate
+        let targetRate = targetShift.hourlyRate
+
         let batch = db.batch()
-        batch.updateData(["assignedTo": request.targetMemberId], forDocument: db.collection("team_shifts").document(request.requesterShiftId))
-        batch.updateData(["assignedTo": request.requesterId], forDocument: db.collection("team_shifts").document(request.targetShiftId))
+        batch.updateData(
+            ["assignedTo": request.targetMemberId, "hourlyRate": targetRate],
+            forDocument: db.collection("team_shifts").document(request.requesterShiftId)
+        )
+        batch.updateData(
+            ["assignedTo": request.requesterId, "hourlyRate": requesterRate],
+            forDocument: db.collection("team_shifts").document(request.targetShiftId)
+        )
         batch.updateData([
             "status": "approved",
             "resolvedBy": uid,

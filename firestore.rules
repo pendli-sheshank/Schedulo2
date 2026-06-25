@@ -161,15 +161,17 @@ service cloud.firestore {
         && request.resource.data.role == resource.data.role
         && request.resource.data.startTime == resource.data.startTime
         && request.resource.data.endTime == resource.data.endTime
-        && request.resource.data.hourlyRate == resource.data.hourlyRate
         && request.resource.data.notes == resource.data.notes
         && (
-          // Manager (assignedBy) can update mutable fields including status and assignedTo (for swaps)
+          // Manager (assignedBy) or team owner can update mutable fields including
+          // status, assignedTo and hourlyRate (a swap moves each person's rate with them).
           (resource.data.assignedBy == request.auth.uid
             || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid)
-          // Assigned member can only change status to accepted or declined (assignedTo must stay same)
+          // Assigned member can only change status to accepted or declined; assignedTo
+          // and hourlyRate must stay the same.
           || (resource.data.assignedTo == request.auth.uid
             && request.resource.data.assignedTo == resource.data.assignedTo
+            && request.resource.data.hourlyRate == resource.data.hourlyRate
             && (request.resource.data.status == "accepted" || request.resource.data.status == "declined"))
         );
       allow delete: if request.auth != null
