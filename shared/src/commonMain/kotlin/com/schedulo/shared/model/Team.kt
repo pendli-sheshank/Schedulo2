@@ -26,6 +26,32 @@ data class ShiftTask(
     var isCompleted: Boolean = false
 )
 
+/**
+ * A standalone task assigned to a specific team member (independent of any shift).
+ * Managers create these; the assignee (or manager) advances the [status], and every
+ * change is appended to [history] so progress can be tracked over time.
+ */
+data class TeamTask(
+    var id: String = "",
+    var teamId: String = "",
+    var title: String = "",
+    var description: String = "",
+    var assignedTo: String = "",       // member userId
+    var assignedToName: String = "",
+    var assignedBy: String = "",       // manager userId who created it
+    var status: String = "pending",    // pending | in_progress | completed
+    var createdAt: Long = 0,
+    var updatedAt: Long = 0,
+    var history: List<TaskHistoryEntry> = emptyList()
+)
+
+data class TaskHistoryEntry(
+    var status: String = "",
+    var changedBy: String = "",
+    var changedByName: String = "",
+    var timestamp: Long = 0
+)
+
 data class TeamMessage(
     var id: String = "",
     var teamId: String = "",

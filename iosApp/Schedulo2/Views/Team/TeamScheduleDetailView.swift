@@ -26,6 +26,7 @@ struct TeamScheduleDetailView: View {
     @State private var showWeekPlan = false
     @State private var showSwapPicker = false
     @State private var swapSourceShift: TeamShiftInfo?
+    @State private var showHelp = false
 
     var body: some View {
         NavigationStack {
@@ -38,9 +39,19 @@ struct TeamScheduleDetailView: View {
             .navigationTitle("Team Schedule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showHelp = true }) {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .alert("Team Schedule", isPresented: $showHelp) {
+                Button("Got it", role: .cancel) {}
+            } message: {
+                Text("View every assigned shift. Managers can assign a single shift or plan an entire week with the + button. Members can accept or decline shifts assigned to them, and request a swap on a teammate's shift.")
             }
             .sheet(isPresented: $showAssignShift) {
                 AssignShiftView()

@@ -13,8 +13,10 @@ import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.Team
 import com.schedulo.shared.model.TeamMember
 import com.schedulo.shared.model.SwapRequest
+import com.schedulo.shared.model.TaskHistoryEntry
 import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
+import com.schedulo.shared.model.TeamTask
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.*
@@ -53,12 +55,16 @@ class TeamViewModel : ViewModel() {
     private val _swapRequests = MutableStateFlow<List<SwapRequest>>(emptyList())
     val swapRequests = _swapRequests.asStateFlow()
 
+    private val _teamTasks = MutableStateFlow<List<TeamTask>>(emptyList())
+    val teamTasks = _teamTasks.asStateFlow()
+
     private var teamsListener: ListenerRegistration? = null
     private var membersListener: ListenerRegistration? = null
     private var shiftsListener: ListenerRegistration? = null
     private var memberJobsListener: ListenerRegistration? = null
     private var messagesListener: ListenerRegistration? = null
     private var swapRequestsListener: ListenerRegistration? = null
+    private var teamTasksListener: ListenerRegistration? = null
 
     private val storage by lazy { try { FirebaseStorage.getInstance() } catch (e: Exception) { null } }
     private val _isUploadingImage = MutableStateFlow(false)
@@ -304,6 +310,44 @@ class TeamViewModel : ViewModel() {
                             createdAt = doc.getLong("createdAt") ?: 0,
                             resolvedAt = doc.getLong("resolvedAt") ?: 0,
                             resolvedBy = doc.getString("resolvedBy") ?: ""
+                        )
+                    }.sortedByDescending { it.createdAt }
+                }
+            }
+
+        // Listen for standalone team tasks
+        teamTasksListener?.remove()
+        teamTasksListener = database.collection("team_tasks")
+            .whereEqualTo("teamId", team.id)
+            .addSnapshotListener { value, error ->
+                if (error != null) {
+                    _errorMessage.value = "Failed to load tasks: ${error.message}"
+                    return@addSnapshotListener
+                }
+                if (value != null) {
+                    _teamTasks.value = value.documents.map { doc ->
+                        val historyRaw = doc.get("history") as? List<*> ?: emptyList<Any>()
+                        val history = historyRaw.mapNotNull { item ->
+                            val map = item as? Map<*, *> ?: return@mapNotNull null
+                            TaskHistoryEntry(
+                                status = map["status"] as? String ?: "",
+                                changedBy = map["changedBy"] as? String ?: "",
+                                changedByName = map["changedByName"] as? String ?: "",
+                                timestamp = (map["timestamp"] as? Number)?.toLong() ?: 0
+                            )
+                        }
+                        TeamTask(
+                            id = doc.id,
+                            teamId = doc.getString("teamId") ?: "",
+                            title = doc.getString("title") ?: "",
+                            description = doc.getString("description") ?: "",
+                            assignedTo = doc.getString("assignedTo") ?: "",
+                            assignedToName = doc.getString("assignedToName") ?: "",
+                            assignedBy = doc.getString("assignedBy") ?: "",
+                            status = doc.getString("status") ?: "pending",
+                            createdAt = doc.getLong("createdAt") ?: 0,
+                            updatedAt = doc.getLong("updatedAt") ?: 0,
+                            history = history.sortedByDescending { it.timestamp }
                         )
                     }.sortedByDescending { it.createdAt }
                 }
@@ -624,6 +668,98 @@ class TeamViewModel : ViewModel() {
                 _errorMessage.value = "Failed to update task: ${e.message}"
             }
     }
+
+    // ---- Standalone team tasks (assigned to a member, with progress + history) ----
+
+    fun createTeamTask(memberId: String, memberName: String, title: String, description: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val team = _currentTeam.value ?: return
+        if (title.isBlank()) {
+            _errorMessage.value = "Task title is required."
+            return
+        }
+        if (memberId.isBlank()) {
+            _errorMessage.value = "Select a member to assign the task to."
+            return
+        }
+        val now = System.currentTimeMillis()
+        val actorName = currentUserDisplayName()
+        val taskData = hashMapOf(
+            "teamId" to team.id,
+            "title" to title.trim(),
+            "description" to description.trim(),
+            "assignedTo" to memberId,
+            "assignedToName" to memberName,
+            "assignedBy" to uid,
+            "status" to "pending",
+            "createdAt" to now,
+            "updatedAt" to now,
+            "history" to listOf(
+                hashMapOf(
+                    "status" to "pending",
+                    "changedBy" to uid,
+                    "changedByName" to actorName,
+                    "timestamp" to now
+                )
+            )
+        )
+        database.collection("team_tasks").document()
+            .set(taskData)
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to create task: ${e.message}"
+            }
+    }
+
+    fun updateTeamTaskStatus(taskId: String, newStatus: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val task = _teamTasks.value.find { it.id == taskId } ?: return
+        if (task.status == newStatus) return
+        val now = System.currentTimeMillis()
+        val actorName = currentUserDisplayName()
+
+        // Optimistic local update so the UI reflects the change immediately.
+        val previous = _teamTasks.value
+        val newEntry = TaskHistoryEntry(status = newStatus, changedBy = uid, changedByName = actorName, timestamp = now)
+        _teamTasks.value = _teamTasks.value.map {
+            if (it.id == taskId) it.copy(status = newStatus, updatedAt = now, history = listOf(newEntry) + it.history) else it
+        }
+
+        val historyEntry = hashMapOf(
+            "status" to newStatus,
+            "changedBy" to uid,
+            "changedByName" to actorName,
+            "timestamp" to now
+        )
+        database.collection("team_tasks").document(taskId)
+            .update(
+                mapOf(
+                    "status" to newStatus,
+                    "updatedAt" to now,
+                    "history" to FieldValue.arrayUnion(historyEntry)
+                )
+            )
+            .addOnFailureListener { e ->
+                _teamTasks.value = previous
+                _errorMessage.value = "Failed to update task: ${e.message}"
+            }
+    }
+
+    fun deleteTeamTask(taskId: String) {
+        val database = db ?: return
+        val previous = _teamTasks.value
+        _teamTasks.value = _teamTasks.value.filter { it.id != taskId }
+        database.collection("team_tasks").document(taskId)
+            .delete()
+            .addOnFailureListener { e ->
+                _teamTasks.value = previous
+                _errorMessage.value = "Failed to delete task: ${e.message}"
+            }
+    }
+
+    private fun currentUserDisplayName(): String =
+        auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
 
     fun promoteMember(memberDocId: String) {
         val database = db ?: return
@@ -1014,5 +1150,6 @@ class TeamViewModel : ViewModel() {
         memberJobsListener?.remove()
         messagesListener?.remove()
         swapRequestsListener?.remove()
+        teamTasksListener?.remove()
     }
 }

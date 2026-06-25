@@ -3,6 +3,7 @@ import SwiftUI
 struct TeamDashboardDetailView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showHelp = false
 
     var body: some View {
         NavigationStack {
@@ -21,9 +22,19 @@ struct TeamDashboardDetailView: View {
             .navigationTitle("Team Dashboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showHelp = true }) {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .alert("Team Dashboard", isPresented: $showHelp) {
+                Button("Got it", role: .cancel) {}
+            } message: {
+                Text("See your team's invite code, member list, and (for managers) an overview of upcoming shifts. Owners can promote, demote, or remove members here.")
             }
         }
     }

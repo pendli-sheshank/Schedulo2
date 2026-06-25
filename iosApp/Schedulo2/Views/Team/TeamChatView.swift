@@ -7,6 +7,7 @@ struct TeamChatView: View {
     @State private var messageText = ""
     @State private var isAnnouncement = false
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showHelp = false
 
     private var isOwner: Bool {
         teamViewModel.currentTeam?.ownerId == teamViewModel.currentUserId
@@ -41,6 +42,11 @@ struct TeamChatView: View {
             .navigationTitle("Team Chat")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showHelp = true }) {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
@@ -52,9 +58,26 @@ struct TeamChatView: View {
                         DispatchQueue.main.async {
                             teamViewModel.sendImage(image)
                         }
+                    } else {
+                        DispatchQueue.main.async {
+                            teamViewModel.errorMessage = "Couldn't read that photo. Please try another."
+                        }
                     }
                 }
                 selectedPhoto = nil
+            }
+            .alert("Team Chat", isPresented: $showHelp) {
+                Button("Got it", role: .cancel) {}
+            } message: {
+                Text("Message your whole team in real time. Managers can post announcements and pin messages. Share photos with the attach button — images auto-expire once everyone has seen them.")
+            }
+            .alert("Something went wrong", isPresented: Binding(
+                get: { teamViewModel.errorMessage != nil },
+                set: { if !$0 { teamViewModel.errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { teamViewModel.errorMessage = nil }
+            } message: {
+                Text(teamViewModel.errorMessage ?? "")
             }
         }
     }

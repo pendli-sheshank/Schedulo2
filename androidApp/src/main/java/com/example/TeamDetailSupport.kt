@@ -28,6 +28,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +40,7 @@ import com.schedulo.shared.model.TeamMember
 import com.schedulo.shared.model.SwapRequest
 import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
+import com.schedulo.shared.model.TeamTask
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.text.SimpleDateFormat
 import java.util.*
@@ -63,9 +65,22 @@ fun TeamDetailScreen(
     var showAssignDialog by remember { mutableStateOf(false) }
     var showWeekPlanDialog by remember { mutableStateOf(false) }
     var scheduleMenuExpanded by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
+    // Pre-selected member when creating a task (e.g. tapped from the roster grid). "" = none yet.
+    var createTaskForMember by remember { mutableStateOf<String?>(null) }
 
     val teamMessages by teamViewModel.teamMessages.collectAsState()
     val swapRequests by teamViewModel.swapRequests.collectAsState()
+    val teamTasks by teamViewModel.teamTasks.collectAsState()
+    val errorMessage by teamViewModel.errorMessage.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            teamViewModel.clearError()
+        }
+    }
 
     val title = when (section) {
         "dashboard" -> "Team Dashboard"
@@ -78,6 +93,7 @@ fun TeamDetailScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(title) },
@@ -87,6 +103,11 @@ fun TeamDetailScreen(
                     }
                 },
                 actions = {
+                    if (section == "tasks" && isManager) {
+                        IconButton(onClick = { createTaskForMember = "" }) {
+                            Icon(Icons.Default.AddTask, "Create Task")
+                        }
+                    }
                     if (section == "schedule" && isManager) {
                         Box {
                             IconButton(onClick = { scheduleMenuExpanded = true }) {
@@ -105,6 +126,10 @@ fun TeamDetailScreen(
                                 )
                             }
                         }
+                    }
+                    // Per-section help — explains what the section does (the "?" tooltip).
+                    IconButton(onClick = { showHelp = true }) {
+                        Icon(Icons.Default.HelpOutline, "Help")
                     }
                 }
             )
@@ -132,6 +157,7 @@ fun TeamDetailScreen(
             "tasks" -> TasksDetailContent(
                 modifier = Modifier.padding(padding),
                 teamShifts = teamShifts,
+                teamTasks = teamTasks,
                 members = members,
                 isManager = isManager,
                 currentUserId = currentUserId,
@@ -141,7 +167,9 @@ fun TeamDetailScreen(
                 modifier = Modifier.padding(padding),
                 teamShifts = teamShifts,
                 members = members,
-                weeklyCycleStartDay = currentTeam?.weeklyCycleStartDay ?: "Monday"
+                isManager = isManager,
+                weeklyCycleStartDay = currentTeam?.weeklyCycleStartDay ?: "Monday",
+                onAssignTask = { memberUserId -> createTaskForMember = memberUserId }
             )
             "chat" -> ChatDetailContent(
                 modifier = Modifier.padding(padding),
@@ -205,6 +233,131 @@ fun TeamDetailScreen(
             weeklyCycleStartDay = currentTeam?.weeklyCycleStartDay ?: "Monday"
         )
     }
+
+    if (showHelp) {
+        SectionHelpDialog(section = section, onDismiss = { showHelp = false })
+    }
+
+    createTaskForMember?.let { preselectedUserId ->
+        CreateTaskDialog(
+            members = members,
+            preselectedUserId = preselectedUserId,
+            onDismiss = { createTaskForMember = null },
+            onCreate = { memberId, memberName, title, description ->
+                teamViewModel.createTeamTask(memberId, memberName, title, description)
+                createTaskForMember = null
+            }
+        )
+    }
+}
+
+private fun sectionHelpText(section: String): Pair<String, String> = when (section) {
+    "dashboard" -> "Team Dashboard" to
+        "See your team's invite code, member list, and (for managers) an overview of upcoming shifts. Owners can promote, demote, or remove members here."
+    "schedule" -> "Team Schedule" to
+        "View every assigned shift. Managers can assign a single shift or plan an entire week with the + button. Members can accept or decline shifts assigned to them, and request a swap on a teammate's shift."
+    "tasks" -> "Team Tasks" to
+        "Assign individual to-dos to team members and track their progress. Use the + button to create a task; the assignee (or a manager) moves it through Pending → In Progress → Completed, and every change is kept in the task's history. Shift checklists also appear here."
+    "roster" -> "Team Roster" to
+        "A week-at-a-glance grid of who works when. Managers can tap a member's name to assign them a task. Use the arrows to move between weeks."
+    "chat" -> "Team Chat" to
+        "Message your whole team in real time. Managers can post announcements and pin messages. Share photos with the attach button — images auto-expire once everyone has seen them."
+    "swaps" -> "Shift Swaps" to
+        "Request to trade one of your shifts for a teammate's. Tap \"Request a Swap\" to pick the shift you want and the shift you'll give up. The teammate accepts, then a manager approves the trade."
+    else -> "Team" to "Manage your team."
+}
+
+@Composable
+private fun SectionHelpDialog(section: String, onDismiss: () -> Unit) {
+    val (heading, body) = sectionHelpText(section)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.HelpOutline, null, tint = PrimaryGreen) },
+        title = { Text(heading, fontWeight = FontWeight.Bold) },
+        text = { Text(body, fontSize = 14.sp) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Got it", color = PrimaryGreen, fontWeight = FontWeight.Bold) }
+        },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreateTaskDialog(
+    members: List<TeamMember>,
+    preselectedUserId: String,
+    onDismiss: () -> Unit,
+    onCreate: (memberId: String, memberName: String, title: String, description: String) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var selectedUserId by remember {
+        mutableStateOf(preselectedUserId.ifBlank { members.firstOrNull()?.userId ?: "" })
+    }
+    var memberMenuExpanded by remember { mutableStateOf(false) }
+    val selectedMember = members.find { it.userId == selectedUserId }
+    val selectedName = selectedMember?.displayName?.ifBlank { selectedMember.email.substringBefore("@") } ?: "Select member"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Assign a Task", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Assign to", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ExposedDropdownMenuBox(
+                    expanded = memberMenuExpanded,
+                    onExpandedChange = { memberMenuExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedName,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = memberMenuExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = memberMenuExpanded,
+                        onDismissRequest = { memberMenuExpanded = false }
+                    ) {
+                        members.forEach { member ->
+                            val name = member.displayName.ifBlank { member.email.substringBefore("@") }
+                            DropdownMenuItem(
+                                text = { Text(name) },
+                                onClick = { selectedUserId = member.userId; memberMenuExpanded = false }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { if (it.length <= 200) title = it },
+                    label = { Text("Task title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { if (it.length <= 1000) description = it },
+                    label = { Text("Details (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 4
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCreate(selectedUserId, selectedName, title, description) },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                enabled = title.isNotBlank() && selectedUserId.isNotBlank()
+            ) { Text("Assign", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
 }
 
 @Composable
@@ -342,22 +495,40 @@ private fun ScheduleDetailContent(
     }
 }
 
+private fun taskStatusColor(status: String): androidx.compose.ui.graphics.Color = when (status) {
+    "completed" -> PrimaryGreen
+    "in_progress" -> AccentBlue
+    else -> AccentOrange
+}
+
+private fun taskStatusLabel(status: String): String = when (status) {
+    "completed" -> "Completed"
+    "in_progress" -> "In Progress"
+    else -> "Pending"
+}
+
 @Composable
 private fun TasksDetailContent(
     modifier: Modifier,
     teamShifts: List<TeamShift>,
+    teamTasks: List<TeamTask>,
     members: List<TeamMember>,
     isManager: Boolean,
     currentUserId: String,
     teamViewModel: TeamViewModel
 ) {
     val shiftsWithTasks = remember(teamShifts) { teamShifts.filter { it.tasks.isNotEmpty() } }
-    val allTasks = remember(shiftsWithTasks) { shiftsWithTasks.flatMap { it.tasks } }
-    val completedCount = allTasks.count { it.isCompleted }
+    // Members see their own tasks; managers see everyone's.
+    val visibleTasks = remember(teamTasks, isManager, currentUserId) {
+        if (isManager) teamTasks else teamTasks.filter { it.assignedTo == currentUserId }
+    }
+    val completedCount = visibleTasks.count { it.status == "completed" }
+    val timeFormat = remember { java.text.SimpleDateFormat("MMM dd, h:mm a", java.util.Locale.US) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
+        contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         item {
             Card(
@@ -367,19 +538,16 @@ private fun TasksDetailContent(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "$completedCount/${allTasks.size} tasks completed",
+                        "$completedCount/${visibleTasks.size} tasks completed",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = AccentOrange
                     )
-                    if (allTasks.isNotEmpty()) {
+                    if (visibleTasks.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         LinearProgressIndicator(
-                            progress = { completedCount.toFloat() / allTasks.size },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
+                            progress = { completedCount.toFloat() / visibleTasks.size },
+                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
                             color = AccentOrange,
                             trackColor = AccentOrange.copy(alpha = 0.15f)
                         )
@@ -388,72 +556,244 @@ private fun TasksDetailContent(
             }
         }
 
-        if (shiftsWithTasks.isEmpty()) {
+        if (visibleTasks.isEmpty()) {
             item {
-                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("No tasks yet", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (isManager) "No tasks assigned yet. Tap + to assign one to a member." else "You have no tasks yet.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         } else {
-            items(shiftsWithTasks, key = { it.id }) { shift ->
-                val assignedMember = members.find { it.userId == shift.assignedTo }
-                val assignedName = assignedMember?.displayName?.ifBlank { assignedMember.email.substringBefore("@") } ?: "Unknown"
-                val isAssignedToMe = shift.assignedTo == currentUserId
-                val completed = shift.tasks.count { it.isCompleted }
+            item { SectionLabel("Assigned Tasks") }
+            items(visibleTasks, key = { it.id }) { task ->
+                val canEdit = isManager || task.assignedTo == currentUserId
+                TeamTaskCard(
+                    task = task,
+                    canEdit = canEdit,
+                    canDelete = isManager,
+                    showAssignee = isManager,
+                    currentUserId = currentUserId,
+                    timeFormat = timeFormat,
+                    onStatusChange = { newStatus -> teamViewModel.updateTeamTaskStatus(task.id, newStatus) },
+                    onDelete = { teamViewModel.deleteTeamTask(task.id) }
+                )
+            }
+        }
 
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(shift.company, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                Text(
-                                    "Assigned to: $assignedName",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                "$completed/${shift.tasks.size}",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (completed == shift.tasks.size) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        shift.tasks.forEach { task ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(enabled = isAssignedToMe || isManager) {
-                                        teamViewModel.toggleTaskCompletion(shift.id, task.id)
-                                    }
-                                    .padding(vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    if (task.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                    null,
-                                    tint = if (task.isCompleted) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    task.title,
-                                    fontSize = 13.sp,
-                                    color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-                        }
+        if (shiftsWithTasks.isNotEmpty()) {
+            item { SectionLabel("Shift Checklists") }
+            items(shiftsWithTasks, key = { it.id }) { shift ->
+                ShiftChecklistCard(
+                    shift = shift,
+                    members = members,
+                    isAssignedToMe = shift.assignedTo == currentUserId,
+                    isManager = isManager,
+                    onToggle = { taskId -> teamViewModel.toggleTaskCompletion(shift.id, taskId) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 2.dp)
+    )
+}
+
+@Composable
+private fun TeamTaskCard(
+    task: TeamTask,
+    canEdit: Boolean,
+    canDelete: Boolean,
+    showAssignee: Boolean,
+    currentUserId: String,
+    timeFormat: java.text.SimpleDateFormat,
+    onStatusChange: (String) -> Unit,
+    onDelete: () -> Unit
+) {
+    var showHistory by remember { mutableStateOf(false) }
+    val statusColor = taskStatusColor(task.status)
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        task.title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        textDecoration = if (task.status == "completed") androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                    )
+                    val whoLabel = when {
+                        task.assignedTo == currentUserId -> "Assigned to you"
+                        showAssignee -> "Assigned to: ${task.assignedToName.ifBlank { "Unknown" }}"
+                        else -> null
                     }
+                    if (whoLabel != null) {
+                        Text(whoLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Surface(shape = RoundedCornerShape(8.dp), color = statusColor.copy(alpha = 0.12f)) {
+                    Text(
+                        taskStatusLabel(task.status),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = statusColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            if (task.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(task.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground)
+            }
+
+            if (canEdit) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("pending", "in_progress", "completed").forEach { status ->
+                        FilterChip(
+                            selected = task.status == status,
+                            onClick = { if (task.status != status) onStatusChange(status) },
+                            label = { Text(taskStatusLabel(status), fontSize = 11.sp) },
+                            modifier = Modifier.height(30.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (task.history.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.clickable { showHistory = !showHistory },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (showHistory) Icons.Default.ExpandLess else Icons.Default.History,
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "History (${task.history.size})",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(1.dp))
+                }
+                if (canDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        "Delete task",
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp).clickable { onDelete() }
+                    )
+                }
+            }
+
+            if (showHistory) {
+                Spacer(modifier = Modifier.height(4.dp))
+                task.history.forEach { entry ->
+                    Row(modifier = Modifier.padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier.size(6.dp).clip(RoundedCornerShape(3.dp))
+                                .background(taskStatusColor(entry.status))
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "${taskStatusLabel(entry.status)} · ${entry.changedByName.ifBlank { "Someone" }} · ${timeFormat.format(java.util.Date(entry.timestamp))}",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShiftChecklistCard(
+    shift: TeamShift,
+    members: List<TeamMember>,
+    isAssignedToMe: Boolean,
+    isManager: Boolean,
+    onToggle: (String) -> Unit
+) {
+    val assignedMember = members.find { it.userId == shift.assignedTo }
+    val assignedName = assignedMember?.displayName?.ifBlank { assignedMember.email.substringBefore("@") } ?: "Unknown"
+    val completed = shift.tasks.count { it.isCompleted }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(shift.company, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("Assigned to: $assignedName", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(
+                    "$completed/${shift.tasks.size}",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (completed == shift.tasks.size) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            shift.tasks.forEach { task ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = isAssignedToMe || isManager) { onToggle(task.id) }
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (task.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        null,
+                        tint = if (task.isCompleted) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        task.title,
+                        fontSize = 13.sp,
+                        color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
+                    )
                 }
             }
         }
@@ -465,7 +805,9 @@ private fun RosterDetailContent(
     modifier: Modifier,
     teamShifts: List<TeamShift>,
     members: List<TeamMember>,
-    weeklyCycleStartDay: String = "Monday"
+    isManager: Boolean = false,
+    weeklyCycleStartDay: String = "Monday",
+    onAssignTask: (String) -> Unit = {}
 ) {
     var weekOffset by remember { mutableIntStateOf(0) }
 
@@ -583,16 +925,33 @@ private fun RosterDetailContent(
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Box(
-                            modifier = Modifier.width(100.dp).padding(4.dp),
+                            modifier = Modifier
+                                .width(100.dp)
+                                .padding(4.dp)
+                                .then(
+                                    if (isManager) Modifier.clickable { onAssignTask(member.userId) } else Modifier
+                                ),
                             contentAlignment = Alignment.CenterStart
                         ) {
-                            Text(
-                                memberName,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    memberName,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (isManager) {
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Icon(
+                                        Icons.Default.AddTask,
+                                        "Assign task",
+                                        tint = PrimaryGreen,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
                         }
                         daysMillis.forEach { dayMillis ->
                             val dayEnd = dayMillis + 24L * 60 * 60 * 1000L
@@ -1093,15 +1452,46 @@ private fun SwapRequestsContent(
 ) {
     val timeFormat = remember { java.text.SimpleDateFormat("MMM dd, h:mm a", java.util.Locale.US) }
     val activeRequests = remember(swapRequests) { swapRequests.filter { it.status != "approved" && it.status != "declined" } }
+    var showNewSwap by remember { mutableStateOf(false) }
+    val myAcceptedShifts = remember(teamShifts, currentUserId) {
+        teamShifts.filter { it.assignedTo == currentUserId && it.status == "accepted" }
+    }
+    val swappableTargets = remember(teamShifts, currentUserId) {
+        teamShifts.filter { it.assignedTo != currentUserId && it.status == "accepted" }
+    }
+    val canRequestSwap = myAcceptedShifts.isNotEmpty() && swappableTargets.isNotEmpty()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // Primary entry point for *starting* a swap — pick the shift you want and the one you'll give up.
+        item {
+            Button(
+                onClick = { showNewSwap = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                shape = RoundedCornerShape(12.dp),
+                enabled = canRequestSwap
+            ) {
+                Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Request a Swap", fontWeight = FontWeight.Bold)
+            }
+            if (!canRequestSwap) {
+                Text(
+                    "You need an accepted shift, and a teammate must have one too, before you can request a swap.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp, end = 4.dp)
+                )
+            }
+        }
+
         if (activeRequests.isEmpty()) {
             item {
-                Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text("No pending swap requests", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -1210,6 +1600,118 @@ private fun SwapRequestsContent(
                     }
                 }
             }
+        }
+    }
+
+    if (showNewSwap) {
+        NewSwapRequestDialog(
+            myShifts = myAcceptedShifts,
+            targetShifts = swappableTargets,
+            members = members,
+            onDismiss = { showNewSwap = false },
+            onConfirm = { myShiftId, targetMemberId, targetShiftId ->
+                teamViewModel.requestSwap(myShiftId, targetMemberId, targetShiftId)
+                showNewSwap = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun NewSwapRequestDialog(
+    myShifts: List<TeamShift>,
+    targetShifts: List<TeamShift>,
+    members: List<TeamMember>,
+    onDismiss: () -> Unit,
+    onConfirm: (myShiftId: String, targetMemberId: String, targetShiftId: String) -> Unit
+) {
+    val timeFormat = remember { java.text.SimpleDateFormat("MMM dd, h:mm a", java.util.Locale.US) }
+    var selectedTargetId by remember { mutableStateOf(targetShifts.firstOrNull()?.id ?: "") }
+    var selectedMineId by remember { mutableStateOf(myShifts.firstOrNull()?.id ?: "") }
+    val selectedTarget = targetShifts.find { it.id == selectedTargetId }
+
+    fun memberName(userId: String): String {
+        val m = members.find { it.userId == userId }
+        return m?.displayName?.ifBlank { m.email.substringBefore("@") } ?: "Unknown"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Request a Swap", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("1. Pick the shift you want", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
+                Column(
+                    modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    targetShifts.forEach { shift ->
+                        SwapShiftOption(
+                            selected = selectedTargetId == shift.id,
+                            title = "${memberName(shift.assignedTo)} · ${shift.company}",
+                            subtitle = timeFormat.format(java.util.Date(shift.startTime)),
+                            onClick = { selectedTargetId = shift.id }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("2. Pick your shift to offer", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
+                Column(
+                    modifier = Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    myShifts.forEach { shift ->
+                        SwapShiftOption(
+                            selected = selectedMineId == shift.id,
+                            title = shift.company,
+                            subtitle = timeFormat.format(java.util.Date(shift.startTime)),
+                            onClick = { selectedMineId = shift.id }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val target = selectedTarget ?: return@Button
+                    onConfirm(selectedMineId, target.assignedTo, target.id)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                enabled = selectedTargetId.isNotBlank() && selectedMineId.isNotBlank()
+            ) { Text("Send Request", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@Composable
+private fun SwapShiftOption(
+    selected: Boolean,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(vertical = 4.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (selected) Icons.Default.RadioButtonChecked else Icons.Default.RadioButtonUnchecked,
+            null,
+            tint = if (selected) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
