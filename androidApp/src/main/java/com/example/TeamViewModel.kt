@@ -21,6 +21,62 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.*
 
+/** Human-readable working-hours summary, e.g. "Open 24 hours" or "9:00 AM – 5:00 PM". */
+fun formatWorkHours(open24Hours: Boolean, startMinutes: Int, endMinutes: Int): String {
+    if (open24Hours) return "Open 24 hours"
+    fun fmt(mins: Int): String {
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, (mins / 60) % 24)
+            set(java.util.Calendar.MINUTE, mins % 60)
+        }
+        return java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(cal.time)
+    }
+    return "${fmt(startMinutes)} – ${fmt(endMinutes)}"
+}
+
+/** All editable team fields captured by the Create / Edit team forms. */
+data class TeamFormData(
+    val name: String = "",
+    val companyName: String = "",
+    val weeklyCycleStartDay: String = "Monday",
+    val open24Hours: Boolean = true,
+    val workStartMinutes: Int = 9 * 60,
+    val workEndMinutes: Int = 17 * 60,
+    val addressLine: String = "",
+    val city: String = "",
+    val region: String = "",
+    val postalCode: String = ""
+) {
+    companion object {
+        /** Prefill the form from an existing team (for the Edit screen). */
+        fun from(team: Team): TeamFormData = TeamFormData(
+            name = team.name,
+            companyName = team.companyName,
+            weeklyCycleStartDay = team.weeklyCycleStartDay,
+            open24Hours = team.open24Hours,
+            workStartMinutes = if (team.open24Hours) 9 * 60 else team.workStartMinutes,
+            workEndMinutes = if (team.open24Hours) 17 * 60 else team.workEndMinutes,
+            addressLine = team.addressLine,
+            city = team.city,
+            region = team.region,
+            postalCode = team.postalCode
+        )
+    }
+
+    /** The non-identity team fields written to Firestore on create and update. */
+    fun toFirestoreFields(): HashMap<String, Any> = hashMapOf(
+        "weeklyCycleStartDay" to weeklyCycleStartDay,
+        "companyName" to companyName.trim(),
+        "open24Hours" to open24Hours,
+        "workStartMinutes" to workStartMinutes,
+        "workEndMinutes" to workEndMinutes,
+        "addressLine" to addressLine.trim(),
+        "city" to city.trim(),
+        "region" to region.trim(),
+        "postalCode" to postalCode.trim()
+    )
+}
+
 class TeamViewModel : ViewModel() {
     private val auth by lazy { try { FirebaseAuth.getInstance() } catch (e: Exception) { null } }
     private val db by lazy { try { FirebaseFirestore.getInstance(FirebaseApp.getInstance(), FIRESTORE_DB_NAME) } catch (e: Exception) { null } }
@@ -141,7 +197,15 @@ class TeamViewModel : ViewModel() {
                                     inviteCode = doc.getString("inviteCode") ?: "",
                                     createdAt = doc.getLong("createdAt") ?: 0,
                                     memberCount = doc.getLong("memberCount")?.toInt() ?: 0,
-                                    weeklyCycleStartDay = doc.getString("weeklyCycleStartDay") ?: "Monday"
+                                    weeklyCycleStartDay = doc.getString("weeklyCycleStartDay") ?: "Monday",
+                                    companyName = doc.getString("companyName") ?: "",
+                                    open24Hours = doc.getBoolean("open24Hours") ?: true,
+                                    workStartMinutes = doc.getLong("workStartMinutes")?.toInt() ?: 0,
+                                    workEndMinutes = doc.getLong("workEndMinutes")?.toInt() ?: 0,
+                                    addressLine = doc.getString("addressLine") ?: "",
+                                    city = doc.getString("city") ?: "",
+                                    region = doc.getString("region") ?: "",
+                                    postalCode = doc.getString("postalCode") ?: ""
                                 )
                                 allTeams.add(team)
                             }
@@ -202,7 +266,8 @@ class TeamViewModel : ViewModel() {
                             role = doc.getString("role") ?: "member",
                             joinedAt = doc.getLong("joinedAt") ?: 0,
                             displayName = doc.getString("displayName") ?: "",
-                            email = doc.getString("email") ?: ""
+                            email = doc.getString("email") ?: "",
+                            defaultHourlyRate = doc.getDouble("defaultHourlyRate") ?: 0.0
                         )
                     }
                 }
@@ -354,11 +419,15 @@ class TeamViewModel : ViewModel() {
             }
     }
 
-    fun createTeam(name: String) {
+    fun createTeam(form: TeamFormData) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
-        if (name.isBlank()) {
+        if (form.name.isBlank()) {
             _errorMessage.value = "Team name cannot be empty."
+            return
+        }
+        if (form.companyName.isBlank()) {
+            _errorMessage.value = "Company name cannot be empty."
             return
         }
         _isLoading.value = true
@@ -369,13 +438,12 @@ class TeamViewModel : ViewModel() {
         val now = System.currentTimeMillis()
 
         val teamData = hashMapOf(
-            "name" to name.trim(),
+            "name" to form.name.trim(),
             "ownerId" to uid,
             "inviteCode" to inviteCode,
             "createdAt" to now,
-            "memberCount" to 1,
-            "weeklyCycleStartDay" to "Monday"
-        )
+            "memberCount" to 1
+        ) + form.toFirestoreFields()
 
         val email = auth?.currentUser?.email ?: ""
         val displayName = auth?.currentUser?.displayName ?: ""
@@ -386,7 +454,8 @@ class TeamViewModel : ViewModel() {
             "role" to "manager",
             "joinedAt" to now,
             "displayName" to displayName,
-            "email" to email
+            "email" to email,
+            "defaultHourlyRate" to 0.0
         )
 
         val batch = database.batch()
@@ -401,6 +470,54 @@ class TeamViewModel : ViewModel() {
             .addOnFailureListener { e ->
                 _errorMessage.value = "Failed to create team: ${e.message}"
                 _isLoading.value = false
+            }
+    }
+
+    /** Update the editable team fields (manager/owner only, enforced by rules). */
+    fun updateTeam(teamId: String, form: TeamFormData) {
+        val database = db ?: return
+        if (form.name.isBlank() || form.companyName.isBlank()) {
+            _errorMessage.value = "Team and company name cannot be empty."
+            return
+        }
+        val updates = hashMapOf<String, Any>("name" to form.name.trim()) + form.toFirestoreFields()
+        database.collection("teams").document(teamId)
+            .update(updates)
+            .addOnSuccessListener {
+                val current = _currentTeam.value
+                if (current?.id == teamId) {
+                    _currentTeam.value = current.copy(
+                        name = form.name.trim(),
+                        weeklyCycleStartDay = form.weeklyCycleStartDay,
+                        companyName = form.companyName.trim(),
+                        open24Hours = form.open24Hours,
+                        workStartMinutes = form.workStartMinutes,
+                        workEndMinutes = form.workEndMinutes,
+                        addressLine = form.addressLine.trim(),
+                        city = form.city.trim(),
+                        region = form.region.trim(),
+                        postalCode = form.postalCode.trim()
+                    )
+                }
+            }
+            .addOnFailureListener { e ->
+                _errorMessage.value = "Failed to update team: ${e.message}"
+            }
+    }
+
+    /** Set a member's default pay rate (manager/owner only). */
+    fun updateMemberRate(memberDocId: String, rate: Double) {
+        val database = db ?: return
+        val safeRate = rate.coerceAtLeast(0.0)
+        val previous = _members.value
+        _members.value = _members.value.map {
+            if (it.id == memberDocId) it.copy(defaultHourlyRate = safeRate) else it
+        }
+        database.collection("team_members").document(memberDocId)
+            .update("defaultHourlyRate", safeRate)
+            .addOnFailureListener { e ->
+                _members.value = previous
+                _errorMessage.value = "Failed to update pay rate: ${e.message}"
             }
     }
 
@@ -1061,14 +1178,33 @@ class TeamViewModel : ViewModel() {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
 
+        // A swap should trade only the time-slots, never the pay rate. Each person's
+        // hourly rate must move with them, otherwise whoever takes a shift would be
+        // paid the other person's rate. We read both shifts' current rates and swap
+        // them alongside assignedTo so nobody's pay rate changes because of the swap.
+        val requesterShift = _teamShifts.value.find { it.id == request.requesterShiftId }
+        val targetShift = _teamShifts.value.find { it.id == request.targetShiftId }
+        if (requesterShift == null || targetShift == null) {
+            _errorMessage.value = "Couldn't load the shift details to swap. Please try again."
+            return
+        }
+        val requesterRate = requesterShift.hourlyRate
+        val targetRate = targetShift.hourlyRate
+
         val batch = database.batch()
         batch.update(
             database.collection("team_shifts").document(request.requesterShiftId),
-            "assignedTo", request.targetMemberId
+            mapOf(
+                "assignedTo" to request.targetMemberId,
+                "hourlyRate" to targetRate
+            )
         )
         batch.update(
             database.collection("team_shifts").document(request.targetShiftId),
-            "assignedTo", request.requesterId
+            mapOf(
+                "assignedTo" to request.requesterId,
+                "hourlyRate" to requesterRate
+            )
         )
         batch.update(
             database.collection("swap_requests").document(request.id),

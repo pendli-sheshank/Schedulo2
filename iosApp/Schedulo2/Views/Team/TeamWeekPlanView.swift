@@ -2,11 +2,9 @@ import SwiftUI
 
 struct TeamWeekPlanView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
-    @EnvironmentObject var dashboardViewModel: DashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedMemberId = ""
-    @State private var selectedJobTitle = ""
     @State private var role = ""
     @State private var hourlyRate = ""
     @State private var notes = ""
@@ -74,8 +72,12 @@ struct TeamWeekPlanView: View {
         }
     }
 
+    private var companyName: String {
+        teamViewModel.currentTeam?.companyName ?? ""
+    }
+
     private var canAssign: Bool {
-        !selectedMemberId.isEmpty && !selectedJobTitle.isEmpty && dayEnabled.contains(true)
+        !selectedMemberId.isEmpty && dayEnabled.contains(true)
     }
 
     var body: some View {
@@ -97,29 +99,25 @@ struct TeamWeekPlanView: View {
                         .pickerStyle(.menu)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .onChange(of: selectedMemberId) { newValue in
-                            if !newValue.isEmpty {
-                                teamViewModel.fetchMemberJobs(userId: newValue)
+                            if let m = teamViewModel.members.first(where: { $0.userId == newValue }), m.defaultHourlyRate > 0 {
+                                hourlyRate = String(format: "%.2f", m.defaultHourlyRate)
                             }
                         }
                     }
 
-                    // Employer selector
+                    // Company (from the team)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Employer")
+                        Text("Company")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.secondary)
-                        Picker("Employer", selection: $selectedJobTitle) {
-                            Text("Select employer").tag("")
-                            ForEach(dashboardViewModel.jobs, id: \.id) { job in
-                                Text("\(job.title) (\(job.isGigWork ? "Gig" : "$\(String(format: "%.0f", job.defaultHourlyRate))/hr"))")
-                                    .tag(job.title)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .onChange(of: selectedJobTitle) { newValue in
-                            updateHourlyRate()
-                        }
+                        Text(companyName.isEmpty ? "—" : companyName)
+                            .font(.system(size: 15))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(UIColor.secondarySystemBackground))
+                            )
                     }
 
                     // Role and Pay Rate
@@ -142,13 +140,10 @@ struct TeamWeekPlanView: View {
                         }
                     }
 
-                    if !selectedMemberId.isEmpty && !selectedJobTitle.isEmpty {
-                        if let memberJob = teamViewModel.memberJobs.first(where: { $0.title.caseInsensitiveCompare(selectedJobTitle) == .orderedSame }) {
-                            let memberName = teamViewModel.members.first(where: { $0.userId == selectedMemberId })?.displayName ?? "member"
-                            Text("Rate from \(memberName)'s account: $\(String(format: "%.2f", memberJob.defaultHourlyRate))/hr")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.primaryGreen)
-                        }
+                    if let m = teamViewModel.members.first(where: { $0.userId == selectedMemberId }), m.defaultHourlyRate <= 0 {
+                        Text("No saved pay rate for this member — enter one above.")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.accentOrange)
                     }
 
                     // Week selector
@@ -297,19 +292,6 @@ struct TeamWeekPlanView: View {
             }
         }
         .interactiveDismissDisabled()
-        .onChange(of: teamViewModel.memberJobs) { _ in
-            updateHourlyRate()
-        }
-    }
-
-    private func updateHourlyRate() {
-        guard !selectedJobTitle.isEmpty else { return }
-        if !selectedMemberId.isEmpty,
-           let memberJob = teamViewModel.memberJobs.first(where: { $0.title.caseInsensitiveCompare(selectedJobTitle) == .orderedSame }) {
-            hourlyRate = String(format: "%.2f", memberJob.defaultHourlyRate)
-        } else if let job = dashboardViewModel.jobs.first(where: { $0.title == selectedJobTitle }) {
-            hourlyRate = String(format: "%.2f", job.defaultHourlyRate)
-        }
     }
 
     private func saveWeekPlan() {
@@ -337,7 +319,7 @@ struct TeamWeekPlanView: View {
 
             teamViewModel.assignShift(
                 to: selectedMemberId,
-                company: selectedJobTitle,
+                company: companyName,
                 role: role,
                 startTime: Int64(actualStart.timeIntervalSince1970 * 1000),
                 endTime: Int64(actualEnd.timeIntervalSince1970 * 1000),

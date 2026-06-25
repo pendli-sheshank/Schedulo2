@@ -4,6 +4,8 @@ struct TeamDashboardDetailView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showHelp = false
+    @State private var rateMemberId: String?
+    @State private var rateText = ""
 
     var body: some View {
         NavigationStack {
@@ -11,6 +13,7 @@ struct TeamDashboardDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if let team = teamViewModel.currentTeam {
                         inviteCodeCard(team)
+                        teamInfoCard(team)
                     }
                     if teamViewModel.isManager && !teamViewModel.teamShifts.isEmpty {
                         managerDashboardSection
@@ -36,6 +39,22 @@ struct TeamDashboardDetailView: View {
             } message: {
                 Text("See your team's invite code, member list, and (for managers) an overview of upcoming shifts. Owners can promote, demote, or remove members here.")
             }
+            .alert("Set Pay Rate", isPresented: Binding(
+                get: { rateMemberId != nil },
+                set: { if !$0 { rateMemberId = nil } }
+            )) {
+                TextField("Hourly rate", text: $rateText)
+                    .keyboardType(.decimalPad)
+                Button("Save") {
+                    if let id = rateMemberId {
+                        teamViewModel.updateMemberRate(memberDocId: id, rate: Double(rateText) ?? 0)
+                    }
+                    rateMemberId = nil
+                }
+                Button("Cancel", role: .cancel) { rateMemberId = nil }
+            } message: {
+                Text("Default hourly rate, used when assigning team shifts.")
+            }
         }
     }
 
@@ -54,6 +73,42 @@ struct TeamDashboardDetailView: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.primaryGreen.opacity(0.08))
         )
+    }
+
+    private func teamInfoCard(_ team: TeamInfo) -> some View {
+        let address = [team.addressLine, team.city, team.region, team.postalCode]
+            .filter { !$0.isEmpty }.joined(separator: ", ")
+        return VStack(alignment: .leading, spacing: 10) {
+            if !team.companyName.isEmpty {
+                infoRow(icon: "building.2", label: "Company", value: team.companyName)
+            }
+            infoRow(icon: "clock", label: "Working hours",
+                    value: formatWorkHours(open24Hours: team.open24Hours, startMinutes: team.workStartMinutes, endMinutes: team.workEndMinutes))
+            infoRow(icon: "calendar", label: "Week starts", value: team.weeklyCycleStartDay)
+            if !address.isEmpty {
+                infoRow(icon: "mappin.and.ellipse", label: "Location", value: address)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(UIColor.secondarySystemBackground))
+        )
+    }
+
+    private func infoRow(icon: String, label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(.primaryGreen)
+                .font(.system(size: 16))
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label).font(.system(size: 11)).foregroundColor(.secondary)
+                Text(value).font(.system(size: 14, weight: .semibold))
+            }
+            Spacer()
+        }
     }
 
     private var isOwner: Bool {
@@ -77,6 +132,15 @@ struct TeamDashboardDetailView: View {
                         Text(member.role.capitalized)
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
+                        if member.defaultHourlyRate > 0 {
+                            Text(String(format: "$%.2f/hr", member.defaultHourlyRate))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.primaryGreen)
+                        } else if isOwner {
+                            Text("No pay rate set")
+                                .font(.system(size: 12))
+                                .foregroundColor(.accentOrange)
+                        }
                     }
                     Spacer()
                     if isOwner && member.userId != teamViewModel.currentUserId {
@@ -90,6 +154,12 @@ struct TeamDashboardDetailView: View {
                                 Button(action: { teamViewModel.demoteMember(memberDocId: member.id) }) {
                                     Label("Demote to Member", systemImage: "person.fill")
                                 }
+                            }
+                            Button(action: {
+                                rateText = member.defaultHourlyRate > 0 ? String(format: "%.2f", member.defaultHourlyRate) : ""
+                                rateMemberId = member.id
+                            }) {
+                                Label("Set Pay Rate", systemImage: "dollarsign.circle")
                             }
                             Button(role: .destructive, action: {
                                 teamViewModel.removeMember(memberDocId: member.id, teamId: teamViewModel.currentTeam?.id ?? "")

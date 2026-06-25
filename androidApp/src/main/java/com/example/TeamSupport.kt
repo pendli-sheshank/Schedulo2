@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -61,13 +62,11 @@ fun TeamScreen(
     val userRole by teamViewModel.userRole.collectAsState()
 
     val currentUserId by authViewModel.currentUserId.collectAsState()
-    val jobs by (dashboardViewModel?.jobs ?: MutableStateFlow(emptyList<Job>())).collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var showEditTeamDialog by remember { mutableStateOf(false) }
-    var showWeekStartDayDialog by remember { mutableStateOf(false) }
     var showDeleteTeamConfirm by remember { mutableStateOf(false) }
     var teamSelectorExpanded by remember { mutableStateOf(false) }
     var overflowMenuExpanded by remember { mutableStateOf(false) }
@@ -110,14 +109,9 @@ fun TeamScreen(
                                 HorizontalDivider()
                                 if (userRole == "manager") {
                                     DropdownMenuItem(
-                                        text = { Text("Edit Team Name") },
+                                        text = { Text("Edit Team") },
                                         leadingIcon = { Icon(Icons.Default.Edit, null) },
                                         onClick = { overflowMenuExpanded = false; showEditTeamDialog = true }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Week Start Day") },
-                                        leadingIcon = { Icon(Icons.Default.DateRange, null) },
-                                        onClick = { overflowMenuExpanded = false; showWeekStartDayDialog = true }
                                     )
                                 }
                                 DropdownMenuItem(
@@ -434,8 +428,8 @@ fun TeamScreen(
     if (showCreateDialog) {
         CreateTeamDialog(
             onDismiss = { showCreateDialog = false },
-            onCreate = { name ->
-                teamViewModel.createTeam(name)
+            onCreate = { form ->
+                teamViewModel.createTeam(form)
                 showCreateDialog = false
             }
         )
@@ -473,73 +467,13 @@ fun TeamScreen(
     }
 
     if (showEditTeamDialog && currentTeam != null) {
-        var editTeamName by remember { mutableStateOf(currentTeam!!.name) }
-        AlertDialog(
-            onDismissRequest = { showEditTeamDialog = false },
-            title = { Text("Edit Team Name", fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = editTeamName,
-                    onValueChange = { if (it.length <= 50) editTeamName = it },
-                    label = { Text("Store Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        teamViewModel.updateTeamName(currentTeam!!.id, editTeamName.trim())
-                        showEditTeamDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                    enabled = editTeamName.trim().isNotBlank()
-                ) { Text("Save", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = { TextButton(onClick = { showEditTeamDialog = false }) { Text("Cancel") } },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(16.dp)
-        )
-    }
-
-    if (showWeekStartDayDialog && currentTeam != null) {
-        val allDays = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-        var selectedDay by remember { mutableStateOf(currentTeam!!.weeklyCycleStartDay) }
-        AlertDialog(
-            onDismissRequest = { showWeekStartDayDialog = false },
-            title = { Text("Week Start Day", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Select which day the team's weekly schedule starts:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    Spacer(Modifier.height(12.dp))
-                    allDays.forEach { day ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedDay = day }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = selectedDay == day, onClick = { selectedDay = day })
-                            Spacer(Modifier.width(8.dp))
-                            Text(day, fontSize = 15.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        teamViewModel.updateWeeklyCycleStartDay(currentTeam!!.id, selectedDay)
-                        showWeekStartDayDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
-                ) { Text("Save", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = { TextButton(onClick = { showWeekStartDayDialog = false }) { Text("Cancel") } },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(16.dp)
+        EditTeamDialog(
+            team = currentTeam!!,
+            onDismiss = { showEditTeamDialog = false },
+            onSave = { form ->
+                teamViewModel.updateTeam(currentTeam!!.id, form)
+                showEditTeamDialog = false
+            }
         )
     }
 
@@ -633,8 +567,10 @@ fun MemberCard(
     currentUserId: String = "",
     onPromote: (() -> Unit)? = null,
     onDemote: (() -> Unit)? = null,
-    onRemove: (() -> Unit)? = null
+    onRemove: (() -> Unit)? = null,
+    onSetRate: ((Double) -> Unit)? = null
 ) {
+    var showRateDialog by remember { mutableStateOf(false) }
     val initials = remember(member.displayName, member.email) {
         if (member.displayName.isNotBlank()) {
             val parts = member.displayName.trim().split(" ")
@@ -682,6 +618,16 @@ fun MemberCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (member.defaultHourlyRate > 0.0) {
+                    Text(
+                        "$${String.format("%.2f", member.defaultHourlyRate)}/hr",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryGreen
+                    )
+                } else if (onSetRate != null) {
+                    Text("No pay rate set", fontSize = 12.sp, color = AccentOrange)
+                }
             }
             Surface(
                 shape = RoundedCornerShape(6.dp),
@@ -716,6 +662,13 @@ fun MemberCard(
                                 onClick = { menuExpanded = false; onDemote() }
                             )
                         }
+                        if (onSetRate != null) {
+                            DropdownMenuItem(
+                                text = { Text("Set Pay Rate") },
+                                leadingIcon = { Icon(Icons.Default.AttachMoney, null, tint = PrimaryGreen) },
+                                onClick = { menuExpanded = false; showRateDialog = true }
+                            )
+                        }
                         if (onRemove != null) {
                             DropdownMenuItem(
                                 text = { Text("Remove from Team") },
@@ -727,6 +680,42 @@ fun MemberCard(
                 }
             }
         }
+    }
+
+    if (showRateDialog && onSetRate != null) {
+        var rateStr by remember { mutableStateOf(if (member.defaultHourlyRate > 0) String.format("%.2f", member.defaultHourlyRate) else "") }
+        AlertDialog(
+            onDismissRequest = { showRateDialog = false },
+            title = { Text("Set Pay Rate", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        "Default hourly rate for ${member.displayName.ifBlank { member.email.substringBefore("@") }}. Used when assigning team shifts.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = rateStr,
+                        onValueChange = { rateStr = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Hourly rate ($)") },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onSetRate(rateStr.toDoubleOrNull() ?: 0.0); showRateDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
+                ) { Text("Save", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showRateDialog = false }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
 
@@ -914,32 +903,191 @@ fun TeamShiftCard(
 }
 
 @Composable
-fun CreateTeamDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
-    var teamName by remember { mutableStateOf("") }
-
+fun CreateTeamDialog(onDismiss: () -> Unit, onCreate: (TeamFormData) -> Unit) {
+    var form by remember { mutableStateOf(TeamFormData()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Store Team", fontWeight = FontWeight.Bold) },
+        title = { Text("Create Team", fontWeight = FontWeight.Bold) },
         text = {
-            Column {
-                Text("Enter a name for your new store team.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = teamName,
-                    onValueChange = { if (it.length <= 50) teamName = it },
-                    label = { Text("Store Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
+            Column(modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                TeamFormFields(form = form, onChange = { form = it })
             }
         },
         confirmButton = {
             Button(
-                onClick = { onCreate(teamName.trim()) },
+                onClick = { onCreate(form) },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                enabled = teamName.trim().isNotBlank()
+                enabled = form.name.trim().isNotBlank() && form.companyName.trim().isNotBlank()
             ) { Text("Create", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TeamFormFields(form: TeamFormData, onChange: (TeamFormData) -> Unit) {
+    val days = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    var dayMenuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(
+            value = form.name,
+            onValueChange = { if (it.length <= 50) onChange(form.copy(name = it)) },
+            label = { Text("Team name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+        OutlinedTextField(
+            value = form.companyName,
+            onValueChange = { if (it.length <= 100) onChange(form.copy(companyName = it)) },
+            label = { Text("Company name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        // Weekly cycle start day
+        ExposedDropdownMenuBox(expanded = dayMenuExpanded, onExpandedChange = { dayMenuExpanded = it }) {
+            OutlinedTextField(
+                value = form.weeklyCycleStartDay,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Weekly cycle starts on") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dayMenuExpanded) },
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+            ExposedDropdownMenu(expanded = dayMenuExpanded, onDismissRequest = { dayMenuExpanded = false }) {
+                days.forEach { day ->
+                    DropdownMenuItem(text = { Text(day) }, onClick = { onChange(form.copy(weeklyCycleStartDay = day)); dayMenuExpanded = false })
+                }
+            }
+        }
+
+        // Working hours
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Open 24 hours", fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Switch(checked = form.open24Hours, onCheckedChange = { onChange(form.copy(open24Hours = it)) })
+        }
+        if (!form.open24Hours) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TeamTimeField(
+                    label = "Opens",
+                    minutes = form.workStartMinutes,
+                    context = context,
+                    onPick = { onChange(form.copy(workStartMinutes = it)) },
+                    modifier = Modifier.weight(1f)
+                )
+                TeamTimeField(
+                    label = "Closes",
+                    minutes = form.workEndMinutes,
+                    context = context,
+                    onPick = { onChange(form.copy(workEndMinutes = it)) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Text("Location", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = form.addressLine,
+            onValueChange = { if (it.length <= 200) onChange(form.copy(addressLine = it)) },
+            label = { Text("Address") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            maxLines = 2
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = form.city,
+                onValueChange = { if (it.length <= 100) onChange(form.copy(city = it)) },
+                label = { Text("City") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            OutlinedTextField(
+                value = form.region,
+                onValueChange = { if (it.length <= 100) onChange(form.copy(region = it)) },
+                label = { Text("State/Region") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+        OutlinedTextField(
+            value = form.postalCode,
+            onValueChange = { if (it.length <= 20) onChange(form.copy(postalCode = it)) },
+            label = { Text("Postal code") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        )
+    }
+}
+
+@Composable
+private fun TeamTimeField(
+    label: String,
+    minutes: Int,
+    context: android.content.Context,
+    onPick: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val display = remember(minutes) {
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, (minutes / 60) % 24); set(java.util.Calendar.MINUTE, minutes % 60)
+        }
+        java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(cal.time)
+    }
+    OutlinedTextField(
+        value = display,
+        onValueChange = {},
+        readOnly = true,
+        enabled = false,
+        label = { Text(label) },
+        modifier = modifier.clickable {
+            android.app.TimePickerDialog(
+                context,
+                { _, h, m -> onPick(h * 60 + m) },
+                (minutes / 60) % 24, minutes % 60, false
+            ).show()
+        },
+        colors = OutlinedTextFieldDefaults.colors(
+            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+            disabledBorderColor = MaterialTheme.colorScheme.outline,
+            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
+    )
+}
+
+@Composable
+private fun EditTeamDialog(
+    team: com.schedulo.shared.model.Team,
+    onDismiss: () -> Unit,
+    onSave: (TeamFormData) -> Unit
+) {
+    var form by remember { mutableStateOf(TeamFormData.from(team)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Team", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                TeamFormFields(form = form, onChange = { form = it })
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(form) },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                enabled = form.name.trim().isNotBlank() && form.companyName.trim().isNotBlank()
+            ) { Text("Save", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         containerColor = MaterialTheme.colorScheme.surface,
@@ -987,23 +1135,30 @@ fun AssignShiftDialog(
     onDismiss: () -> Unit,
     onAssign: (memberId: String, company: String, role: String, startTime: Long, endTime: Long, hourlyRate: Double, notes: String, tasks: List<ShiftTask>) -> Unit,
     members: List<TeamMember>,
-    jobs: List<Job> = emptyList()
+    companyName: String,
+    defaultStartMinutes: Int = 9 * 60,
+    defaultEndMinutes: Int = 17 * 60
 ) {
     var selectedMember by remember { mutableStateOf<TeamMember?>(null) }
     var memberDropdownExpanded by remember { mutableStateOf(false) }
-    var selectedJob by remember { mutableStateOf<Job?>(null) }
-    var employerDropdownExpanded by remember { mutableStateOf(false) }
     var role by remember { mutableStateOf("") }
-    var hourlyRateStr by remember { mutableStateOf("15.0") }
+    var hourlyRateStr by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var tasks by remember { mutableStateOf(listOf<ShiftTask>()) }
     var newTaskTitle by remember { mutableStateOf("") }
 
+    // Prefill the rate from the selected member's default rate.
+    LaunchedEffect(selectedMember) {
+        selectedMember?.let { m ->
+            hourlyRateStr = if (m.defaultHourlyRate > 0) String.format("%.2f", m.defaultHourlyRate) else hourlyRateStr
+        }
+    }
+
     var selectedDateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-    var startHour by remember { mutableStateOf(9) }
-    var startMinute by remember { mutableStateOf(0) }
-    var endHour by remember { mutableStateOf(17) }
-    var endMinute by remember { mutableStateOf(0) }
+    var startHour by remember { mutableStateOf(defaultStartMinutes / 60) }
+    var startMinute by remember { mutableStateOf(defaultStartMinutes % 60) }
+    var endHour by remember { mutableStateOf(defaultEndMinutes / 60) }
+    var endMinute by remember { mutableStateOf(defaultEndMinutes % 60) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showStartTimePicker by remember { mutableStateOf(false) }
@@ -1104,30 +1259,21 @@ fun AssignShiftDialog(
                     }
                 }
 
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = selectedJob?.title ?: "Select employer...",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Employer") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employerDropdownExpanded) }
-                    )
-                    Box(modifier = Modifier.matchParentSize().clickable { employerDropdownExpanded = true })
-                    DropdownMenu(expanded = employerDropdownExpanded, onDismissRequest = { employerDropdownExpanded = false }) {
-                        jobs.forEach { job ->
-                            DropdownMenuItem(
-                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${job.defaultHourlyRate}/hr"})") },
-                                onClick = {
-                                    selectedJob = job
-                                    hourlyRateStr = job.defaultHourlyRate.toString()
-                                    employerDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+                // Company comes from the team (no personal-jobs picker).
+                OutlinedTextField(
+                    value = companyName.ifBlank { "—" },
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = false,
+                    label = { Text("Company") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
 
                 OutlinedTextField(
                     value = role,
@@ -1268,7 +1414,7 @@ fun AssignShiftDialog(
 
                     onAssign(
                         member.userId,
-                        selectedJob?.title ?: "",
+                        companyName,
                         role,
                         calStart.timeInMillis,
                         finalEnd,
@@ -1278,7 +1424,7 @@ fun AssignShiftDialog(
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                enabled = selectedMember != null && selectedJob != null
+                enabled = selectedMember != null
             ) { Text("Assign", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -1295,28 +1441,33 @@ fun TeamWeekPlanDialog(
     onDismiss: () -> Unit,
     onAssignShifts: (memberId: String, company: String, role: String, hourlyRate: Double, notes: String, tasks: List<ShiftTask>, weekStartMillis: Long, dayEntries: List<TeamWeekDayEntry>) -> Unit,
     members: List<TeamMember>,
-    jobs: List<Job> = emptyList(),
+    companyName: String,
     teamViewModel: TeamViewModel? = null,
-    weeklyCycleStartDay: String = "Monday"
+    weeklyCycleStartDay: String = "Monday",
+    defaultStartMinutes: Int = 9 * 60,
+    defaultEndMinutes: Int = 17 * 60
 ) {
     var selectedMember by remember { mutableStateOf<TeamMember?>(null) }
     var memberDropdownExpanded by remember { mutableStateOf(false) }
-    var selectedJob by remember { mutableStateOf<Job?>(null) }
-    var employerDropdownExpanded by remember { mutableStateOf(false) }
     var role by remember { mutableStateOf("") }
     var hourlyRateStr by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
     var dayEnabled by remember { mutableStateOf(List(7) { it < 5 }) }
-    var dayStartHours by remember { mutableStateOf(List(7) { 9 }) }
-    var dayStartMinutes by remember { mutableStateOf(List(7) { 0 }) }
-    var dayEndHours by remember { mutableStateOf(List(7) { 17 }) }
-    var dayEndMinutes by remember { mutableStateOf(List(7) { 0 }) }
+    var dayStartHours by remember { mutableStateOf(List(7) { defaultStartMinutes / 60 }) }
+    var dayStartMinutes by remember { mutableStateOf(List(7) { defaultStartMinutes % 60 }) }
+    var dayEndHours by remember { mutableStateOf(List(7) { defaultEndMinutes / 60 }) }
+    var dayEndMinutes by remember { mutableStateOf(List(7) { defaultEndMinutes % 60 }) }
     var weekOffset by remember { mutableIntStateOf(0) }
     var showTimePickerForDay by remember { mutableIntStateOf(-1) }
     var isStartTimePicker by remember { mutableStateOf(true) }
 
-    val memberJobs by (teamViewModel?.memberJobs ?: MutableStateFlow(emptyList<Job>())).collectAsState()
+    // Prefill the rate from the selected member's default rate.
+    LaunchedEffect(selectedMember) {
+        selectedMember?.let { m ->
+            if (m.defaultHourlyRate > 0) hourlyRateStr = String.format("%.2f", m.defaultHourlyRate)
+        }
+    }
 
     val allDays = remember { listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") }
     val daysOfWeek = remember(weeklyCycleStartDay) {
@@ -1343,19 +1494,6 @@ fun TeamWeekPlanDialog(
         }.timeInMillis
     }
 
-    LaunchedEffect(selectedMember) {
-        selectedMember?.let { teamViewModel?.fetchMemberJobs(it.userId) }
-    }
-
-    LaunchedEffect(selectedMember, selectedJob, memberJobs) {
-        if (selectedJob != null && selectedMember != null) {
-            val memberJob = memberJobs.find { it.title.equals(selectedJob!!.title, ignoreCase = true) }
-            hourlyRateStr = String.format("%.2f", memberJob?.defaultHourlyRate ?: selectedJob!!.defaultHourlyRate)
-        } else if (selectedJob != null) {
-            hourlyRateStr = String.format("%.2f", selectedJob!!.defaultHourlyRate)
-        }
-    }
-
     Dialog(
         onDismissRequest = {},
         properties = DialogProperties(
@@ -1377,14 +1515,13 @@ fun TeamWeekPlanDialog(
                         Button(
                             onClick = {
                                 val member = selectedMember ?: return@Button
-                                val job = selectedJob ?: return@Button
                                 val entries = (0..6).filter { dayEnabled[it] }
                                     .map { TeamWeekDayEntry(it, dayStartHours[it], dayStartMinutes[it], dayEndHours[it], dayEndMinutes[it]) }
                                 onAssignShifts(
                                     member.userId,
-                                    job.title,
+                                    companyName,
                                     role,
-                                    hourlyRateStr.toDoubleOrNull() ?: job.defaultHourlyRate,
+                                    hourlyRateStr.toDoubleOrNull() ?: 0.0,
                                     notes,
                                     emptyList(),
                                     weekStartMillis,
@@ -1392,7 +1529,7 @@ fun TeamWeekPlanDialog(
                                 )
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                            enabled = selectedMember != null && selectedJob != null && dayEnabled.any { it },
+                            enabled = selectedMember != null && dayEnabled.any { it },
                             modifier = Modifier.padding(end = 8.dp)
                         ) { Text("Assign", fontWeight = FontWeight.Bold) }
                     }
@@ -1430,25 +1567,18 @@ fun TeamWeekPlanDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Text("Employer", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Company", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(4.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = selectedJob?.title ?: "Select employer...",
-                        onValueChange = {}, readOnly = true,
-                        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = employerDropdownExpanded) }
+                OutlinedTextField(
+                    value = companyName.ifBlank { "—" },
+                    onValueChange = {}, readOnly = true, enabled = false,
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Box(modifier = Modifier.matchParentSize().clickable { employerDropdownExpanded = true })
-                    DropdownMenu(expanded = employerDropdownExpanded, onDismissRequest = { employerDropdownExpanded = false }) {
-                        jobs.forEach { job ->
-                            DropdownMenuItem(
-                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${job.defaultHourlyRate}/hr"})") },
-                                onClick = { selectedJob = job; employerDropdownExpanded = false }
-                            )
-                        }
-                    }
-                }
+                )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -1466,15 +1596,12 @@ fun TeamWeekPlanDialog(
                     )
                 }
 
-                if (selectedMember != null && selectedJob != null) {
-                    val memberJob = memberJobs.find { it.title.equals(selectedJob!!.title, ignoreCase = true) }
-                    if (memberJob != null) {
-                        Text(
-                            "Rate from ${selectedMember!!.displayName.ifBlank { "member" }}'s account: $${String.format("%.2f", memberJob.defaultHourlyRate)}/hr",
-                            fontSize = 11.sp, color = PrimaryGreen, fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
+                if (selectedMember != null && (selectedMember!!.defaultHourlyRate <= 0.0)) {
+                    Text(
+                        "No saved pay rate for this member — enter one above.",
+                        fontSize = 11.sp, color = AccentOrange, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

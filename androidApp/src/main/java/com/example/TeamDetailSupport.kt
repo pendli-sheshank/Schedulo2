@@ -191,6 +191,10 @@ fun TeamDetailScreen(
         }
     }
 
+    val teamCompany = currentTeam?.companyName ?: ""
+    val teamStartMin = if (currentTeam?.open24Hours != false) 9 * 60 else (currentTeam?.workStartMinutes ?: 9 * 60)
+    val teamEndMin = if (currentTeam?.open24Hours != false) 17 * 60 else (currentTeam?.workEndMinutes ?: 17 * 60)
+
     if (showAssignDialog && members.isNotEmpty()) {
         AssignShiftDialog(
             onDismiss = { showAssignDialog = false },
@@ -199,7 +203,9 @@ fun TeamDetailScreen(
                 showAssignDialog = false
             },
             members = members,
-            jobs = jobs
+            companyName = teamCompany,
+            defaultStartMinutes = teamStartMin,
+            defaultEndMinutes = teamEndMin
         )
     }
 
@@ -228,9 +234,11 @@ fun TeamDetailScreen(
                 showWeekPlanDialog = false
             },
             members = members,
-            jobs = jobs,
+            companyName = teamCompany,
             teamViewModel = teamViewModel,
-            weeklyCycleStartDay = currentTeam?.weeklyCycleStartDay ?: "Monday"
+            weeklyCycleStartDay = currentTeam?.weeklyCycleStartDay ?: "Monday",
+            defaultStartMinutes = teamStartMin,
+            defaultEndMinutes = teamEndMin
         )
     }
 
@@ -361,6 +369,41 @@ private fun CreateTaskDialog(
 }
 
 @Composable
+private fun TeamInfoCard(team: Team) {
+    val address = listOf(team.addressLine, team.city, team.region, team.postalCode)
+        .filter { it.isNotBlank() }.joinToString(", ")
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (team.companyName.isNotBlank()) {
+                TeamInfoRow(Icons.Default.Business, "Company", team.companyName)
+            }
+            TeamInfoRow(Icons.Default.Schedule, "Working hours", formatWorkHours(team.open24Hours, team.workStartMinutes, team.workEndMinutes))
+            TeamInfoRow(Icons.Default.CalendarMonth, "Week starts", team.weeklyCycleStartDay)
+            if (address.isNotBlank()) {
+                TeamInfoRow(Icons.Default.LocationOn, "Location", address)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamInfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = PrimaryGreen, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+            Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+        }
+    }
+}
+
+@Composable
 private fun DashboardDetailContent(
     modifier: Modifier,
     teamShifts: List<TeamShift>,
@@ -394,6 +437,8 @@ private fun DashboardDetailContent(
                     }
                 }
             }
+
+            item { TeamInfoCard(team = currentTeam) }
         }
 
         if (isManager && teamShifts.isNotEmpty()) {
@@ -422,6 +467,9 @@ private fun DashboardDetailContent(
                 } else null,
                 onRemove = if (isOwner && member.userId != currentUserId) {
                     { teamViewModel?.removeMember(member.id, currentTeam?.id ?: "") }
+                } else null,
+                onSetRate = if (isOwner && member.userId != currentUserId) {
+                    { rate -> teamViewModel?.updateMemberRate(member.id, rate) }
                 } else null
             )
         }
@@ -1033,15 +1081,26 @@ private fun ChatDetailContent(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
 
-    // Launching can throw ActivityNotFoundException on devices with neither the
-    // system photo picker nor a documents UI — guard it so the app never crashes.
+    // Fallback picker for devices/ROMs where the modern photo picker isn't present.
+    // ACTION_GET_CONTENT is handled by gallery / Files / Google Photos apps and, like
+    // the photo picker, needs no storage permission (it returns a content:// URI via SAF).
+    val getContentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
+
     val launchImagePicker = {
+        // Prefer the privacy-friendly photo picker; if the device can't open it,
+        // fall back to ACTION_GET_CONTENT before giving up.
         try {
             imagePickerLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
         } catch (_: Exception) {
-            teamViewModel.reportError("No photo picker available on this device")
+            try {
+                getContentLauncher.launch("image/*")
+            } catch (_: Exception) {
+                teamViewModel.reportError("No gallery app available to pick a photo.")
+            }
         }
     }
 

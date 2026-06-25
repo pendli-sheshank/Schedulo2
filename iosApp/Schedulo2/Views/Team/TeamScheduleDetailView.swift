@@ -20,7 +20,6 @@ private extension DateFormatter {
 
 struct TeamScheduleDetailView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
-    @EnvironmentObject var dashboardViewModel: DashboardViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showAssignShift = false
     @State private var showWeekPlan = false
@@ -56,12 +55,10 @@ struct TeamScheduleDetailView: View {
             .sheet(isPresented: $showAssignShift) {
                 AssignShiftView()
                     .environmentObject(teamViewModel)
-                    .environmentObject(dashboardViewModel)
             }
             .sheet(isPresented: $showWeekPlan) {
                 TeamWeekPlanView()
                     .environmentObject(teamViewModel)
-                    .environmentObject(dashboardViewModel)
             }
             .sheet(isPresented: $showSwapPicker) {
                 SwapPickerView(sourceShift: swapSourceShift)

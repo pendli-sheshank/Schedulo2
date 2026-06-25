@@ -2,15 +2,11 @@ import SwiftUI
 
 struct TeamView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
-    @EnvironmentObject var dashboardViewModel: DashboardViewModel
     @State private var showCreateTeam = false
     @State private var showJoinTeam = false
     @State private var showLeaveConfirm = false
     @State private var showEditTeam = false
     @State private var showDeleteConfirm = false
-    @State private var editTeamName = ""
-    @State private var showWeekStartPicker = false
-    @State private var selectedWeekStartDay = "Monday"
     @State private var showDashboardDetail = false
     @State private var showScheduleDetail = false
     @State private var showTasksDetail = false
@@ -51,17 +47,8 @@ struct TeamView: View {
                         if teamViewModel.currentTeam != nil {
                             Divider()
                             if teamViewModel.isManager {
-                                Button(action: {
-                                    editTeamName = teamViewModel.currentTeam?.name ?? ""
-                                    showEditTeam = true
-                                }) {
-                                    Label("Edit Team Name", systemImage: "pencil")
-                                }
-                                Button(action: {
-                                    selectedWeekStartDay = teamViewModel.currentTeam?.weeklyCycleStartDay ?? "Monday"
-                                    showWeekStartPicker = true
-                                }) {
-                                    Label("Week Start Day", systemImage: "calendar.badge.clock")
+                                Button(action: { showEditTeam = true }) {
+                                    Label("Edit Team", systemImage: "pencil")
                                 }
                             }
                             Button(role: .destructive, action: { showLeaveConfirm = true }) {
@@ -94,7 +81,6 @@ struct TeamView: View {
             .sheet(isPresented: $showScheduleDetail) {
                 TeamScheduleDetailView()
                     .environmentObject(teamViewModel)
-                    .environmentObject(dashboardViewModel)
             }
             .sheet(isPresented: $showTasksDetail) {
                 TeamTasksDetailView()
@@ -122,15 +108,11 @@ struct TeamView: View {
             } message: {
                 Text("Are you sure you want to leave \"\(teamViewModel.currentTeam?.name ?? "")\"? You will lose access to team shifts and data.")
             }
-            .alert("Edit Team Name", isPresented: $showEditTeam) {
-                TextField("Store Name", text: $editTeamName)
-                Button("Save") {
-                    let trimmed = editTeamName.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty, let team = teamViewModel.currentTeam {
-                        teamViewModel.updateTeamName(teamId: team.id, newName: trimmed)
-                    }
+            .sheet(isPresented: $showEditTeam) {
+                if let team = teamViewModel.currentTeam {
+                    EditTeamView(team: team)
+                        .environmentObject(teamViewModel)
                 }
-                Button("Cancel", role: .cancel) {}
             }
             .alert("Delete Team", isPresented: $showDeleteConfirm) {
                 Button("Delete", role: .destructive) {
@@ -143,18 +125,6 @@ struct TeamView: View {
                 Text("Are you sure you want to permanently delete \"\(teamViewModel.currentTeam?.name ?? "")\"? All team data, members, and shifts will be removed.")
             }
             .onAppear { teamViewModel.loadTeams() }
-            .sheet(isPresented: $showWeekStartPicker) {
-                WeekStartDayPicker(
-                    selectedDay: $selectedWeekStartDay,
-                    onSave: { day in
-                        if let team = teamViewModel.currentTeam {
-                            teamViewModel.updateWeeklyCycleStartDay(teamId: team.id, day: day)
-                        }
-                        showWeekStartPicker = false
-                    },
-                    onCancel: { showWeekStartPicker = false }
-                )
-            }
         }
     }
 
@@ -348,44 +318,5 @@ struct TeamView: View {
         }
         .frame(maxWidth: 640)
         .frame(maxWidth: .infinity)
-    }
-}
-
-struct WeekStartDayPicker: View {
-    @Binding var selectedDay: String
-    var onSave: (String) -> Void
-    var onCancel: () -> Void
-
-    private let days: [String] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(days, id: \.self) { day in
-                    Button(action: { selectedDay = day }) {
-                        HStack {
-                            Text(day)
-                                .foregroundColor(.primary)
-                            Spacer()
-                            if selectedDay == day {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.primaryGreen)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Week Start Day")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onCancel() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(selectedDay) }
-                        .fontWeight(.semibold)
-                }
-            }
-        }
     }
 }

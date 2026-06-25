@@ -7,7 +7,18 @@ data class Team(
     var inviteCode: String = "",
     var createdAt: Long = 0,
     var memberCount: Int = 0,
-    var weeklyCycleStartDay: String = "Monday"
+    var weeklyCycleStartDay: String = "Monday",
+    // Company the team works for (used as the company on team shifts).
+    var companyName: String = "",
+    // Working hours. When open24Hours is true the start/end are ignored.
+    var open24Hours: Boolean = true,
+    var workStartMinutes: Int = 0,   // minutes from midnight
+    var workEndMinutes: Int = 0,
+    // Structured location/address.
+    var addressLine: String = "",
+    var city: String = "",
+    var region: String = "",         // state / province / region
+    var postalCode: String = ""
 )
 
 data class TeamMember(
@@ -17,7 +28,9 @@ data class TeamMember(
     var role: String = "member",
     var joinedAt: Long = 0,
     var displayName: String = "",
-    var email: String = ""
+    var email: String = "",
+    // Manager-set default pay rate for this member, prefilled when assigning shifts.
+    var defaultHourlyRate: Double = 0.0
 )
 
 data class ShiftTask(
