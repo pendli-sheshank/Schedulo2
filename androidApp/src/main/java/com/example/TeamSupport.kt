@@ -62,13 +62,11 @@ fun TeamScreen(
     val userRole by teamViewModel.userRole.collectAsState()
 
     val currentUserId by authViewModel.currentUserId.collectAsState()
-    val jobs by (dashboardViewModel?.jobs ?: MutableStateFlow(emptyList<Job>())).collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var showJoinDialog by remember { mutableStateOf(false) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var showEditTeamDialog by remember { mutableStateOf(false) }
-    var showWeekStartDayDialog by remember { mutableStateOf(false) }
     var showDeleteTeamConfirm by remember { mutableStateOf(false) }
     var teamSelectorExpanded by remember { mutableStateOf(false) }
     var overflowMenuExpanded by remember { mutableStateOf(false) }
@@ -111,14 +109,9 @@ fun TeamScreen(
                                 HorizontalDivider()
                                 if (userRole == "manager") {
                                     DropdownMenuItem(
-                                        text = { Text("Edit Team Name") },
+                                        text = { Text("Edit Team") },
                                         leadingIcon = { Icon(Icons.Default.Edit, null) },
                                         onClick = { overflowMenuExpanded = false; showEditTeamDialog = true }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Week Start Day") },
-                                        leadingIcon = { Icon(Icons.Default.DateRange, null) },
-                                        onClick = { overflowMenuExpanded = false; showWeekStartDayDialog = true }
                                     )
                                 }
                                 DropdownMenuItem(
@@ -481,46 +474,6 @@ fun TeamScreen(
                 teamViewModel.updateTeam(currentTeam!!.id, form)
                 showEditTeamDialog = false
             }
-        )
-    }
-
-    if (showWeekStartDayDialog && currentTeam != null) {
-        val allDays = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-        var selectedDay by remember { mutableStateOf(currentTeam!!.weeklyCycleStartDay) }
-        AlertDialog(
-            onDismissRequest = { showWeekStartDayDialog = false },
-            title = { Text("Week Start Day", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Select which day the team's weekly schedule starts:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    Spacer(Modifier.height(12.dp))
-                    allDays.forEach { day ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedDay = day }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = selectedDay == day, onClick = { selectedDay = day })
-                            Spacer(Modifier.width(8.dp))
-                            Text(day, fontSize = 15.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        teamViewModel.updateWeeklyCycleStartDay(currentTeam!!.id, selectedDay)
-                        showWeekStartDayDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)
-                ) { Text("Save", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = { TextButton(onClick = { showWeekStartDayDialog = false }) { Text("Cancel") } },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(16.dp)
         )
     }
 

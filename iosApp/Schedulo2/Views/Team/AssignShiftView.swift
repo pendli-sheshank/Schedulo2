@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AssignShiftView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
-    @EnvironmentObject var dashboardViewModel: DashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedMemberId = ""
