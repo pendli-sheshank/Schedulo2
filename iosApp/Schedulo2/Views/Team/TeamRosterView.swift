@@ -4,6 +4,8 @@ struct TeamRosterView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var weekOffset = 0
+    @State private var taskMemberId: String?
+    @State private var showHelp = false
 
     private static func weekdayNumber(for dayName: String) -> Int {
         switch dayName {
@@ -63,9 +65,26 @@ struct TeamRosterView: View {
             .navigationTitle("Team Roster")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showHelp = true }) {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(item: Binding(
+                get: { taskMemberId.map { IdentifiableString(value: $0) } },
+                set: { taskMemberId = $0?.value }
+            )) { wrapped in
+                CreateTeamTaskView(preselectedUserId: wrapped.value)
+                    .environmentObject(teamViewModel)
+            }
+            .alert("Team Roster", isPresented: $showHelp) {
+                Button("Got it", role: .cancel) {}
+            } message: {
+                Text("A week-at-a-glance grid of who works when. Managers can tap a member's name to assign them a task. Use the arrows to move between weeks.")
             }
         }
     }
@@ -149,10 +168,23 @@ struct TeamRosterView: View {
         let memberName: String = member.displayName.isEmpty ? member.email : member.displayName
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
-                Text(memberName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
+                Button(action: {
+                    if teamViewModel.isManager { taskMemberId = member.userId }
+                }) {
+                    HStack(spacing: 2) {
+                        Text(memberName)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                        if teamViewModel.isManager {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 10))
+                                .foregroundColor(.primaryGreen)
+                        }
+                    }
                     .frame(width: 90, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .disabled(!teamViewModel.isManager)
                 ForEach(daysInWeek, id: \.self) { (day: Date) in
                     let dayStartDate: Date = Calendar.current.startOfDay(for: day)
                     let dayStart: Int64 = Int64(dayStartDate.timeIntervalSince1970 * 1000)
@@ -206,4 +238,10 @@ struct TeamRosterView: View {
         default: return .accentOrange
         }
     }
+}
+
+/// Lightweight Identifiable wrapper so a plain String can drive `.sheet(item:)`.
+struct IdentifiableString: Identifiable {
+    let value: String
+    var id: String { value }
 }

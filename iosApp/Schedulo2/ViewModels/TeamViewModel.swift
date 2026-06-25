@@ -99,6 +99,30 @@ struct MemberJobInfo: Identifiable, Equatable {
     var isGigWork: Bool = false
 }
 
+struct TaskHistoryEntryInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var status: String = ""
+    var changedBy: String = ""
+    var changedByName: String = ""
+    var timestamp: Int64 = 0
+
+    var date: Date { Date(timeIntervalSince1970: Double(timestamp) / 1000.0) }
+}
+
+struct TeamTaskInfo: Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var teamId: String = ""
+    var title: String = ""
+    var taskDescription: String = ""
+    var assignedTo: String = ""
+    var assignedToName: String = ""
+    var assignedBy: String = ""
+    var status: String = "pending"   // pending | in_progress | completed
+    var createdAt: Int64 = 0
+    var updatedAt: Int64 = 0
+    var history: [TaskHistoryEntryInfo] = []
+}
+
 final class TeamViewModel: ObservableObject {
     @Published var teams: [TeamInfo] = []
     @Published var currentTeam: TeamInfo?
@@ -110,6 +134,7 @@ final class TeamViewModel: ObservableObject {
     @Published var memberJobs: [MemberJobInfo] = []
     @Published var teamMessages: [TeamMessageInfo] = []
     @Published var swapRequests: [SwapRequestInfo] = []
+    @Published var teamTasks: [TeamTaskInfo] = []
 
     @Published var isUploadingImage = false
 
@@ -121,6 +146,7 @@ final class TeamViewModel: ObservableObject {
     private var memberJobsListener: ListenerRegistration?
     private var messagesListener: ListenerRegistration?
     private var swapRequestsListener: ListenerRegistration?
+    private var teamTasksListener: ListenerRegistration?
 
     var currentUserId: String? { Auth.auth().currentUser?.uid }
     var currentUserEmail: String? { Auth.auth().currentUser?.email }
@@ -201,6 +227,7 @@ final class TeamViewModel: ObservableObject {
         loadTeamShifts(teamId: team.id)
         loadTeamMessages(teamId: team.id)
         loadSwapRequests(teamId: team.id)
+        loadTeamTasks(teamId: team.id)
         updateUserRole(teamId: team.id)
     }
 
@@ -813,6 +840,118 @@ final class TeamViewModel: ObservableObject {
             }
     }
 
+    // MARK: - Standalone team tasks (assigned to a member, with progress + history)
+
+    func loadTeamTasks(teamId: String) {
+        teamTasksListener?.remove()
+        teamTasksListener = db.collection("team_tasks")
+            .whereField("teamId", isEqualTo: teamId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                if let error = error {
+                    DispatchQueue.main.async { self?.errorMessage = "Failed to load tasks: \(error.localizedDescription)" }
+                    return
+                }
+                guard let docs = snapshot?.documents else { return }
+                self?.teamTasks = docs.map { doc in
+                    let data = doc.data()
+                    let historyRaw = data["history"] as? [[String: Any]] ?? []
+                    let history: [TaskHistoryEntryInfo] = historyRaw.map { item in
+                        TaskHistoryEntryInfo(
+                            status: item["status"] as? String ?? "",
+                            changedBy: item["changedBy"] as? String ?? "",
+                            changedByName: item["changedByName"] as? String ?? "",
+                            timestamp: (item["timestamp"] as? NSNumber)?.int64Value ?? 0
+                        )
+                    }.sorted { $0.timestamp > $1.timestamp }
+                    return TeamTaskInfo(
+                        id: doc.documentID,
+                        teamId: data["teamId"] as? String ?? "",
+                        title: data["title"] as? String ?? "",
+                        taskDescription: data["description"] as? String ?? "",
+                        assignedTo: data["assignedTo"] as? String ?? "",
+                        assignedToName: data["assignedToName"] as? String ?? "",
+                        assignedBy: data["assignedBy"] as? String ?? "",
+                        status: data["status"] as? String ?? "pending",
+                        createdAt: (data["createdAt"] as? NSNumber)?.int64Value ?? 0,
+                        updatedAt: (data["updatedAt"] as? NSNumber)?.int64Value ?? 0,
+                        history: history
+                    )
+                }.sorted { $0.createdAt > $1.createdAt }
+            }
+    }
+
+    func createTeamTask(memberId: String, memberName: String, title: String, description: String) {
+        guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            errorMessage = "Task title is required."
+            return
+        }
+        guard !memberId.isEmpty else {
+            errorMessage = "Select a member to assign the task to."
+            return
+        }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let actorName = currentUserEmail ?? ""
+        let data: [String: Any] = [
+            "teamId": teamId,
+            "title": trimmedTitle,
+            "description": description.trimmingCharacters(in: .whitespacesAndNewlines),
+            "assignedTo": memberId,
+            "assignedToName": memberName,
+            "assignedBy": uid,
+            "status": "pending",
+            "createdAt": now,
+            "updatedAt": now,
+            "history": [[
+                "status": "pending",
+                "changedBy": uid,
+                "changedByName": actorName,
+                "timestamp": now
+            ]]
+        ]
+        db.collection("team_tasks").document(UUID().uuidString).setData(data) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async { self?.errorMessage = "Failed to create task: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func updateTeamTaskStatus(taskId: String, newStatus: String) {
+        guard let uid = currentUserId else { return }
+        guard let task = teamTasks.first(where: { $0.id == taskId }), task.status != newStatus else { return }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let actorName = currentUserEmail ?? ""
+        let entry: [String: Any] = [
+            "status": newStatus,
+            "changedBy": uid,
+            "changedByName": actorName,
+            "timestamp": now
+        ]
+        db.collection("team_tasks").document(taskId).updateData([
+            "status": newStatus,
+            "updatedAt": now,
+            "history": FieldValue.arrayUnion([entry])
+        ]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async { self?.errorMessage = "Failed to update task: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func deleteTeamTask(taskId: String) {
+        let previous = teamTasks
+        teamTasks.removeAll { $0.id == taskId }
+        db.collection("team_tasks").document(taskId).delete { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.teamTasks = previous
+                    self?.errorMessage = "Failed to delete task: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     func requestSwap(myShiftId: String, targetMemberId: String, targetShiftId: String) {
         guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
 
@@ -965,6 +1104,7 @@ final class TeamViewModel: ObservableObject {
         memberJobsListener?.remove()
         messagesListener?.remove()
         swapRequestsListener?.remove()
+        teamTasksListener?.remove()
     }
 
     private func generateInviteCode() -> String {

@@ -3,20 +3,56 @@ import SwiftUI
 struct TeamSwapRequestsView: View {
     @EnvironmentObject var teamViewModel: TeamViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showNewSwap = false
+    @State private var showHelp = false
 
     private var activeRequests: [SwapRequestInfo] {
         teamViewModel.swapRequests.filter { $0.status != "approved" && $0.status != "declined" }
+    }
+
+    private var myAcceptedShifts: [TeamShiftInfo] {
+        teamViewModel.teamShifts.filter { $0.assignedTo == teamViewModel.currentUserId && $0.status == "accepted" }
+    }
+
+    private var swappableTargets: [TeamShiftInfo] {
+        teamViewModel.teamShifts.filter { $0.assignedTo != teamViewModel.currentUserId && $0.status == "accepted" }
+    }
+
+    private var canRequestSwap: Bool {
+        !myAcceptedShifts.isEmpty && !swappableTargets.isEmpty
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 8) {
+                    Button(action: { showNewSwap = true }) {
+                        HStack {
+                            Image(systemName: "arrow.left.arrow.right")
+                            Text("Request a Swap").fontWeight(.bold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(canRequestSwap ? Color.primaryGreen : Color.gray.opacity(0.4))
+                        )
+                        .foregroundColor(.white)
+                    }
+                    .disabled(!canRequestSwap)
+
+                    if !canRequestSwap {
+                        Text("You need an accepted shift, and a teammate must have one too, before you can request a swap.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if activeRequests.isEmpty {
                         Text("No pending swap requests")
                             .font(.system(size: 14))
                             .foregroundColor(.secondary)
-                            .padding(32)
+                            .padding(.vertical, 24)
                     } else {
                         ForEach(activeRequests) { (request: SwapRequestInfo) in
                             SwapCardView(request: request)
@@ -28,9 +64,87 @@ struct TeamSwapRequestsView: View {
             .navigationTitle("Shift Swaps")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { showHelp = true }) {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showNewSwap) {
+                NewSwapRequestView(myShifts: myAcceptedShifts, targetShifts: swappableTargets)
+                    .environmentObject(teamViewModel)
+            }
+            .alert("Shift Swaps", isPresented: $showHelp) {
+                Button("Got it", role: .cancel) {}
+            } message: {
+                Text("Request to trade one of your shifts for a teammate's. Tap \"Request a Swap\" to pick the shift you want and the shift you'll give up. The teammate accepts, then a manager approves the trade.")
+            }
+        }
+    }
+}
+
+struct NewSwapRequestView: View {
+    let myShifts: [TeamShiftInfo]
+    let targetShifts: [TeamShiftInfo]
+    @EnvironmentObject var teamViewModel: TeamViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedTargetId: String = ""
+    @State private var selectedMineId: String = ""
+
+    private static let timeFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM dd, h:mm a"
+        return f
+    }()
+
+    private func memberName(_ userId: String) -> String {
+        let m = teamViewModel.members.first { $0.userId == userId }
+        return m.map { $0.displayName.isEmpty ? $0.email : $0.displayName } ?? "Unknown"
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("1. Pick the shift you want") {
+                    Picker("Their shift", selection: $selectedTargetId) {
+                        ForEach(targetShifts) { shift in
+                            Text("\(memberName(shift.assignedTo)) · \(shift.company) · \(Self.timeFormat.string(from: shift.startDate))")
+                                .tag(shift.id)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                }
+                Section("2. Pick your shift to offer") {
+                    Picker("Your shift", selection: $selectedMineId) {
+                        ForEach(myShifts) { shift in
+                            Text("\(shift.company) · \(Self.timeFormat.string(from: shift.startDate))")
+                                .tag(shift.id)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                }
+            }
+            .navigationTitle("Request a Swap")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send") {
+                        guard let target = targetShifts.first(where: { $0.id == selectedTargetId }) else { return }
+                        teamViewModel.requestSwap(myShiftId: selectedMineId, targetMemberId: target.assignedTo, targetShiftId: target.id)
+                        dismiss()
+                    }
+                    .disabled(selectedTargetId.isEmpty || selectedMineId.isEmpty)
+                }
+            }
+            .onAppear {
+                if selectedTargetId.isEmpty { selectedTargetId = targetShifts.first?.id ?? "" }
+                if selectedMineId.isEmpty { selectedMineId = myShifts.first?.id ?? "" }
             }
         }
     }

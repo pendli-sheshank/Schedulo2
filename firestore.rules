@@ -205,6 +205,32 @@ service cloud.firestore {
           || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
     }
 
+    // Team Tasks: managers (team owner) create/delete; assignee or owner can advance status
+    match /team_tasks/{taskId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.teamId is string
+        && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid
+        && request.resource.data.assignedTo is string
+        && request.resource.data.assignedBy == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.status in ['pending', 'in_progress', 'completed'];
+      allow update: if request.auth != null
+        && request.resource.data.teamId == resource.data.teamId
+        && request.resource.data.assignedTo == resource.data.assignedTo
+        && request.resource.data.assignedBy == resource.data.assignedBy
+        && request.resource.data.title == resource.data.title
+        && request.resource.data.status in ['pending', 'in_progress', 'completed']
+        && (
+          get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+          || resource.data.assignedTo == request.auth.uid
+        );
+      allow delete: if request.auth != null
+        && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid;
+    }
+
     // Swap Requests: requester creates, target responds, manager approves
     match /swap_requests/{requestId} {
       allow read: if request.auth != null;
