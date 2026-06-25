@@ -51,17 +51,8 @@ struct TeamView: View {
                         if teamViewModel.currentTeam != nil {
                             Divider()
                             if teamViewModel.isManager {
-                                Button(action: {
-                                    editTeamName = teamViewModel.currentTeam?.name ?? ""
-                                    showEditTeam = true
-                                }) {
-                                    Label("Edit Team Name", systemImage: "pencil")
-                                }
-                                Button(action: {
-                                    selectedWeekStartDay = teamViewModel.currentTeam?.weeklyCycleStartDay ?? "Monday"
-                                    showWeekStartPicker = true
-                                }) {
-                                    Label("Week Start Day", systemImage: "calendar.badge.clock")
+                                Button(action: { showEditTeam = true }) {
+                                    Label("Edit Team", systemImage: "pencil")
                                 }
                             }
                             Button(role: .destructive, action: { showLeaveConfirm = true }) {
@@ -122,15 +113,11 @@ struct TeamView: View {
             } message: {
                 Text("Are you sure you want to leave \"\(teamViewModel.currentTeam?.name ?? "")\"? You will lose access to team shifts and data.")
             }
-            .alert("Edit Team Name", isPresented: $showEditTeam) {
-                TextField("Store Name", text: $editTeamName)
-                Button("Save") {
-                    let trimmed = editTeamName.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty, let team = teamViewModel.currentTeam {
-                        teamViewModel.updateTeamName(teamId: team.id, newName: trimmed)
-                    }
+            .sheet(isPresented: $showEditTeam) {
+                if let team = teamViewModel.currentTeam {
+                    EditTeamView(team: team)
+                        .environmentObject(teamViewModel)
                 }
-                Button("Cancel", role: .cancel) {}
             }
             .alert("Delete Team", isPresented: $showDeleteConfirm) {
                 Button("Delete", role: .destructive) {

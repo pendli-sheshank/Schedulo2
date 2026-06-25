@@ -3,6 +3,19 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Validates the optional team fields (company, working hours, address).
+    // Each field is optional; when present it must be the right type/length.
+    function teamOptionalFieldsValid(data) {
+      return (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 100))
+        && (!('addressLine' in data) || (data.addressLine is string && data.addressLine.size() <= 200))
+        && (!('city' in data) || (data.city is string && data.city.size() <= 100))
+        && (!('region' in data) || (data.region is string && data.region.size() <= 100))
+        && (!('postalCode' in data) || (data.postalCode is string && data.postalCode.size() <= 20))
+        && (!('open24Hours' in data) || data.open24Hours is bool)
+        && (!('workStartMinutes' in data) || (data.workStartMinutes is int && data.workStartMinutes >= 0 && data.workStartMinutes <= 1440))
+        && (!('workEndMinutes' in data) || (data.workEndMinutes is int && data.workEndMinutes >= 0 && data.workEndMinutes <= 1440));
+    }
+
     // Profiles: users can only read/write their own profile
     match /profiles/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
@@ -105,12 +118,14 @@ service cloud.firestore {
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 100
-        && request.resource.data.inviteCode is string;
+        && request.resource.data.inviteCode is string
+        && teamOptionalFieldsValid(request.resource.data);
       allow update: if request.auth != null
         && resource.data.ownerId == request.auth.uid
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.name is string
-        && request.resource.data.name.size() <= 100;
+        && request.resource.data.name.size() <= 100
+        && teamOptionalFieldsValid(request.resource.data);
       allow delete: if request.auth != null
         && resource.data.ownerId == request.auth.uid;
     }
@@ -126,13 +141,15 @@ service cloud.firestore {
         && (request.resource.data.role == "member"
           || (request.resource.data.role == "manager"
             && (!exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
-              || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid)));
+              || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid)))
+        && (!('defaultHourlyRate' in request.resource.data) || (request.resource.data.defaultHourlyRate is number && request.resource.data.defaultHourlyRate >= 0));
       allow update: if request.auth != null
         && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
         && request.resource.data.teamId == resource.data.teamId
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.role is string
-        && (request.resource.data.role == "member" || request.resource.data.role == "manager");
+        && (request.resource.data.role == "member" || request.resource.data.role == "manager")
+        && (!('defaultHourlyRate' in request.resource.data) || (request.resource.data.defaultHourlyRate is number && request.resource.data.defaultHourlyRate >= 0));
       allow delete: if request.auth != null
         && (resource.data.userId == request.auth.uid
           || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);

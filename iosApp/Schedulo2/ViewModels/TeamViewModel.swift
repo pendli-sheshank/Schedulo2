@@ -14,6 +14,17 @@ struct TeamInfo: Identifiable, Equatable {
     var createdAt: Int64 = 0
     var memberCount: Int = 0
     var weeklyCycleStartDay: String = "Monday"
+    // Company the team works for (used as the company on team shifts).
+    var companyName: String = ""
+    // Working hours. When open24Hours is true the start/end are ignored.
+    var open24Hours: Bool = true
+    var workStartMinutes: Int = 0   // minutes from midnight
+    var workEndMinutes: Int = 0
+    // Structured location/address.
+    var addressLine: String = ""
+    var city: String = ""
+    var region: String = ""         // state / province / region
+    var postalCode: String = ""
 }
 
 struct TeamMemberInfo: Identifiable, Equatable {
@@ -24,6 +35,8 @@ struct TeamMemberInfo: Identifiable, Equatable {
     var joinedAt: Int64 = 0
     var displayName: String = ""
     var email: String = ""
+    // Manager-set default pay rate, prefilled when assigning shifts.
+    var defaultHourlyRate: Double = 0.0
 }
 
 struct ShiftTaskInfo: Identifiable, Equatable {
@@ -123,6 +136,64 @@ struct TeamTaskInfo: Identifiable, Equatable {
     var history: [TaskHistoryEntryInfo] = []
 }
 
+/// All editable team fields captured by the Create / Edit team forms.
+struct TeamFormData {
+    var name: String = ""
+    var companyName: String = ""
+    var weeklyCycleStartDay: String = "Monday"
+    var open24Hours: Bool = true
+    var workStartMinutes: Int = 9 * 60
+    var workEndMinutes: Int = 17 * 60
+    var addressLine: String = ""
+    var city: String = ""
+    var region: String = ""
+    var postalCode: String = ""
+
+    init() {}
+
+    init(from team: TeamInfo) {
+        name = team.name
+        companyName = team.companyName
+        weeklyCycleStartDay = team.weeklyCycleStartDay
+        open24Hours = team.open24Hours
+        workStartMinutes = team.open24Hours ? 9 * 60 : team.workStartMinutes
+        workEndMinutes = team.open24Hours ? 17 * 60 : team.workEndMinutes
+        addressLine = team.addressLine
+        city = team.city
+        region = team.region
+        postalCode = team.postalCode
+    }
+
+    /// Non-identity team fields written to Firestore on create and update.
+    func firestoreFields() -> [String: Any] {
+        [
+            "weeklyCycleStartDay": weeklyCycleStartDay,
+            "companyName": companyName.trimmingCharacters(in: .whitespaces),
+            "open24Hours": open24Hours,
+            "workStartMinutes": workStartMinutes,
+            "workEndMinutes": workEndMinutes,
+            "addressLine": addressLine.trimmingCharacters(in: .whitespaces),
+            "city": city.trimmingCharacters(in: .whitespaces),
+            "region": region.trimmingCharacters(in: .whitespaces),
+            "postalCode": postalCode.trimmingCharacters(in: .whitespaces)
+        ]
+    }
+}
+
+/// Human-readable working-hours summary, e.g. "Open 24 hours" or "9:00 AM – 5:00 PM".
+func formatWorkHours(open24Hours: Bool, startMinutes: Int, endMinutes: Int) -> String {
+    if open24Hours { return "Open 24 hours" }
+    func fmt(_ mins: Int) -> String {
+        let h = (mins / 60) % 24
+        let m = mins % 60
+        let date = Calendar.current.date(bySettingHour: h, minute: m, second: 0, of: Date()) ?? Date()
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f.string(from: date)
+    }
+    return "\(fmt(startMinutes)) – \(fmt(endMinutes))"
+}
+
 final class TeamViewModel: ObservableObject {
     @Published var teams: [TeamInfo] = []
     @Published var currentTeam: TeamInfo?
@@ -207,7 +278,15 @@ final class TeamViewModel: ObservableObject {
                     inviteCode: data["inviteCode"] as? String ?? "",
                     createdAt: data["createdAt"] as? Int64 ?? 0,
                     memberCount: data["memberCount"] as? Int ?? 0,
-                    weeklyCycleStartDay: data["weeklyCycleStartDay"] as? String ?? "Monday"
+                    weeklyCycleStartDay: data["weeklyCycleStartDay"] as? String ?? "Monday",
+                    companyName: data["companyName"] as? String ?? "",
+                    open24Hours: data["open24Hours"] as? Bool ?? true,
+                    workStartMinutes: data["workStartMinutes"] as? Int ?? 0,
+                    workEndMinutes: data["workEndMinutes"] as? Int ?? 0,
+                    addressLine: data["addressLine"] as? String ?? "",
+                    city: data["city"] as? String ?? "",
+                    region: data["region"] as? String ?? "",
+                    postalCode: data["postalCode"] as? String ?? ""
                 )
                 fetched.append(team)
             }
@@ -258,7 +337,8 @@ final class TeamViewModel: ObservableObject {
                         role: data["role"] as? String ?? "member",
                         joinedAt: data["joinedAt"] as? Int64 ?? 0,
                         displayName: data["displayName"] as? String ?? "",
-                        email: data["email"] as? String ?? ""
+                        email: data["email"] as? String ?? "",
+                        defaultHourlyRate: data["defaultHourlyRate"] as? Double ?? 0.0
                     )
                 }.sorted { $0.displayName < $1.displayName }
             }
@@ -300,28 +380,36 @@ final class TeamViewModel: ObservableObject {
 
     // MARK: - Team CRUD
 
-    func createTeam(name: String) {
+    func createTeam(form: TeamFormData) {
         guard let uid = currentUserId else { return }
+        guard !form.name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            errorMessage = "Team name cannot be empty."; return
+        }
+        guard !form.companyName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            errorMessage = "Company name cannot be empty."; return
+        }
         isLoading = true
         let teamId = UUID().uuidString
         let inviteCode = generateInviteCode()
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
 
-        let teamData: [String: Any] = [
-            "name": name,
+        var teamData: [String: Any] = [
+            "name": form.name.trimmingCharacters(in: .whitespaces),
             "ownerId": uid,
             "inviteCode": inviteCode,
-            "createdAt": Int64(Date().timeIntervalSince1970 * 1000),
-            "memberCount": 1,
-            "weeklyCycleStartDay": "Monday"
+            "createdAt": now,
+            "memberCount": 1
         ]
+        teamData.merge(form.firestoreFields()) { _, new in new }
 
         let memberData: [String: Any] = [
             "teamId": teamId,
             "userId": uid,
             "role": "manager",
-            "joinedAt": Int64(Date().timeIntervalSince1970 * 1000),
+            "joinedAt": now,
             "displayName": currentUserEmail ?? "",
-            "email": currentUserEmail ?? ""
+            "email": currentUserEmail ?? "",
+            "defaultHourlyRate": 0.0
         ]
 
         let batch = db.batch()
@@ -335,6 +423,53 @@ final class TeamViewModel: ObservableObject {
                     self?.errorMessage = error.localizedDescription
                 } else {
                     self?.loadTeams()
+                }
+            }
+        }
+    }
+
+    /// Update the editable team fields (manager/owner only, enforced by rules).
+    func updateTeam(teamId: String, form: TeamFormData) {
+        guard !form.name.trimmingCharacters(in: .whitespaces).isEmpty,
+              !form.companyName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            errorMessage = "Team and company name cannot be empty."; return
+        }
+        var updates: [String: Any] = ["name": form.name.trimmingCharacters(in: .whitespaces)]
+        updates.merge(form.firestoreFields()) { _, new in new }
+        db.collection("teams").document(teamId).updateData(updates) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self?.errorMessage = "Failed to update team: \(error.localizedDescription)"
+                } else if self?.currentTeam?.id == teamId {
+                    self?.currentTeam?.name = form.name.trimmingCharacters(in: .whitespaces)
+                    self?.currentTeam?.companyName = form.companyName.trimmingCharacters(in: .whitespaces)
+                    self?.currentTeam?.weeklyCycleStartDay = form.weeklyCycleStartDay
+                    self?.currentTeam?.open24Hours = form.open24Hours
+                    self?.currentTeam?.workStartMinutes = form.workStartMinutes
+                    self?.currentTeam?.workEndMinutes = form.workEndMinutes
+                    self?.currentTeam?.addressLine = form.addressLine.trimmingCharacters(in: .whitespaces)
+                    self?.currentTeam?.city = form.city.trimmingCharacters(in: .whitespaces)
+                    self?.currentTeam?.region = form.region.trimmingCharacters(in: .whitespaces)
+                    self?.currentTeam?.postalCode = form.postalCode.trimmingCharacters(in: .whitespaces)
+                }
+            }
+        }
+    }
+
+    /// Set a member's default pay rate (manager/owner only).
+    func updateMemberRate(memberDocId: String, rate: Double) {
+        let safeRate = max(0, rate)
+        let previous = members
+        members = members.map { m in
+            var m = m
+            if m.id == memberDocId { m.defaultHourlyRate = safeRate }
+            return m
+        }
+        db.collection("team_members").document(memberDocId).updateData(["defaultHourlyRate": safeRate]) { [weak self] error in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self?.members = previous
+                    self?.errorMessage = "Failed to update pay rate: \(error.localizedDescription)"
                 }
             }
         }
