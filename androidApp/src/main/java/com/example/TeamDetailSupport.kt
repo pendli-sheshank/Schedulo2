@@ -1033,15 +1033,26 @@ private fun ChatDetailContent(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
 
-    // Launching can throw ActivityNotFoundException on devices with neither the
-    // system photo picker nor a documents UI — guard it so the app never crashes.
+    // Fallback picker for devices/ROMs where the modern photo picker isn't present.
+    // ACTION_GET_CONTENT is handled by gallery / Files / Google Photos apps and, like
+    // the photo picker, needs no storage permission (it returns a content:// URI via SAF).
+    val getContentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
+
     val launchImagePicker = {
+        // Prefer the privacy-friendly photo picker; if the device can't open it,
+        // fall back to ACTION_GET_CONTENT before giving up.
         try {
             imagePickerLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
         } catch (_: Exception) {
-            teamViewModel.reportError("No photo picker available on this device")
+            try {
+                getContentLauncher.launch("image/*")
+            } catch (_: Exception) {
+                teamViewModel.reportError("No gallery app available to pick a photo.")
+            }
         }
     }
 
