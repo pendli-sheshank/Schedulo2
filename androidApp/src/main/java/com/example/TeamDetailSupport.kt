@@ -674,6 +674,18 @@ private fun ChatDetailContent(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
 
+    // Launching can throw ActivityNotFoundException on devices with neither the
+    // system photo picker nor a documents UI — guard it so the app never crashes.
+    val launchImagePicker = {
+        try {
+            imagePickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        } catch (_: Exception) {
+            teamViewModel.reportError("No photo picker available on this device")
+        }
+    }
+
     val pinnedMessages = remember(messages) { messages.filter { it.isPinned } }
     val sortedMessages = remember(messages) { messages.sortedByDescending { it.createdAt } }
 
@@ -681,6 +693,14 @@ private fun ChatDetailContent(
         sortedMessages.filter { it.imageUrl.isNotEmpty() && currentUserId !in it.seenBy }
             .forEach { teamViewModel.markMessageSeen(it.id) }
     }
+
+    // Keep the newest message in view (WhatsApp/Telegram behaviour). With
+    // reverseLayout the newest item lives at index 0, so scroll there.
+    LaunchedEffect(sortedMessages.firstOrNull()?.id) {
+        if (sortedMessages.isNotEmpty()) listState.animateScrollToItem(0)
+    }
+
+    val memberCount by teamViewModel.members.collectAsState()
 
     Column(modifier = modifier.fillMaxSize()) {
         if (pinnedMessages.isNotEmpty()) {
@@ -697,8 +717,9 @@ private fun ChatDetailContent(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     pinnedMessages.take(3).forEach { msg ->
+                        val preview = if (msg.imageUrl.isNotEmpty()) "📷 Photo" else msg.text
                         Text(
-                            "${msg.senderName.ifBlank { "Unknown" }}: ${msg.text}",
+                            "${msg.senderName.ifBlank { "Unknown" }}: $preview",
                             fontSize = 12.sp,
                             maxLines = 1,
                             color = MaterialTheme.colorScheme.onBackground
@@ -709,18 +730,28 @@ private fun ChatDetailContent(
         }
 
         LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
             state = listState,
             reverseLayout = true,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             items(sortedMessages, key = { it.id }) { message ->
+                val index = sortedMessages.indexOf(message)
+                // In a descending list the "previous" (older) message sits at index+1.
+                val prev = sortedMessages.getOrNull(index + 1)
                 val isMe = message.senderId == currentUserId
+                // First in a run from this sender → show the name + more top spacing.
+                val isGroupStart = prev == null || prev.senderId != message.senderId
                 ChatBubble(
                     message = message,
                     isMe = isMe,
                     isOwner = isOwner,
+                    isGroupStart = isGroupStart,
+                    memberCount = memberCount.size,
                     timeFormat = timeFormat,
                     onDelete = { teamViewModel.deleteMessage(message.id) },
                     onTogglePin = { teamViewModel.togglePin(message.id) }
@@ -728,11 +759,16 @@ private fun ChatDetailContent(
             }
         }
 
-        HorizontalDivider()
+        if (isUploading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                color = PrimaryGreen
+            )
+        }
 
         if (isManager) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.padding(start = 12.dp, top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilterChip(
@@ -747,52 +783,90 @@ private fun ChatDetailContent(
             }
         }
 
-        if (isUploading) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                color = PrimaryGreen
-            )
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            IconButton(
-                onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                enabled = !isUploading
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.Bottom
             ) {
-                Icon(Icons.Default.Image, "Send photo", tint = PrimaryGreen)
-            }
-            OutlinedTextField(
-                value = messageText,
-                onValueChange = { if (it.length <= 2000) messageText = it },
-                placeholder = { Text("Type a message...", fontSize = 14.sp) },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 3,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    if (messageText.isNotBlank()) {
-                        teamViewModel.sendMessage(messageText, isAnnouncement)
-                        messageText = ""
-                        isAnnouncement = false
+                // Rounded "pill" wrapping the attach button + text field, WhatsApp style.
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { launchImagePicker() },
+                        enabled = !isUploading
+                    ) {
+                        Icon(Icons.Default.Image, "Send photo", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                },
-                enabled = messageText.isNotBlank()
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    "Send",
-                    tint = if (messageText.isNotBlank()) PrimaryGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                    BasicTextFieldRow(
+                        value = messageText,
+                        onValueChange = { if (it.length <= 2000) messageText = it }
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                // Circular send button (filled when there is something to send).
+                Surface(
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    color = if (messageText.isNotBlank()) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (messageText.isNotBlank()) {
+                                teamViewModel.sendMessage(messageText, isAnnouncement)
+                                messageText = ""
+                                isAnnouncement = false
+                            }
+                        },
+                        enabled = messageText.isNotBlank()
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            "Send",
+                            tint = if (messageText.isNotBlank()) androidx.compose.ui.graphics.Color.White
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun RowScope.BasicTextFieldRow(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    Box(modifier = Modifier.weight(1f).padding(vertical = 10.dp, horizontal = 4.dp)) {
+        if (value.isEmpty()) {
+            Text(
+                "Message",
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+        androidx.compose.foundation.text.BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            textStyle = androidx.compose.ui.text.TextStyle(
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onBackground
+            ),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(PrimaryGreen),
+            maxLines = 4,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -802,26 +876,41 @@ private fun ChatBubble(
     message: TeamMessage,
     isMe: Boolean,
     isOwner: Boolean,
+    isGroupStart: Boolean,
+    memberCount: Int,
     timeFormat: java.text.SimpleDateFormat,
     onDelete: () -> Unit,
     onTogglePin: () -> Unit
 ) {
     val bgColor = when {
-        message.isAnnouncement -> AccentOrange.copy(alpha = 0.12f)
-        isMe -> PrimaryGreen.copy(alpha = 0.12f)
-        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        message.isAnnouncement -> AccentOrange.copy(alpha = 0.15f)
+        isMe -> PrimaryGreen.copy(alpha = 0.20f)
+        else -> MaterialTheme.colorScheme.surface
     }
+    // Asymmetric "tail" corner, like WhatsApp/Telegram bubbles.
+    val bubbleShape = if (isMe) {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
+    } else {
+        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
+    }
+    var showActions by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = if (isGroupStart) 6.dp else 1.dp),
         horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
     ) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = bgColor),
-            modifier = Modifier.widthIn(max = 280.dp)
+        Surface(
+            shape = bubbleShape,
+            color = bgColor,
+            tonalElevation = if (isMe) 0.dp else 1.dp,
+            shadowElevation = 1.dp,
+            modifier = Modifier
+                .widthIn(max = 290.dp)
+                .clickable { if (isMe || isOwner) showActions = !showActions }
         ) {
-            Column(modifier = Modifier.padding(10.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                 if (message.isAnnouncement) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Campaign, null, tint = AccentOrange, modifier = Modifier.size(14.dp))
@@ -830,13 +919,14 @@ private fun ChatBubble(
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                 }
-                if (!isMe) {
+                if (!isMe && isGroupStart) {
                     Text(
                         message.senderName.ifBlank { "Unknown" },
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = PrimaryGreen
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                 }
                 if (message.imageUrl.isNotEmpty()) {
                     var bmp by remember(message.imageUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -856,51 +946,77 @@ private fun ChatBubble(
                             bitmap = bmp!!.asImageBitmap(),
                             contentDescription = "Shared photo",
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp)),
+                                .widthIn(max = 240.dp)
+                                .clip(RoundedCornerShape(10.dp)),
                             contentScale = ContentScale.FillWidth
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                     } else {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally),
-                            color = PrimaryGreen,
-                            strokeWidth = 2.dp
-                        )
+                        Box(
+                            modifier = Modifier.size(180.dp).clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = PrimaryGreen,
+                                strokeWidth = 2.dp
+                            )
+                        }
                     }
                 }
                 if (message.text.isNotEmpty()) {
-                    Text(message.text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                    Text(message.text, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Footer: time, pin marker, read-receipts — laid out bottom-right like WhatsApp.
+                Row(
+                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (message.isPinned) {
+                        Icon(Icons.Default.PushPin, null, tint = AccentOrange, modifier = Modifier.size(11.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                    }
                     Text(
                         timeFormat.format(java.util.Date(message.createdAt)),
                         fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (message.isPinned) {
+                    if (message.imageUrl.isNotEmpty() && message.seenBy.isNotEmpty()) {
                         Spacer(modifier = Modifier.width(4.dp))
-                        Icon(Icons.Default.PushPin, null, tint = AccentOrange, modifier = Modifier.size(10.dp))
+                        // Everyone has seen it → double check, otherwise single.
+                        val allSeen = memberCount > 0 && message.seenBy.size >= memberCount
+                        Icon(
+                            if (allSeen) Icons.Default.DoneAll else Icons.Default.Done,
+                            "Seen",
+                            tint = if (allSeen) AccentBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            " ${message.seenBy.size}",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
         }
-        if (isMe || isOwner) {
-            Row(modifier = Modifier.padding(top = 2.dp)) {
+        if (showActions && (isMe || isOwner)) {
+            Row(modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp)) {
                 if (isOwner) {
                     Icon(
-                        if (message.isPinned) Icons.Default.PushPin else Icons.Default.PushPin,
+                        Icons.Default.PushPin,
                         if (message.isPinned) "Unpin" else "Pin",
                         tint = if (message.isPinned) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(14.dp).clickable { onTogglePin() }
+                        modifier = Modifier.size(16.dp).clickable { onTogglePin(); showActions = false }
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                 }
                 Icon(
                     Icons.Default.Delete,
                     "Delete",
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
-                    modifier = Modifier.size(14.dp).clickable { onDelete() }
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                    modifier = Modifier.size(16.dp).clickable { onDelete(); showActions = false }
                 )
             }
         }

@@ -27,7 +27,6 @@ struct TeamChatView: View {
                     pinnedSection
                 }
                 messageList
-                Divider()
                 if teamViewModel.isUploadingImage {
                     ProgressView()
                         .tint(.primaryGreen)
@@ -36,6 +35,7 @@ struct TeamChatView: View {
                 if teamViewModel.isManager {
                     announceToggle
                 }
+                Divider()
                 inputBar
             }
             .navigationTitle("Team Chat")
@@ -86,29 +86,50 @@ struct TeamChatView: View {
         .padding(.vertical, 4)
     }
 
+    // Oldest → newest, top to bottom (sortedMessages is newest-first).
+    private var chronologicalMessages: [TeamMessageInfo] {
+        Array(sortedMessages.reversed())
+    }
+
     private var messageList: some View {
-        ScrollView {
-            ScrollViewReader { proxy in
-                LazyVStack(spacing: 6) {
-                    ForEach(sortedMessages.reversed()) { message in
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(Array(chronologicalMessages.enumerated()), id: \.element.id) { index, message in
+                        let prev = index > 0 ? chronologicalMessages[index - 1] : nil
+                        let isGroupStart = prev == nil || prev?.senderId != message.senderId
                         ChatBubbleView(
                             message: message,
                             isMe: message.senderId == teamViewModel.currentUserId,
-                            isOwner: isOwner
+                            isOwner: isOwner,
+                            isGroupStart: isGroupStart,
+                            memberCount: teamViewModel.members.count
                         )
                         .id(message.id)
+                        .padding(.top, isGroupStart ? 6 : 1)
                         .onAppear {
                             if !message.imageUrl.isEmpty {
                                 teamViewModel.markMessageSeen(messageId: message.id)
                             }
                         }
                     }
+                    Color.clear.frame(height: 1).id("chat_bottom_anchor")
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 8)
             }
+            .background(Color(UIColor.secondarySystemBackground).opacity(0.4))
+            .frame(maxHeight: .infinity)
+            // Keep the newest message in view, WhatsApp/Telegram style.
+            .onChange(of: chronologicalMessages.count) { _ in
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo("chat_bottom_anchor", anchor: .bottom)
+                }
+            }
+            .onAppear {
+                proxy.scrollTo("chat_bottom_anchor", anchor: .bottom)
+            }
         }
-        .frame(maxHeight: .infinity)
     }
 
     private var announceToggle: some View {
@@ -134,33 +155,47 @@ struct TeamChatView: View {
         .padding(.vertical, 4)
     }
 
-    private var inputBar: some View {
-        HStack(spacing: 8) {
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Image(systemName: "photo.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(.primaryGreen)
-            }
-            .disabled(teamViewModel.isUploadingImage)
+    private var canSend: Bool {
+        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
-            TextField("Type a message...", text: $messageText, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...3)
+    private var inputBar: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            HStack(spacing: 4) {
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Image(systemName: "photo.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(.secondary)
+                }
+                .disabled(teamViewModel.isUploadingImage)
+
+                TextField("Message", text: $messageText, axis: .vertical)
+                    .font(.system(size: 16))
+                    .lineLimit(1...4)
+                    .padding(.vertical, 6)
+            }
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 22)
+                    .fill(Color(UIColor.secondarySystemBackground))
+            )
 
             Button(action: {
-                guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                guard canSend else { return }
                 teamViewModel.sendMessage(text: messageText, isAnnouncement: isAnnouncement)
                 messageText = ""
                 isAnnouncement = false
             }) {
                 Image(systemName: "paperplane.fill")
                     .font(.system(size: 18))
-                    .foregroundColor(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .secondary : .primaryGreen)
+                    .foregroundColor(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(canSend ? Color.primaryGreen : Color.gray.opacity(0.4)))
             }
-            .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(!canSend)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
     }
 }
 
@@ -176,27 +211,40 @@ private struct ChatBubbleView: View {
     let message: TeamMessageInfo
     let isMe: Bool
     let isOwner: Bool
+    let isGroupStart: Bool
+    let memberCount: Int
     @EnvironmentObject var teamViewModel: TeamViewModel
+    @State private var showActions = false
 
     private var bgColor: Color {
-        if message.isAnnouncement { return .accentOrange.opacity(0.12) }
-        if isMe { return .primaryGreen.opacity(0.12) }
-        return Color(UIColor.secondarySystemBackground)
+        if message.isAnnouncement { return .accentOrange.opacity(0.15) }
+        if isMe { return .primaryGreen.opacity(0.22) }
+        return Color(UIColor.systemBackground)
+    }
+
+    // Asymmetric "tail" corner like WhatsApp/Telegram.
+    private var bubbleShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 16,
+            bottomLeadingRadius: isMe ? 16 : 4,
+            bottomTrailingRadius: isMe ? 4 : 16,
+            topTrailingRadius: 16
+        )
     }
 
     var body: some View {
         VStack(alignment: isMe ? .trailing : .leading, spacing: 2) {
             HStack {
-                if isMe { Spacer(minLength: 60) }
-                VStack(alignment: .leading, spacing: 4) {
+                if isMe { Spacer(minLength: 50) }
+                VStack(alignment: .leading, spacing: 3) {
                     if message.isAnnouncement {
                         announcementBadge
                     }
-                    if !isMe {
+                    if !isMe && isGroupStart {
                         let senderName: String = message.senderName.isEmpty ? "Unknown" : message.senderName
                         Text(senderName)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.primaryGreen)
                     }
                     if !message.imageUrl.isEmpty {
                         AsyncImage(url: URL(string: message.imageUrl)) { phase in
@@ -206,32 +254,32 @@ private struct ChatBubbleView: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(maxWidth: 220, maxHeight: 220)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                             case .failure:
-                                Text("Image expired")
+                                Label("Image expired", systemImage: "photo.badge.exclamationmark")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
                             default:
                                 ProgressView()
-                                    .frame(width: 100, height: 100)
+                                    .frame(width: 120, height: 120)
                             }
                         }
                     }
                     if !message.text.isEmpty {
                         Text(message.text)
-                            .font(.system(size: 14))
+                            .font(.system(size: 16))
                     }
                     timestampRow
                 }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(bgColor)
-                )
-                if !isMe { Spacer(minLength: 60) }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(bubbleShape.fill(bgColor))
+                .overlay(bubbleShape.stroke(Color.primary.opacity(0.06), lineWidth: 0.5))
+                .onTapGesture { if isMe || isOwner { showActions.toggle() } }
+                if !isMe { Spacer(minLength: 50) }
             }
 
-            if isMe || isOwner {
+            if showActions && (isMe || isOwner) {
                 actionButtons
             }
         }
@@ -250,38 +298,44 @@ private struct ChatBubbleView: View {
     }
 
     private var timestampRow: some View {
-        HStack(spacing: 4) {
-            Text(DateFormatter.chatTime.string(from: message.createdDate))
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+        HStack(spacing: 3) {
+            Spacer(minLength: 0)
             if message.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 9))
                     .foregroundColor(.accentOrange)
             }
-            if !message.seenBy.isEmpty && !message.imageUrl.isEmpty {
-                Text("Seen by \(message.seenBy.count)")
-                    .font(.system(size: 9))
+            Text(DateFormatter.chatTime.string(from: message.createdDate))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            if !message.imageUrl.isEmpty && !message.seenBy.isEmpty {
+                let allSeen = memberCount > 0 && message.seenBy.count >= memberCount
+                Image(systemName: allSeen ? "checkmark.circle.fill" : "checkmark")
+                    .font(.system(size: 10))
+                    .foregroundColor(allSeen ? .accentBlue : .secondary)
+                Text("\(message.seenBy.count)")
+                    .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
         }
     }
 
     private var actionButtons: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             if isOwner {
-                Button(action: { teamViewModel.togglePin(messageId: message.id) }) {
+                Button(action: { teamViewModel.togglePin(messageId: message.id); showActions = false }) {
                     Image(systemName: message.isPinned ? "pin.slash" : "pin")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(message.isPinned ? .accentOrange : .secondary)
                 }
             }
-            Button(action: { teamViewModel.deleteMessage(messageId: message.id) }) {
+            Button(action: { teamViewModel.deleteMessage(messageId: message.id); showActions = false }) {
                 Image(systemName: "trash")
-                    .font(.system(size: 12))
-                    .foregroundColor(.red.opacity(0.6))
+                    .font(.system(size: 13))
+                    .foregroundColor(.red.opacity(0.7))
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
     }
 }
