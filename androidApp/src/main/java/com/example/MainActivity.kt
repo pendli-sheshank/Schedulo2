@@ -83,20 +83,42 @@ class MainActivity : FragmentActivity() {
             dashboardViewModel.setAppContext(this@MainActivity)
 
             LaunchedEffect(Unit) {
-                val channel = android.app.NotificationChannel(
-                    "team_chat", "Team Chat", android.app.NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "Team chat message notifications" }
-                val nm = getSystemService(android.app.NotificationManager::class.java)
-                nm?.createNotificationChannel(channel)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val channel = android.app.NotificationChannel(
+                        "team_chat", "Team Chat", android.app.NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "Team chat message notifications"
+                        enableVibration(true)
+                    }
+                    androidx.core.app.NotificationManagerCompat.from(this@MainActivity)
+                        .createNotificationChannel(channel)
+                }
 
                 teamViewModel.chatNotificationCallback = { sender, body ->
-                    val notification = android.app.Notification.Builder(this@MainActivity, "team_chat")
+                    // Tapping the notification opens the app.
+                    val openIntent = android.content.Intent(this@MainActivity, MainActivity::class.java).apply {
+                        flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    }
+                    val pendingIntent = android.app.PendingIntent.getActivity(
+                        this@MainActivity, 0, openIntent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                    )
+                    val notification = androidx.core.app.NotificationCompat.Builder(this@MainActivity, "team_chat")
                         .setSmallIcon(android.R.drawable.ic_dialog_email)
-                        .setContentTitle("Team Chat")
-                        .setContentText("$sender: $body")
+                        .setContentTitle(sender.ifBlank { "Team Chat" })
+                        .setContentText(body)
+                        .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
+                        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                        .setCategory(androidx.core.app.NotificationCompat.CATEGORY_MESSAGE)
                         .setAutoCancel(true)
+                        .setContentIntent(pendingIntent)
                         .build()
-                    nm?.notify(System.currentTimeMillis().toInt(), notification)
+                    val nm = androidx.core.app.NotificationManagerCompat.from(this@MainActivity)
+                    if (nm.areNotificationsEnabled()) {
+                        try {
+                            nm.notify(System.currentTimeMillis().toInt(), notification)
+                        } catch (_: SecurityException) { }
+                    }
                 }
             }
             val themeMode by dashboardViewModel.themeMode.collectAsState()

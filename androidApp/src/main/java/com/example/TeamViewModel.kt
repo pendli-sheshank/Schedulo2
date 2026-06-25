@@ -8,7 +8,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.Query
 import com.google.firebase.storage.FirebaseStorage
 import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.Team
@@ -69,6 +68,10 @@ class TeamViewModel : ViewModel() {
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    fun reportError(message: String) {
+        _errorMessage.value = message
     }
 
     fun fetchMemberJobs(userId: String) {
@@ -237,13 +240,20 @@ class TeamViewModel : ViewModel() {
                 }
             }
 
-        // Listen for team messages
+        // Listen for team messages.
+        // Note: we intentionally do NOT add an .orderBy() server-side. Combining
+        // whereEqualTo("teamId") with orderBy("createdAt") requires a composite index;
+        // if that index is missing the listener fails and silently stops delivering
+        // updates (causing "messages arrive late / no notification"). Sorting locally
+        // keeps real-time delivery reliable.
         messagesListener?.remove()
         messagesListener = database.collection("team_messages")
             .whereEqualTo("teamId", team.id)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
             .addSnapshotListener { value, error ->
-                if (error != null) return@addSnapshotListener
+                if (error != null) {
+                    _errorMessage.value = "Failed to load messages: ${error.message}"
+                    return@addSnapshotListener
+                }
                 if (value != null) {
                     val uid = auth?.currentUser?.uid
                     val oldIds = _teamMessages.value.map { it.id }.toSet()
@@ -262,12 +272,14 @@ class TeamViewModel : ViewModel() {
                         )
                     }
                     if (oldIds.isNotEmpty()) {
-                        newMessages.filter { it.id !in oldIds && it.senderId != uid }.forEach { msg ->
-                            val preview = if (msg.imageUrl.isNotEmpty()) "Sent a photo" else msg.text
-                            chatNotificationCallback?.invoke(msg.senderName, preview)
-                        }
+                        newMessages.filter { it.id !in oldIds && it.senderId != uid }
+                            .sortedBy { it.createdAt }
+                            .forEach { msg ->
+                                val preview = if (msg.imageUrl.isNotEmpty()) "Sent a photo" else msg.text
+                                chatNotificationCallback?.invoke(msg.senderName, preview)
+                            }
                     }
-                    _teamMessages.value = newMessages
+                    _teamMessages.value = newMessages.sortedByDescending { it.createdAt }
                 }
             }
 
@@ -691,13 +703,18 @@ class TeamViewModel : ViewModel() {
         val senderName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
         val messageId = UUID.randomUUID().toString()
         val ref = storageRef.reference.child("chat_images/${team.id}/$messageId.jpg")
+        val appContext = context.applicationContext
 
-        val compressed = compressImage(context, imageUri) ?: run {
-            _isUploadingImage.value = false
-            _errorMessage.value = "Failed to compress image"
-            return
-        }
-        ref.putBytes(compressed)
+        // Decode/compress on a background thread: a large bitmap on the main thread
+        // can ANR, and we already moved OOM protection into compressImage().
+        Thread {
+            val compressed = compressImage(appContext, imageUri)
+            if (compressed == null) {
+                _isUploadingImage.value = false
+                _errorMessage.value = "Failed to process image"
+                return@Thread
+            }
+            ref.putBytes(compressed)
             .addOnSuccessListener {
                 ref.downloadUrl.addOnSuccessListener { downloadUrl ->
                     val messageData = hashMapOf(
@@ -721,24 +738,42 @@ class TeamViewModel : ViewModel() {
                 _isUploadingImage.value = false
                 _errorMessage.value = "Failed to upload image: ${e.message}"
             }
+        }.start()
     }
 
     private fun compressImage(context: android.content.Context, uri: Uri): ByteArray? {
+        // Catch Throwable (not just Exception) so an OutOfMemoryError from a large
+        // camera photo can't crash the app while picking an image.
         return try {
-            val input = context.contentResolver.openInputStream(uri) ?: return null
-            val original = android.graphics.BitmapFactory.decodeStream(input)
-            input.close()
             val maxDim = 800
-            val scale = minOf(maxDim.toFloat() / original.width, maxDim.toFloat() / original.height, 1f)
-            val w = (original.width * scale).toInt()
-            val h = (original.height * scale).toInt()
-            val scaled = android.graphics.Bitmap.createScaledBitmap(original, w, h, true)
+
+            // Pass 1: read only the bounds so we never load the full-res bitmap into memory.
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+            } ?: return null
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            // Pass 2: decode downsampled so memory usage stays bounded regardless of source size.
+            var sample = 1
+            while (bounds.outWidth / sample > maxDim * 2 || bounds.outHeight / sample > maxDim * 2) {
+                sample *= 2
+            }
+            val decodeOpts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            val decoded = context.contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, decodeOpts)
+            } ?: return null
+
+            val scale = minOf(maxDim.toFloat() / decoded.width, maxDim.toFloat() / decoded.height, 1f)
+            val w = maxOf(1, (decoded.width * scale).toInt())
+            val h = maxOf(1, (decoded.height * scale).toInt())
+            val scaled = android.graphics.Bitmap.createScaledBitmap(decoded, w, h, true)
             val out = java.io.ByteArrayOutputStream()
             scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 50, out)
-            if (scaled !== original) scaled.recycle()
-            original.recycle()
+            if (scaled !== decoded) scaled.recycle()
+            decoded.recycle()
             out.toByteArray()
-        } catch (e: Exception) { null }
+        } catch (t: Throwable) { null }
     }
 
     fun markMessageSeen(messageId: String) {

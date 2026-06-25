@@ -613,10 +613,12 @@ final class TeamViewModel: ObservableObject {
     }
 
     func loadTeamMessages(teamId: String) {
+        // No server-side .order(by:) here: combining the teamId filter with an
+        // ordering needs a composite index, and a missing index makes the listener
+        // fail silently (messages arrive late / no notification). We sort locally.
         messagesListener?.remove()
         messagesListener = db.collection("team_messages")
             .whereField("teamId", isEqualTo: teamId)
-            .order(by: "createdAt", descending: true)
             .addSnapshotListener { [weak self] snapshot, _ in
                 guard let docs = snapshot?.documents else { return }
                 let uid = self?.currentUserId
@@ -637,12 +639,13 @@ final class TeamViewModel: ObservableObject {
                     )
                 }
                 if !oldIds.isEmpty {
-                    for msg in newMessages where !oldIds.contains(msg.id) && msg.senderId != uid {
+                    for msg in newMessages.sorted(by: { $0.createdAt < $1.createdAt })
+                    where !oldIds.contains(msg.id) && msg.senderId != uid {
                         let preview = msg.imageUrl.isEmpty ? msg.text : "Sent a photo"
                         self?.postChatNotification(sender: msg.senderName, body: preview)
                     }
                 }
-                self?.teamMessages = newMessages
+                self?.teamMessages = newMessages.sorted { $0.createdAt > $1.createdAt }
             }
     }
 
