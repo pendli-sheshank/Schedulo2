@@ -350,69 +350,80 @@ fun TeamScreen(
                         val allTasks = remember(teamShifts) { teamShifts.flatMap { it.tasks } }
                         val completedTasks = allTasks.count { it.isCompleted }
 
-                        Column(
+                        // Bento grid scales tile sizes with the available width and caps
+                        // the content width on large screens so tiles never look stretched.
+                        BoxWithConstraints(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
-                            BentoTile(
-                                modifier = Modifier.fillMaxWidth().height(110.dp),
-                                title = "Team Dashboard",
-                                subtitle = if (userRole == "manager") "Hours & pay overview" else "${members.size} members",
-                                icon = Icons.Default.Dashboard,
-                                tint = PrimaryGreen,
-                                onClick = { onNavigateToDetail("dashboard") }
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            val gap = 12.dp
+                            val contentW = maxWidth.coerceAtMost(640.dp)
+                            val colW = (contentW - gap) / 2
+                            val fullH = (contentW * 0.30f).coerceIn(96.dp, 150.dp)
+                            val pairH = (colW * 0.80f).coerceIn(108.dp, 170.dp)
+                            val swapH = (contentW * 0.22f).coerceIn(84.dp, 120.dp)
+
+                            Column(
+                                modifier = Modifier
+                                    .width(contentW)
+                                    .align(Alignment.TopCenter),
+                                verticalArrangement = Arrangement.spacedBy(gap)
                             ) {
                                 BentoTile(
-                                    modifier = Modifier.weight(1f).height(130.dp),
-                                    title = "Team Schedule",
-                                    subtitle = "${teamShifts.size} shifts",
-                                    icon = Icons.Default.CalendarMonth,
-                                    tint = AccentBlue,
-                                    onClick = { onNavigateToDetail("schedule") }
+                                    modifier = Modifier.fillMaxWidth().height(fullH),
+                                    title = "Team Dashboard",
+                                    subtitle = if (userRole == "manager") "Hours & pay overview" else "${members.size} members",
+                                    icon = Icons.Default.Dashboard,
+                                    tint = PrimaryGreen,
+                                    onClick = { onNavigateToDetail("dashboard") }
                                 )
+                                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                                    BentoTile(
+                                        modifier = Modifier.weight(1f).height(pairH),
+                                        title = "Team Schedule",
+                                        subtitle = "${teamShifts.size} shifts",
+                                        icon = Icons.Default.CalendarMonth,
+                                        tint = AccentBlue,
+                                        onClick = { onNavigateToDetail("schedule") }
+                                    )
+                                    BentoTile(
+                                        modifier = Modifier.weight(1f).height(pairH),
+                                        title = "Team Tasks",
+                                        subtitle = "$completedTasks/${allTasks.size} done",
+                                        icon = Icons.Default.Checklist,
+                                        tint = AccentOrange,
+                                        progress = if (allTasks.isNotEmpty()) completedTasks.toFloat() / allTasks.size else null,
+                                        onClick = { onNavigateToDetail("tasks") }
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                                    BentoTile(
+                                        modifier = Modifier.weight(1f).height(pairH),
+                                        title = "Team Roster",
+                                        subtitle = "Weekly grid",
+                                        icon = Icons.Default.ViewWeek,
+                                        tint = SecondaryGreen,
+                                        onClick = { onNavigateToDetail("roster") }
+                                    )
+                                    BentoTile(
+                                        modifier = Modifier.weight(1f).height(pairH),
+                                        title = "Team Chat",
+                                        subtitle = "Messages",
+                                        icon = Icons.AutoMirrored.Filled.Chat,
+                                        tint = AccentBlue,
+                                        onClick = { onNavigateToDetail("chat") }
+                                    )
+                                }
                                 BentoTile(
-                                    modifier = Modifier.weight(1f).height(130.dp),
-                                    title = "Team Tasks",
-                                    subtitle = "$completedTasks/${allTasks.size} done",
-                                    icon = Icons.Default.Checklist,
+                                    modifier = Modifier.fillMaxWidth().height(swapH),
+                                    title = "Shift Swaps",
+                                    subtitle = "Request & manage swaps",
+                                    icon = Icons.Default.SwapHoriz,
                                     tint = AccentOrange,
-                                    progress = if (allTasks.isNotEmpty()) completedTasks.toFloat() / allTasks.size else null,
-                                    onClick = { onNavigateToDetail("tasks") }
+                                    onClick = { onNavigateToDetail("swaps") }
                                 )
                             }
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                BentoTile(
-                                    modifier = Modifier.weight(1f).height(100.dp),
-                                    title = "Team Roster",
-                                    subtitle = "Weekly grid",
-                                    icon = Icons.Default.ViewWeek,
-                                    tint = SecondaryGreen,
-                                    onClick = { onNavigateToDetail("roster") }
-                                )
-                                BentoTile(
-                                    modifier = Modifier.weight(1f).height(100.dp),
-                                    title = "Team Chat",
-                                    subtitle = "Messages",
-                                    icon = Icons.AutoMirrored.Filled.Chat,
-                                    tint = AccentBlue,
-                                    onClick = { onNavigateToDetail("chat") }
-                                )
-                            }
-                            BentoTile(
-                                modifier = Modifier.fillMaxWidth().height(90.dp),
-                                title = "Shift Swaps",
-                                subtitle = "Request & manage swaps",
-                                icon = Icons.Default.SwapHoriz,
-                                tint = AccentOrange,
-                                onClick = { onNavigateToDetail("swaps") }
-                            )
                         }
                     }
                 }

@@ -282,6 +282,9 @@ struct TeamView: View {
         let completedTasks = allTasks.filter { $0.isCompleted }.count
         let dashboardSubtitle = teamViewModel.isManager ? "Hours & pay overview" : "\(teamViewModel.members.count) members"
 
+        // Tiles use aspectRatio so their height scales with the available width
+        // (no fixed heights), and the grid is capped at 640pt and centered so it
+        // doesn't stretch on iPad / large screens.
         return VStack(spacing: 12) {
             BentoTile(
                 title: "Team Dashboard",
@@ -290,7 +293,7 @@ struct TeamView: View {
                 tint: .primaryGreen,
                 action: { showDashboardDetail = true }
             )
-            .frame(height: 110)
+            .aspectRatio(3.1, contentMode: .fit)
 
             HStack(spacing: 12) {
                 BentoTile(
@@ -300,7 +303,7 @@ struct TeamView: View {
                     tint: .accentBlue,
                     action: { showScheduleDetail = true }
                 )
-                .frame(height: 130)
+                .aspectRatio(1.25, contentMode: .fit)
 
                 BentoTile(
                     title: "Team Tasks",
@@ -310,7 +313,7 @@ struct TeamView: View {
                     progress: allTasks.isEmpty ? nil : Double(completedTasks) / Double(allTasks.count),
                     action: { showTasksDetail = true }
                 )
-                .frame(height: 130)
+                .aspectRatio(1.25, contentMode: .fit)
             }
 
             HStack(spacing: 12) {
@@ -321,7 +324,7 @@ struct TeamView: View {
                     tint: .secondaryGreen,
                     action: { showRosterDetail = true }
                 )
-                .frame(height: 100)
+                .aspectRatio(1.6, contentMode: .fit)
 
                 BentoTile(
                     title: "Team Chat",
@@ -330,7 +333,7 @@ struct TeamView: View {
                     tint: .accentBlue,
                     action: { showChatDetail = true }
                 )
-                .frame(height: 100)
+                .aspectRatio(1.6, contentMode: .fit)
             }
 
             let pendingSwaps = teamViewModel.swapRequests.filter { $0.status != "approved" && $0.status != "declined" }.count
@@ -341,8 +344,10 @@ struct TeamView: View {
                 tint: .accentOrange,
                 action: { showSwapRequests = true }
             )
-            .frame(height: 100)
+            .aspectRatio(3.4, contentMode: .fit)
         }
+        .frame(maxWidth: 640)
+        .frame(maxWidth: .infinity)
     }
 }
 
