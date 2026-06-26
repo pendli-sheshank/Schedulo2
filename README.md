@@ -56,12 +56,17 @@ A cross-platform app for shift workers to manage multiple jobs, track hours, mon
 - Auto-updates when shift data changes
 
 ### Team Management
-- **Create Teams**: Managers create a team and receive a unique 6-character invite code
+- **Create / Edit Teams**: Managers create a team (name, company, working hours, address) and receive a unique 6-character invite code
 - **Join Teams**: Members enter the invite code to join from any device
 - **Assign Shifts**: Managers assign shifts to specific team members with company, role, time, and pay details
 - **Accept / Decline**: Members see assigned shifts and can accept or decline them
+- **Shift Swaps**: Members request to swap or trade shifts with teammates; managers approve or decline
+- **Per-Shift Tasks**: Attach a task checklist to a shift and track completion per member
+- **Weekly Roster Grid**: View the whole team's week at a glance to spot coverage gaps
+- **Team Chat & Announcements**: Send messages and pinned announcements to the team in real time
+- **Photo Sharing**: Share a photo in team chat — images are stored securely and **auto-deleted once every member has seen them**
 - **Real-time Updates**: All team data syncs in real-time across devices via Firestore
-- **Roles**: Manager (full control) and Member (view + respond to assignments)
+- **Roles**: Owner / Manager (full control) and Member (view + respond to assignments)
 
 ### Earnings Insights
 - Charts and analytics for earnings trends over time
@@ -92,6 +97,7 @@ A cross-platform app for shift workers to manage multiple jobs, track hours, mon
 | Android UI | Jetpack Compose + Material 3 |
 | Architecture | MVVM |
 | Backend | Firebase Auth + Cloud Firestore |
+| Media Storage | Firebase Cloud Storage (team chat photos) |
 | iOS Widgets | WidgetKit |
 | Android Widgets | Glance |
 | iOS Calendar | EventKit |
@@ -120,8 +126,9 @@ Schedulo2/
 │       ├── AuthScreens.kt           # Login and signup UI
 │       ├── DashboardSupport.kt      # Dashboard ViewModel, Shift/Job CRUD
 │       ├── TabsSupport.kt           # Plan, Jobs, Pay, Profile screens
-│       ├── TeamViewModel.kt         # Team management state
+│       ├── TeamViewModel.kt         # Team management state, chat, photo upload
 │       ├── TeamSupport.kt           # Team UI screens
+│       ├── TeamDetailSupport.kt     # Team detail, chat, and photo sharing UI
 │       ├── CalendarService.kt       # Native calendar sync
 │       └── widget/                  # Home screen widget (Glance)
 ├── iosApp/                          # iOS app (SwiftUI)
@@ -221,6 +228,9 @@ Schedulo2/
 | `teams` | Team metadata (name, owner, invite code, member count) |
 | `team_members` | Membership records (userId, teamId, role) |
 | `team_shifts` | Assigned shifts (assignedTo, assignedBy, status) |
+| `team_messages` | Chat messages and announcements (text, `imageUrl`, `seenBy`) |
+
+> Chat photos are uploaded to **Firebase Cloud Storage** under `chat_images/{teamId}/{messageId}.jpg` and are deleted automatically once every team member has seen the message.
 
 ---
 
@@ -229,7 +239,6 @@ Schedulo2/
 - [ ] **Push Notifications** — Shift reminders via Firebase Cloud Messaging
 - [ ] **Recurring Shifts** — Set up repeating shift schedules
 - [ ] **Multi-Currency Support** — Track earnings in different currencies
-- [ ] **Shift Swap / Trade** — Request and manage shift swaps between coworkers
 - [ ] **Google Calendar Sync** — Two-way sync with Google Calendar API
 
 ---
