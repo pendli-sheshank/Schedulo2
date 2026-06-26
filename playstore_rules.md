@@ -216,7 +216,97 @@ If you have questions about this Privacy Policy or your data:
 
 ---
 
-## 3. Data Safety Form (Play Console)
+## 3. Terms and Conditions
+
+> **Host this text at a public URL (e.g. GitHub Pages) alongside your Privacy Policy. Link to it from within the app and provide the URL in Play Console if prompted.**
+
+---
+
+### Terms and Conditions for Schedulo
+
+**Effective Date:** June 26, 2026
+**Last Updated:** June 26, 2026
+
+Please read these Terms and Conditions ("Terms") carefully before using the Schedulo mobile application ("the App") operated by Sheshank Pendli ("we," "us," or "our").
+
+By downloading, installing, or using the App, you agree to be bound by these Terms. If you do not agree, do not use the App.
+
+#### 1. Eligibility
+
+You must be at least 13 years of age (or the minimum age of digital consent in your jurisdiction) to create an account. The App is designed for individuals aged 18 and older who are employed or managing work schedules.
+
+#### 2. Account Registration
+
+To use the App you must create an account with a valid email address and password. You are responsible for maintaining the confidentiality of your credentials and for all activity under your account. Notify us immediately if you suspect unauthorized access.
+
+#### 3. Description of the Service
+
+Schedulo is a shift tracking, earnings management, and team coordination app. Features include recording shifts and pay across multiple jobs, overtime and bonus calculations, team creation and shift assignment, in-app team chat with photo sharing, calendar sync, biometric lock, and earnings reports.
+
+#### 4. User Content
+
+"User Content" means any data, text, messages, or photos you submit through the App.
+
+You retain ownership of your User Content. By submitting it you grant us a limited, non-exclusive license to store, process, and display it solely to operate the App for you and your team members.
+
+Photos shared in team chat are uploaded to Firebase Cloud Storage, visible only to that team's members, and automatically deleted once every member has viewed the message.
+
+You agree not to submit content that is unlawful, harmful, defamatory, infringing, or otherwise objectionable. We may remove content that violates these Terms.
+
+#### 5. Team Features
+
+By joining a team you consent to your display name, email, assigned shifts, chat messages, and shared photos being visible to other team members. Team owners are responsible for managing their members and content. We do not mediate disputes between team members.
+
+#### 6. Acceptable Use
+
+You agree to use the App lawfully and must not: attempt unauthorized access to accounts or servers; reverse-engineer or decompile the App; harass or harm others; interfere with the App's functionality; or use automated means to access the App.
+
+#### 7. Intellectual Property
+
+The App and its design, code, and branding are the intellectual property of Sheshank Pendli. You are granted a limited, non-exclusive, non-transferable, revocable license to use the App for personal and lawful purposes.
+
+#### 8. Third-Party Services
+
+The App uses Firebase Authentication, Cloud Firestore, Cloud Storage for Firebase, and Firebase Crashlytics (all Google LLC). Your use of these services is subject to their respective terms. We are not responsible for their availability or practices.
+
+#### 9. Disclaimer of Warranties
+
+THE APP IS PROVIDED "AS IS" WITHOUT WARRANTIES OF ANY KIND. We do not warrant uninterrupted, error-free, or perfectly accurate service. The App is a tracking and organizational tool — not a substitute for official payroll, timekeeping, or accounting systems. You are responsible for verifying the accuracy of your data.
+
+#### 10. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES ARISING FROM YOUR USE OF THE APP. Our total liability shall not exceed the amount you paid us (if any) in the 12 months preceding the claim.
+
+#### 11. Account Termination
+
+You may delete your account at any time from within the App. We may suspend or terminate accounts that violate these Terms without prior notice.
+
+#### 12. Changes to These Terms
+
+We may update these Terms from time to time. Changes will be posted at the Terms URL or communicated in the App. Continued use after changes constitutes acceptance.
+
+#### 13. Governing Law
+
+These Terms are governed by the laws of the United States. Disputes shall be resolved in courts of competent jurisdiction.
+
+#### 14. Severability
+
+If any provision is found unenforceable, it shall be limited to the minimum extent necessary; remaining provisions remain in full effect.
+
+#### 15. Entire Agreement
+
+These Terms, together with our Privacy Policy, constitute the entire agreement regarding your use of the App.
+
+#### 16. Contact Us
+
+If you have questions about these Terms:
+
+**Email:** sheshank3336@gmail.com
+**Developer:** Sheshank Pendli
+
+---
+
+## 4. Data Safety Form (Play Console)
 
 > **Navigate to:** Play Console → App content → Data safety → Manage
 
@@ -286,7 +376,7 @@ Check "No" for all of the following:
 
 ---
 
-## 4. Content Rating Questionnaire
+## 5. Content Rating Questionnaire
 
 | Question | Answer |
 |---|---|
@@ -304,10 +394,12 @@ Expected rating: **Everyone** or **Everyone 10+** (due to user interaction in te
 
 ---
 
-## 5. Pre-Launch Checklist
+## 6. Pre-Launch Checklist
 
-- [ ] Privacy policy hosted at a public URL
+- [ ] Privacy policy hosted at a public URL (e.g. GitHub Pages)
 - [ ] Privacy policy URL entered in Play Console
+- [ ] Terms and Conditions hosted at a public URL
+- [ ] Terms and Conditions linked from within the app
 - [ ] Data Safety form completed
 - [ ] Content rating questionnaire completed
 - [ ] Target audience and content set (18+ / not designed for children)
