@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -1081,25 +1082,30 @@ private fun ChatDetailContent(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
 
-    // Fallback picker for devices/ROMs where the modern photo picker isn't present.
-    // ACTION_GET_CONTENT is handled by gallery / Files / Google Photos apps and, like
-    // the photo picker, needs no storage permission (it returns a content:// URI via SAF).
     val getContentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
 
+    // ACTION_OPEN_DOCUMENT is handled by the system DocumentsUI app which is
+    // always present on every Android device — the most reliable final fallback.
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
+
     val launchImagePicker = {
-        // Prefer the privacy-friendly photo picker; if the device can't open it,
-        // fall back to ACTION_GET_CONTENT before giving up.
-        try {
+        if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
             imagePickerLauncher.launch(
                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
             )
-        } catch (_: Exception) {
+        } else {
             try {
                 getContentLauncher.launch("image/*")
             } catch (_: Exception) {
-                teamViewModel.reportError("No gallery app available to pick a photo.")
+                try {
+                    openDocumentLauncher.launch(arrayOf("image/*"))
+                } catch (_: Exception) {
+                    teamViewModel.reportError("No gallery app available to pick a photo.")
+                }
             }
         }
     }
