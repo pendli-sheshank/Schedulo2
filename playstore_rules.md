@@ -29,7 +29,7 @@ Schedulo is the all-in-one shift tracking and team management app built for hour
 - Assign shifts individually or plan an entire week at a glance
 - View a team roster grid to spot coverage gaps
 - Approve or decline shift swap requests
-- Send team announcements and chat messages
+- Send team announcements, chat messages, and photos
 - Track task completion for each shift
 - Promote or demote team members
 
@@ -63,7 +63,7 @@ Schedulo is the all-in-one shift tracking and team management app built for hour
 ### Privacy Policy for Schedulo
 
 **Effective Date:** June 23, 2026
-**Last Updated:** June 23, 2026
+**Last Updated:** June 26, 2026
 
 Schedulo ("we," "our," or "the app") is operated by Sheshank Pendli. This Privacy Policy explains how we collect, use, store, and protect your information when you use the Schedulo mobile application.
 
@@ -89,6 +89,7 @@ If you create or join a team:
 - Team membership information (your user ID, display name, email, and role within the team)
 - Team shift assignments (who is assigned which shifts, shift status)
 - Team messages (text content you send in team chat, announcements)
+- **Photos** you choose to share in team chat. Shared photos are uploaded to Firebase Cloud Storage, visible to members of that team, and **automatically deleted from our servers once every team member has seen the message**. The app uses the privacy-friendly system photo picker and does **not** request access to your full photo library.
 - Shift swap requests (requester and target member identifiers, request status)
 
 **d) User Preferences**
@@ -130,7 +131,7 @@ We do **not** use your data for:
 
 #### 3. Data Storage & Third-Party Services
 
-All personal and work data is stored in **Google Cloud Firestore** (Firebase), a cloud database operated by Google LLC. Data is:
+All personal and work data is stored in **Google Cloud Firestore** (Firebase), a cloud database operated by Google LLC, and chat photos are stored in **Firebase Cloud Storage**. Data is:
 - Encrypted in transit using TLS/SSL
 - Encrypted at rest by Google Cloud
 - Stored in Google's data centers subject to [Google's Privacy Policy](https://policies.google.com/privacy) and [Firebase Terms of Service](https://firebase.google.com/terms)
@@ -141,6 +142,7 @@ All personal and work data is stored in **Google Cloud Firestore** (Firebase), a
 |---|---|---|---|
 | Firebase Authentication | Google | Email, password hash | Account sign-in |
 | Cloud Firestore | Google | All app data (profile, shifts, teams, messages) | Data storage & real-time sync |
+| Cloud Storage for Firebase | Google | Team chat photos | Image storage & delivery (auto-deleted after all members view) |
 | Firebase Crashlytics | Google | Crash logs, device info | Error monitoring |
 | Device Calendar | OS Provider | Shift event details (write-only) | Calendar sync |
 
@@ -170,7 +172,7 @@ You can delete your account from within the app at any time. When you delete you
 - All pay adjustments
 - Your team memberships
 
-Team messages you sent and team shifts you were assigned may retain your user ID reference but will no longer be linked to an active account.
+Team messages you sent and team shifts you were assigned may retain your user ID reference but will no longer be linked to an active account. Photos shared in team chat are deleted automatically once all team members have viewed the message.
 
 To request manual data deletion, contact us at sheshank3336@gmail.com.
 
@@ -236,6 +238,7 @@ If you have questions about this Privacy Policy or your data:
 | **Financial info** | Salary or wage info | Yes | No | App functionality | No |
 | **Financial info** | Other financial info (pay adjustments, bonuses) | Yes | No | App functionality | Yes |
 | **Messages** | Other in-app messages (team chat) | Yes | No | App functionality | Yes |
+| **Photos and videos** | Photos (shared in team chat) | Yes | No | App functionality | Yes |
 | **App activity** | App interactions (shift creation, task completion) | Yes | No | App functionality | No |
 | **App info and performance** | Crash logs | Yes | No | Analytics (crash reporting) | No |
 | **Device or other IDs** | Device or other IDs (Crashlytics installation ID) | Yes | No | Analytics (crash reporting) | No |
@@ -251,7 +254,6 @@ Check "No" for all of the following:
 - Sexual orientation
 - Health info
 - Fitness info
-- Photos
 - Videos
 - Voice or sound recordings
 - Music files
@@ -292,7 +294,7 @@ Check "No" for all of the following:
 | Sexual content | No |
 | Language | No (user-generated team chat may contain language, but app doesn't provide it) |
 | Controlled substances | No |
-| User interaction | Yes (team chat, shift swaps) |
+| User interaction | Yes (team chat text and photos, shift swaps) |
 | Users can share location | No |
 | Users can purchase digital goods | No |
 | Unrestricted internet access | No |

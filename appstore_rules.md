@@ -32,7 +32,7 @@ Schedulo is the all-in-one shift tracking and team management app built for hour
 - Assign shifts individually or plan an entire week at a glance
 - View a team roster grid to spot coverage gaps
 - Approve or decline shift swap requests
-- Send team announcements and chat messages
+- Send team announcements, chat messages, and photos
 - Track task completion for each shift
 - Promote or demote team members
 
@@ -71,7 +71,7 @@ Suggested screenshots (minimum 3, maximum 10):
 
 ```
 - Team shift swap requests with multi-step approval
-- Team chat and announcements
+- Team chat, announcements, and photo sharing
 - Weekly roster grid view
 - Shift accept/decline for team members
 - Member role management (promote/demote)
@@ -89,7 +89,7 @@ Suggested screenshots (minimum 3, maximum 10):
 ### Privacy Policy for Schedulo
 
 **Effective Date:** June 23, 2026
-**Last Updated:** June 23, 2026
+**Last Updated:** June 26, 2026
 
 Schedulo ("we," "our," or "the app") is developed and operated by Sheshank Pendli. This Privacy Policy describes how we collect, use, store, and protect your personal information when you use the Schedulo iOS application.
 
@@ -113,6 +113,7 @@ If you create or join a team:
 - Team membership (your user ID, display name, email, role)
 - Shift assignments and their status (assigned, accepted, declined)
 - Team chat messages (text content you compose)
+- **Photos** you choose to share in team chat. Shared photos are uploaded to Firebase Cloud Storage, visible to members of that team, and **automatically deleted from our servers once every team member has seen the message**. The app uses Apple's system photo picker and does **not** request access to your full photo library.
 - Shift swap requests (identifiers for requester, target member, and associated shifts)
 
 **d) User Preferences**
@@ -149,12 +150,13 @@ We use your information exclusively to:
 
 #### 3. Data Storage & Third-Party Services
 
-Your data is stored in **Google Cloud Firestore** (Firebase), encrypted in transit (TLS) and at rest (Google Cloud default encryption).
+Your data is stored in **Google Cloud Firestore** (Firebase), and chat photos in **Firebase Cloud Storage**, encrypted in transit (TLS) and at rest (Google Cloud default encryption).
 
 | Service | Provider | Data Received | Purpose |
 |---|---|---|---|
 | Firebase Authentication | Google LLC | Email, password hash | Account authentication |
 | Cloud Firestore | Google LLC | All app data | Cloud storage & real-time sync |
+| Cloud Storage for Firebase | Google LLC | Team chat photos | Image storage & delivery (auto-deleted after all members view) |
 | Firebase Crashlytics | Google LLC | Crash logs, device info | Crash diagnostics |
 | EventKit (Calendar) | Apple Inc. | Shift event details (write-only) | Calendar sync |
 
@@ -177,6 +179,8 @@ Your data is retained for as long as your account is active. You may delete your
 - All job profiles
 - All pay adjustment records
 - Your team memberships
+
+Photos shared in team chat are deleted automatically once all team members have viewed the message.
 
 To request data deletion by email, contact sheshank3336@gmail.com. We will process requests within 30 days.
 
@@ -263,11 +267,18 @@ The following data types are collected and linked to your identity:
 |---|---|---|---|
 | Other Usage Data (shift creation, task completion actions) | **Yes** | App Functionality | Yes |
 
+#### User Content
+
+| Data Type | Collected | Purpose | Linked to Identity |
+|---|---|---|---|
+| Photos or Videos (photos shared in team chat) | **Yes** | App Functionality | Yes |
+| Other User Content (team chat messages) | **Yes** | App Functionality | Yes |
+
 #### Other Data
 
 | Data Type | Collected | Purpose | Linked to Identity |
 |---|---|---|---|
-| Other Data Types (team chat messages, shift details, job profiles) | **Yes** | App Functionality | Yes |
+| Other Data Types (shift details, job profiles) | **Yes** | App Functionality | Yes |
 
 ### Data Not Linked to You
 
@@ -288,7 +299,6 @@ Confirm "No" for all of the following in App Store Connect:
 - Browsing History
 - Search History
 - Purchases
-- Photos or Videos
 - Audio Data
 - Gameplay Content
 - Customer Support
@@ -328,6 +338,14 @@ When you tap "Get Started" under App Privacy, Apple asks a series of questions. 
 - App Functionality: **Yes**
 - Analytics: No
 
+**User Content — Photos or Videos:**
+- App Functionality: **Yes**
+- Analytics: No
+
+**User Content — Other User Content (team chat messages):**
+- App Functionality: **Yes**
+- Analytics: No
+
 **Usage Data — Other Usage Data:**
 - App Functionality: **Yes**
 - Analytics: No
@@ -348,6 +366,8 @@ When you tap "Get Started" under App Privacy, Apple asks a series of questions. 
 | Email | **Yes** |
 | Financial Info | **Yes** |
 | User ID | **Yes** |
+| Photos or Videos | **Yes** |
+| Other User Content | **Yes** |
 | Usage Data | **Yes** |
 | Crash Data | **No** |
 | Other Data | **Yes** |
@@ -396,7 +416,7 @@ In `Info.plist`, this is already declared:
 
 **Expected age rating: 4+**
 
-Note: Team chat allows user-generated content, but since it's within private teams (invite-code gated, not publicly discoverable), Apple does not typically require a higher age rating. If Apple requests it during review, bump to 12+ and add "Infrequent/Mild Mature/Suggestive Themes."
+Note: Team chat allows user-generated content (text and photos), but since it's within private teams (invite-code gated, not publicly discoverable), Apple does not typically require a higher age rating. If Apple requests it during review, bump to 12+ and add "Infrequent/Mild Mature/Suggestive Themes."
 
 ---
 
