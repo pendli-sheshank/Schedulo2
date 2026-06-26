@@ -20,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.Intent
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -1092,12 +1091,18 @@ private fun ChatDetailContent(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) teamViewModel.sendImage(uri, context) }
 
+    // Every launch() is guarded: a launcher can throw (no handler, or a framework
+    // requestCode error) and an uncaught exception here crashes the whole app.
     val launchImagePicker = {
-        if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
-            imagePickerLauncher.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-            )
-        } else {
+        try {
+            if (ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)) {
+                imagePickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            } else {
+                getContentLauncher.launch("image/*")
+            }
+        } catch (_: Exception) {
             try {
                 getContentLauncher.launch("image/*")
             } catch (_: Exception) {

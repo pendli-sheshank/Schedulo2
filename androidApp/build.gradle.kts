@@ -16,7 +16,7 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "72").toInt()
+    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "73").toInt()
     versionCode = ciVersionCode
     versionName = "$ciVersionCode.0"
 
@@ -93,6 +93,12 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation("androidx.biometric:biometric:1.2.0-alpha05")
+  // biometric pulls in an old androidx.fragment (1.2.5) whose FragmentActivity
+  // enforces a 16-bit requestCode limit. Modern activity-compose generates larger
+  // request codes for ActivityResultLauncher, which crashes the photo picker with
+  // "Can only use lower 16 bits for requestCode". Force a fragment version that
+  // delegates activity results to ActivityResultRegistry (no 16-bit check).
+  implementation("androidx.fragment:fragment:1.8.6")
   // implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
