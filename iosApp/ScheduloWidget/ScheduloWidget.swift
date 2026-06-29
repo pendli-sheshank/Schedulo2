@@ -121,6 +121,7 @@ struct NextShiftWidgetView: View {
             }
         }
         .padding(12)
+        .widgetURL(URL(string: "schedulo://dashboard"))
         .widgetBackground()
     }
 
@@ -176,6 +177,7 @@ struct NextShiftWidgetView: View {
             .frame(width: 100)
         }
         .padding(14)
+        .widgetURL(URL(string: "schedulo://dashboard"))
         .widgetBackground()
     }
 }
