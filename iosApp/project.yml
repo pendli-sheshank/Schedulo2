@@ -40,6 +40,9 @@ targets:
           - "@executable_path/../../Frameworks"
     entitlements:
       path: ScheduloWidget/ScheduloWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.schedulo2.shared
 
   Schedulo2:
     type: application
@@ -77,6 +80,9 @@ targets:
       - target: ScheduloWidget
     entitlements:
       path: Schedulo2/Schedulo2.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.schedulo2.shared
     preBuildScripts:
       - name: Build KMP Shared Framework
         script: |
