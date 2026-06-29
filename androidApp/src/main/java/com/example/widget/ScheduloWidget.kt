@@ -1,6 +1,7 @@
 package com.example.widget
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,7 +49,12 @@ class ScheduloWidgetReceiver : GlanceAppWidgetReceiver() {
 class ScheduloWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = readWidgetData(context)
+        val data = try {
+            readWidgetData(context)
+        } catch (e: Exception) {
+            Log.e("ScheduloWidget", "Failed to read widget data", e)
+            WidgetData()
+        }
         provideContent {
             GlanceTheme {
                 WidgetContent(data)
@@ -88,7 +94,6 @@ class ScheduloWidget : GlanceAppWidget() {
                 .background(bgColor)
                 .padding(14.dp)
         ) {
-            // Header
             Text(
                 text = "Next Shift",
                 style = TextStyle(
@@ -101,7 +106,6 @@ class ScheduloWidget : GlanceAppWidget() {
             Spacer(modifier = GlanceModifier.height(6.dp))
 
             if (data.nextShiftCompany.isEmpty() || data.nextShiftStartMillis == 0L) {
-                // No upcoming shifts
                 Text(
                     text = "No upcoming shifts",
                     style = TextStyle(
@@ -111,7 +115,6 @@ class ScheduloWidget : GlanceAppWidget() {
                     )
                 )
             } else {
-                // Company name
                 Text(
                     text = data.nextShiftCompany,
                     style = TextStyle(
@@ -121,7 +124,6 @@ class ScheduloWidget : GlanceAppWidget() {
                     )
                 )
 
-                // Role (if present)
                 if (data.nextShiftRole.isNotEmpty()) {
                     Text(
                         text = data.nextShiftRole,
@@ -134,7 +136,6 @@ class ScheduloWidget : GlanceAppWidget() {
 
                 Spacer(modifier = GlanceModifier.height(2.dp))
 
-                // Formatted start time
                 Text(
                     text = formatShiftTime(data.nextShiftStartMillis, data.nextShiftEndMillis),
                     style = TextStyle(
@@ -146,7 +147,6 @@ class ScheduloWidget : GlanceAppWidget() {
 
             Spacer(modifier = GlanceModifier.height(10.dp))
 
-            // Weekly summary divider line (using a thin spacer with background)
             Spacer(
                 modifier = GlanceModifier
                     .fillMaxWidth()
@@ -156,7 +156,6 @@ class ScheduloWidget : GlanceAppWidget() {
 
             Spacer(modifier = GlanceModifier.height(8.dp))
 
-            // Weekly stats
             Row(
                 modifier = GlanceModifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically

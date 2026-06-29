@@ -141,6 +141,10 @@ class DashboardViewModel : ViewModel() {
 
     fun setAppContext(context: android.content.Context) {
         appContext = context.applicationContext
+        val currentShifts = _shifts.value
+        if (currentShifts.isNotEmpty()) {
+            try { WidgetDataProvider.updateWidgetData(context.applicationContext, currentShifts) } catch (_: Exception) {}
+        }
     }
 
     private val _userId = MutableStateFlow(auth?.currentUser?.uid ?: "")

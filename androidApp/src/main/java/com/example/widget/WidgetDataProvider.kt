@@ -1,26 +1,25 @@
 package com.example.widget
 
 import android.content.Context
-import androidx.glance.appwidget.GlanceAppWidgetManager
+import android.util.Log
 import androidx.glance.appwidget.updateAll
 import com.example.Shift
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import java.util.Locale
 
 object WidgetDataProvider {
+
+    private const val TAG = "WidgetDataProvider"
 
     fun updateWidgetData(context: Context, shifts: List<Shift>) {
         val now = System.currentTimeMillis()
 
-        // Find next upcoming shift (startTime in the future)
         val nextShift = shifts
             .filter { it.startTime > now }
             .minByOrNull { it.startTime }
 
-        // Calculate weekly stats (current calendar week, Monday-based)
         val weekStart = Calendar.getInstance().apply {
             firstDayOfWeek = Calendar.MONDAY
             set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
@@ -36,7 +35,6 @@ object WidgetDataProvider {
         val weeklyHours = weekShifts.sumOf { it.durationHours }
         val shiftCount = weekShifts.size
 
-        // Write to SharedPreferences
         val prefs = context.getSharedPreferences("schedulo_widget_data", Context.MODE_PRIVATE)
         prefs.edit().apply {
             putString("next_shift_company", nextShift?.company ?: "")
@@ -52,15 +50,15 @@ object WidgetDataProvider {
                 java.lang.Double.doubleToLongBits(weeklyHours)
             )
             putInt("shift_count", shiftCount)
-            apply()
+            commit()
         }
 
-        // Trigger widget update
-        CoroutineScope(Dispatchers.IO).launch {
+        @Suppress("OPT_IN_USAGE")
+        GlobalScope.launch(Dispatchers.IO) {
             try {
                 ScheduloWidget().updateAll(context)
-            } catch (_: Exception) {
-                // Widget may not be placed yet; ignore
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to update widget", e)
             }
         }
     }
