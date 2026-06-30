@@ -3,6 +3,7 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
+    @StateObject private var connectivityManager = ConnectivityManager()
 
     var onEditShift: (String) -> Void = { _ in }
     var onNavigateToProfile: () -> Void = {}
@@ -10,6 +11,8 @@ struct DashboardView: View {
 
     @State private var weekOffset = 0
     @State private var showWeekPicker = false
+    @State private var scrollOffset: CGFloat = 0
+    @State private var statusBarStyle: UIStatusBarStyle = .lightContent
 
     private var greetingName: String {
         let name = dashboardViewModel.userName
@@ -62,51 +65,59 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                // Header
-                headerSection
+        ZStack(alignment: .top) {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    // Header
+                    headerSection
 
-                // Week picker
-                weekPickerSection
+                    // Week picker
+                    weekPickerSection
 
-                // Error banner
-                if let error = dashboardViewModel.syncError {
-                    errorBanner(error)
-                }
-
-                // Loading
-                if dashboardViewModel.isLoading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                }
-
-                // Earnings card
-                earningsCard
-
-                // Employer Goals
-                if !dashboardViewModel.jobs.isEmpty {
-                    Text("Employer Goals")
-                        .font(.system(size: 17, weight: .bold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-
-                    ForEach(dashboardViewModel.jobs, id: \.id) { job in
-                        JobGoalTrackerCard(job: job, shifts: dashboardViewModel.shifts, weekOffset: weekOffset)
-                            .padding(.horizontal, 16)
+                    // Error banner
+                    if let error = dashboardViewModel.syncError {
+                        errorBanner(error)
                     }
-                }
 
-                // Upcoming shifts
-                if weekOffset == 0 {
-                    upcomingShiftsSection
-                }
+                    // Loading with skeletal loader
+                    if dashboardViewModel.isLoading {
+                        SkeletalLoader()
+                            .springScale()
+                    } else {
+                        // Earnings card
+                        earningsCard
 
-                Spacer().frame(height: 80)
+                        // Employer Goals
+                        if !dashboardViewModel.jobs.isEmpty {
+                            Text("Employer Goals")
+                                .font(.system(size: 17, weight: .bold))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+
+                            ForEach(dashboardViewModel.jobs, id: \.id) { job in
+                                JobGoalTrackerCard(job: job, shifts: dashboardViewModel.shifts, weekOffset: weekOffset)
+                                    .padding(.horizontal, 16)
+                            }
+                        }
+
+                        // Upcoming shifts
+                        if weekOffset == 0 {
+                            upcomingShiftsSection
+                        }
+                    }
+
+                    Spacer().frame(height: 80)
+                }
             }
-        }
-        .refreshable {
-            dashboardViewModel.refreshData()
+            .refreshable {
+                dashboardViewModel.refreshData()
+            }
+
+            // Connectivity indicator overlay
+            VStack {
+                ConnectivityIndicator(connectivityManager: connectivityManager)
+                Spacer()
+            }
         }
     }
 
@@ -152,6 +163,7 @@ struct DashboardView: View {
                             .foregroundColor(.white)
                     }
                 }
+                .scaleButtonStyle()
             }
         }
         .padding(.horizontal, 16)

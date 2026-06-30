@@ -10,6 +10,8 @@ struct PayView: View {
     @State private var showAdjustmentSheet = false
     @State private var adjustmentCycle: PayCycleInfo?
     @State private var adjustmentToDelete: PayAdjustment?
+    @State private var optimisticallMarkedPaidCycle: String?
+    @State private var showSuccessMessage = false
 
     private var cycles: [PayCycleInfo] {
         buildPayCycles()
@@ -42,14 +44,15 @@ struct PayView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                // Title
-                Text("Pay & Earnings")
-                    .font(.system(size: 28, weight: .bold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+        ZStack(alignment: .top) {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    // Title
+                    Text("Pay & Earnings")
+                        .font(.system(size: 28, weight: .bold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
 
                 Spacer().frame(height: 24)
 
@@ -105,6 +108,28 @@ struct PayView: View {
                 }
 
                 Spacer().frame(height: 80)
+                }
+            }
+
+            // Success toast notification
+            if showSuccessMessage {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.white)
+                    Text("Payment marked as paid")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.primaryGreen)
+                )
+                .padding(16)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .sheet(isPresented: $showExportSheet) {
@@ -126,8 +151,21 @@ struct PayView: View {
         )) {
             Button("Confirm") {
                 if let cycle = cycleToConfirmPaid {
+                    // Optimistic update
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        optimisticallMarkedPaidCycle = cycle.cycleKey
+                        showSuccessMessage = true
+                    }
+                    // Send to API
                     dashboardViewModel.markCycleAsPaid(shiftIds: cycle.shifts.map { $0.id }, isPaid: true)
                     cycleToConfirmPaid = nil
+
+                    // Hide success message after 2 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            showSuccessMessage = false
+                        }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { cycleToConfirmPaid = nil }

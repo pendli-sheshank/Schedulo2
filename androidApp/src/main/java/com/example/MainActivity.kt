@@ -321,11 +321,14 @@ fun DashboardScreen(
         onRefresh = { dashboardViewModel?.refreshData() },
         modifier = modifier.fillMaxSize()
     ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
         // Top bar
         Row(
             modifier = Modifier
@@ -466,14 +469,9 @@ fun DashboardScreen(
         }
 
         if (isLoading) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        }
-
-        LazyColumn(
+            SkeletalLoader(modifier = Modifier.fillMaxSize())
+        } else {
+            LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
             contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -498,6 +496,12 @@ fun DashboardScreen(
                 item { UpcomingShiftsSection(shifts, onEditShift) }
             }
         }
+        }
+    }
+
+        ConnectivityIndicator(
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
     }
     }
 }
