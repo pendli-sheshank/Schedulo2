@@ -39,6 +39,7 @@ struct JobsView: View {
                 }
             }
             .padding(16)
+            .background(Color(UIColor.systemBackground))
 
             if dashboardViewModel.jobs.isEmpty {
                 VStack(spacing: 12) {
@@ -49,6 +50,7 @@ struct JobsView: View {
                         .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(UIColor.systemBackground))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 16) {
@@ -60,8 +62,10 @@ struct JobsView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                 }
+                .background(Color(UIColor.systemBackground))
             }
         }
+        .background(Color(UIColor.systemBackground))
         .sheet(isPresented: $showDialog) {
             jobFormSheet
         }

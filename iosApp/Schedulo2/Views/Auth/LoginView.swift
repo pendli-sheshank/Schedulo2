@@ -9,6 +9,7 @@ struct LoginView: View {
     @State private var passwordVisible = false
     @State private var showForgotPassword = false
     @State private var resetEmail = ""
+    @State private var acceptedTerms = false
 
     private var emailError: String? {
         if email.isEmpty { return nil }
@@ -21,7 +22,7 @@ struct LoginView: View {
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         let pattern = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
         let pred = NSPredicate(format: "SELF MATCHES %@", pattern)
-        return pred.evaluate(with: trimmed) && password.count >= 6
+        return pred.evaluate(with: trimmed) && password.count >= 6 && acceptedTerms
     }
 
     private let gradientEnd = Color(red: 0.176, green: 0.247, blue: 0.153)
@@ -163,6 +164,38 @@ struct LoginView: View {
                                         .fill(errorBannerBg)
                                 )
                                 .padding(.top, 16)
+                            }
+
+                            Spacer().frame(height: 24)
+
+                            // Privacy Policy Checkbox
+                            HStack(spacing: 12) {
+                                Button(action: { acceptedTerms.toggle() }) {
+                                    Image(systemName: acceptedTerms ? "checkmark.square.fill" : "square")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(acceptedTerms ? .primaryGreen : .gray)
+                                }
+
+                                Link(destination: URL(string: "https://schedulo-privacy.netlify.app/")!) {
+                                    HStack(spacing: 0) {
+                                        Text("I accept the ")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(cardText)
+                                        Text("Privacy Policy & Terms")
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(.primaryGreen)
+                                    }
+                                }
+
+                                Spacer()
+                            }
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(fieldBackground)
+                            )
+                            .onTapGesture {
+                                acceptedTerms.toggle()
                             }
 
                             Spacer().frame(height: 24)
