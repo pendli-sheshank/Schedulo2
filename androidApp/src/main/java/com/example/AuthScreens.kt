@@ -8,7 +8,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -26,6 +28,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.util.Patterns
@@ -51,6 +55,7 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var acceptedTerms by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     val authState by viewModel.authState.collectAsState()
@@ -66,7 +71,7 @@ fun LoginScreen(
     val resetState by viewModel.resetState.collectAsState()
 
     val emailError = if (email.isNotBlank() && !isValidEmail(email)) "Enter a valid email address" else null
-    val isFormValid = isValidEmail(email) && password.length >= 6
+    val isFormValid = isValidEmail(email) && password.length >= 6 && acceptedTerms
     val isLoading = authState is AuthState.Loading
 
     Column(
@@ -246,6 +251,57 @@ fun LoginScreen(
                                 )
                             }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(12.dp)
+                            .clickable { acceptedTerms = !acceptedTerms },
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Checkbox(
+                            checked = acceptedTerms,
+                            onCheckedChange = { acceptedTerms = it },
+                            modifier = Modifier.size(20.dp),
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = PrimaryGreen,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "I accept the Privacy Policy & Terms",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            val context = LocalContext.current
+                            ClickableText(
+                                text = buildAnnotatedString {
+                                    append("Read our Privacy Policy")
+                                },
+                                style = TextStyle(
+                                    fontSize = 12.sp,
+                                    color = PrimaryGreen,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                onClick = {
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse("https://schedulo-privacy.netlify.app/")
+                                    )
+                                    context.startActivity(intent)
+                                },
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))

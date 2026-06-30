@@ -1039,8 +1039,14 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
         )
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onBack != null) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
@@ -1058,11 +1064,23 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
         Spacer(modifier = Modifier.height(16.dp))
 
         if (jobs.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
                 Text("No employers added yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(contentPadding = PaddingValues(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 items(jobs) { job ->
                     val cycleStart = job.getStartOfCurrentCycle()
                     val cycleEnd = cycleStart + 7 * 24 * 60 * 60 * 1000L
