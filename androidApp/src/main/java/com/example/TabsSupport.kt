@@ -1514,18 +1514,16 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
     }
     }
 
-        if (showSuccessMessage) {
-            LaunchedEffect(Unit) {
-                delay(2000)
-                showSuccessMessage = false
-            }
-            SuccessToast(
-                message = "Payment marked as paid",
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-            )
+    if (showSuccessMessage) {
+        LaunchedEffect(Unit) {
+            delay(2000)
+            showSuccessMessage = false
         }
+        SuccessToast(
+            message = "Payment marked as paid",
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 
     if (showAdjustmentForCycle != null) {
         AddAdjustmentDialog(
