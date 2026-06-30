@@ -1512,7 +1512,6 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
             containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
         )
     }
-    }
 
     if (showSuccessMessage) {
         LaunchedEffect(Unit) {
