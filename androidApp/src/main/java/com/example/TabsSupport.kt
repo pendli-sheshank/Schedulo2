@@ -344,7 +344,7 @@ private fun CalendarMonthView(
 
         // Day-of-week headers
         item {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         Text(day, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -358,7 +358,7 @@ private fun CalendarMonthView(
         val totalCells = startDayOfWeek + daysInMonth
         val rows = (totalCells + 6) / 7
         items(rows) { row ->
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 for (col in 0..6) {
                     val cellIndex = row * 7 + col
                     val dayNum = cellIndex - startDayOfWeek + 1
@@ -480,7 +480,7 @@ private fun CalendarMonthView(
                         shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(containerColor = PrimaryGreen.copy(alpha = 0.08f))
                     ) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("${selectedDayShifts.size} shift${if (selectedDayShifts.size != 1) "s" else ""} · ${"%.1f".format(totalHrs)} hrs",
                                 fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryGreen)
                             Text("$${"%.2f".format(totalEarned)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
@@ -560,7 +560,7 @@ private fun CalendarWeekView(
 
         // Day strip
         item {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 daysList.forEach { (dayStart, _) ->
                     val isToday = dayStart == todayMillis
                     val dayEndMs = dayStart + 24 * 60 * 60 * 1000L
@@ -1109,7 +1109,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                                         Text(if (job.isGigWork) "Gig" else "Hourly", fontSize = 11.sp, fontWeight = FontWeight.Bold,
                                             color = if (job.isGigWork) AccentOrange else AccentBlue)
                                     }
-                                    IconButton(onClick = { dashboardViewModel.deleteJob(job.id) }, modifier = Modifier.size(24.dp)) {
+                                    IconButton(onClick = { dashboardViewModel.deleteJob(job.id) }) {
                                         Icon(Icons.Default.Delete, "Delete Job", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                                     }
                                 }
@@ -1420,7 +1420,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                                                 )
                                                 if (isExpanded) {
                                                     Spacer(modifier = Modifier.width(8.dp))
-                                                    IconButton(onClick = { adjustmentToDelete = adj }, modifier = Modifier.size(20.dp)) {
+                                                    IconButton(onClick = { adjustmentToDelete = adj }) {
                                                         Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(14.dp))
                                                     }
                                                 }
@@ -1466,7 +1466,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
                                             Text("$${"%.2f".format(shift.totalEarned)}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen)
                                             Spacer(modifier = Modifier.height(4.dp))
                                             if (cycle.status != PayCycleStatus.UPCOMING) {
-                                                Checkbox(checked = shift.isPaid, onCheckedChange = { dashboardViewModel.toggleShiftPaidStatus(shift.id, it) }, modifier = Modifier.size(24.dp))
+                                                Checkbox(checked = shift.isPaid, onCheckedChange = { dashboardViewModel.toggleShiftPaidStatus(shift.id, it) })
                                             } else {
                                                 Box(modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 6.dp, vertical = 2.dp)) {
                                                     Text("Est", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
