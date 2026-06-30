@@ -42,7 +42,7 @@ struct PlanView: View {
                     }
                 }
             }
-            .padding(10)
+            .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color(UIColor.secondarySystemBackground).opacity(0.5))
@@ -63,7 +63,7 @@ struct PlanView: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(selected ? .white : .primary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 12)
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
                                     .fill(selected ? Color.primaryGreen : Color(UIColor.secondarySystemBackground))
