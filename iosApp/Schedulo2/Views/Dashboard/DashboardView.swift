@@ -89,11 +89,11 @@ struct DashboardView: View {
                     Text("Employer Goals")
                         .font(.system(size: 17, weight: .bold))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 16)
 
                     ForEach(dashboardViewModel.jobs, id: \.id) { job in
                         JobGoalTrackerCard(job: job, shifts: dashboardViewModel.shifts, weekOffset: weekOffset)
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 16)
                     }
                 }
 
@@ -116,7 +116,7 @@ struct DashboardView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Hi, \(greetingName)")
-                    .font(.system(size: 26, weight: .bold))
+                    .font(.system(size: 22, weight: .bold))
                     .tracking(-0.5)
 
                 Text(weekRangeLabel(for: weekOffset) + (weekOffset == 0 ? " - This Week" : ""))
@@ -146,7 +146,7 @@ struct DashboardView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 42, height: 42)
+                            .frame(width: 44, height: 44)
                         Text(displayInitials)
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.white)
@@ -154,7 +154,7 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 8)
     }
@@ -184,14 +184,14 @@ struct DashboardView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color(UIColor.secondarySystemBackground).opacity(0.6))
             )
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -223,7 +223,7 @@ struct DashboardView: View {
                             .font(.system(size: 12))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
@@ -232,7 +232,7 @@ struct DashboardView: View {
                 }
             }
 
-            Spacer().frame(height: 20)
+            Spacer().frame(height: 16)
 
             HStack(spacing: 12) {
                 statPill(label: "Hours", value: String(format: "%.1fh", totalHours))
@@ -251,7 +251,7 @@ struct DashboardView: View {
                     )
                 )
         )
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
     }
 
     private func statPill(label: String, value: String) -> some View {
@@ -289,12 +289,12 @@ struct DashboardView: View {
                     .font(.system(size: 14))
             }
         }
-        .padding(14)
+        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.red.opacity(0.1))
         )
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Upcoming Shifts
@@ -339,7 +339,7 @@ struct DashboardView: View {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10)
                                         .fill((shift.isGig ? Color.accentOrange : Color.accentBlue).opacity(0.1))
-                                        .frame(width: 40, height: 40)
+                                        .frame(width: 44, height: 44)
                                     Image(systemName: shift.isGig ? "car.fill" : "briefcase.fill")
                                         .font(.system(size: 18))
                                         .foregroundColor(shift.isGig ? .accentOrange : .accentBlue)
@@ -359,13 +359,13 @@ struct DashboardView: View {
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.primaryGreen)
                             }
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                         }
                         .buttonStyle(.plain)
 
                         if index < upcoming.count - 1 {
-                            Divider().padding(.horizontal, 12)
+                            Divider().padding(.horizontal, 16)
                         }
                     }
                 }
@@ -380,7 +380,7 @@ struct DashboardView: View {
                 )
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
     }
 }
 
@@ -437,7 +437,7 @@ struct JobGoalTrackerCard: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 10)
                             .fill(accentColor.opacity(0.1))
-                            .frame(width: 36, height: 36)
+                            .frame(width: 44, height: 44)
                         Image(systemName: job.isGigWork ? "car.fill" : "building.2.fill")
                             .font(.system(size: 18))
                             .foregroundColor(accentColor)
