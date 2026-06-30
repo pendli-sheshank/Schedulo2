@@ -47,6 +47,7 @@ import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.SecondaryGreen
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.schedulo.shared.model.TeamShift
 import com.schedulo.shared.model.ShiftTask
@@ -1214,8 +1215,11 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
     var cycleToConfirmPaid by remember { mutableStateOf<WeeklyPayCycle?>(null) }
     var showAdjustmentForCycle by remember { mutableStateOf<WeeklyPayCycle?>(null) }
     var adjustmentToDelete by remember { mutableStateOf<PayAdjustment?>(null) }
+    var optimisticallMarkedPaidCycle by remember { mutableStateOf<String?>(null) }
+    var showSuccessMessage by remember { mutableStateOf(false) }
 
-    LazyColumn(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
+    Box(modifier = modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
         item {
             Text("Pay & Earnings", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             Spacer(modifier = Modifier.height(24.dp))
@@ -1496,13 +1500,32 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
             title = { Text("Confirm Payment", fontSize = 18.sp, fontWeight = FontWeight.Bold) },
             text = { Text("Mark the week of $cycleRangeStr ($${"%.2f".format(cycle.totalEarned)}) as Paid?", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
             confirmButton = {
-                Button(onClick = { dashboardViewModel.markCycleAsPaid(cycle.shifts.map { it.id }, true); cycleToConfirmPaid = null },
+                Button(onClick = {
+                    optimisticallMarkedPaidCycle = cycle.cycleKey
+                    showSuccessMessage = true
+                    cycleToConfirmPaid = null
+                    dashboardViewModel.markCycleAsPaid(cycle.shifts.map { it.id }, true)
+                },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) { Text("Confirm", color = Color.White, fontWeight = FontWeight.Bold) }
             },
             dismissButton = { TextButton(onClick = { cycleToConfirmPaid = null }) { Text("Cancel") } },
             containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
         )
     }
+    }
+
+        if (showSuccessMessage) {
+            LaunchedEffect(Unit) {
+                delay(2000)
+                showSuccessMessage = false
+            }
+            SuccessToast(
+                message = "Payment marked as paid",
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+            )
+        }
 
     if (showAdjustmentForCycle != null) {
         AddAdjustmentDialog(
@@ -1533,6 +1556,7 @@ fun PayScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewMo
             dismissButton = { TextButton(onClick = { adjustmentToDelete = null }) { Text("Cancel") } },
             containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
         )
+    }
     }
 }
 
