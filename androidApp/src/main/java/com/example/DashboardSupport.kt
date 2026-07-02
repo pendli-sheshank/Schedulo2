@@ -1163,7 +1163,7 @@ fun AddShiftScreen(
                     ) {
                         jobs.forEach { job ->
                             DropdownMenuItem(
-                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${job.defaultHourlyRate}/hr"})") },
+                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${"%.2f".format(job.defaultHourlyRate)}/hr"})") },
                                 onClick = {
                                     selectedJob = job
                                     company = job.title

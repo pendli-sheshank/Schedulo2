@@ -15,13 +15,19 @@ struct DashboardView: View {
     @State private var statusBarStyle: UIStatusBarStyle = .lightContent
 
     private var greetingName: String {
+        // Prefer the profile first name; otherwise derive a friendly name from
+        // the email handle by dropping trailing digits ("sheshank336" -> "Sheshank").
         let name = dashboardViewModel.userName
+        var raw: String
         if !name.isEmpty {
-            return name.components(separatedBy: " ").first ?? "there"
+            raw = name.trimmingCharacters(in: .whitespaces).components(separatedBy: " ").first ?? ""
+        } else {
+            let prefix = authViewModel.currentUserEmail.components(separatedBy: "@").first ?? ""
+            let letters = String(prefix.prefix(while: { $0.isLetter }))
+            raw = letters.isEmpty ? prefix : letters
         }
-        let email = authViewModel.currentUserEmail
-        let prefix = email.components(separatedBy: "@").first ?? ""
-        return prefix.isEmpty ? "there" : prefix
+        guard !raw.isEmpty else { return "there" }
+        return raw.prefix(1).uppercased() + raw.dropFirst()
     }
 
     private var displayInitials: String {
@@ -68,11 +74,12 @@ struct DashboardView: View {
         ZStack(alignment: .top) {
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    // Header
-                    headerSection
-
-                    // Week picker
-                    weekPickerSection
+                    // Header + week picker as one block so the date chip reads
+                    // as part of the greeting instead of floating above the card.
+                    VStack(spacing: 6) {
+                        headerSection
+                        weekPickerSection
+                    }
 
                     // Error banner
                     if let error = dashboardViewModel.syncError {
@@ -168,7 +175,6 @@ struct DashboardView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
-        .padding(.bottom, 8)
     }
 
     // MARK: - Week Picker
@@ -248,8 +254,8 @@ struct DashboardView: View {
 
             HStack(spacing: 12) {
                 statPill(label: "Hours", value: String(format: "%.1fh", totalHours))
-                statPill(label: "Shifts", value: "\(shiftCount)")
-                statPill(label: "Avg/Shift", value: shiftCount > 0 ? "$\(Int(avgPerShift))" : "$0")
+                statPill(label: "Scheduled", value: "\(shiftCount)")
+                statPill(label: "Avg/Shift", value: shiftCount > 0 ? String(format: "$%.2f", avgPerShift) : "$0.00")
             }
         }
         .padding(24)
@@ -271,9 +277,11 @@ struct DashboardView: View {
             Text(value)
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.white)
+            // Soft near-white (#E0E0E0) keeps the labels readable against the
+            // dark green gradient; 0.6-alpha white failed contrast.
             Text(label)
                 .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(Color(red: 0.878, green: 0.878, blue: 0.878))
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
@@ -352,7 +360,9 @@ struct DashboardView: View {
                                     RoundedRectangle(cornerRadius: 10)
                                         .fill((shift.isGig ? Color.accentOrange : Color.accentBlue).opacity(0.1))
                                         .frame(width: 44, height: 44)
-                                    Image(systemName: shift.isGig ? "car.fill" : "briefcase.fill")
+                                    // Same employer iconography as the goals cards, so
+                                    // one employer never shows two different symbols.
+                                    Image(systemName: shift.isGig ? "car.fill" : "building.2.fill")
                                         .font(.system(size: 18))
                                         .foregroundColor(shift.isGig ? .accentOrange : .accentBlue)
                                 }
@@ -367,9 +377,15 @@ struct DashboardView: View {
 
                                 Spacer()
 
-                                Text("$\(shift.totalEarned, specifier: "%.2f")")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.primaryGreen)
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    // "Est." marks this as a projection, not money in hand.
+                                    Text("Est. $\(shift.totalEarned, specifier: "%.2f")")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.primaryGreen)
+                                    Text(Self.durationLabel(shift.durationHours))
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
@@ -393,6 +409,12 @@ struct DashboardView: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    static func durationLabel(_ hours: Double) -> String {
+        hours.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(hours))h"
+            : String(format: "%.1fh", hours)
     }
 }
 
@@ -478,7 +500,9 @@ struct JobGoalTrackerCard: View {
                         .font(.system(size: 15, weight: .semibold))
                 }
                 VStack(alignment: .leading) {
-                    Text("Shifts").font(.system(size: 11)).foregroundColor(.secondary)
+                    // "Completed" (worked shifts) vs. "Scheduled" on the earnings
+                    // card, so the two counts can't read as a mismatch.
+                    Text("Completed").font(.system(size: 11)).foregroundColor(.secondary)
                     Text("\(shiftsForJob.count)")
                         .font(.system(size: 15, weight: .semibold))
                 }
@@ -513,6 +537,7 @@ struct JobGoalTrackerCard: View {
             ProgressView(value: progressFraction)
                 .tint(progressFraction >= 1.0 ? .primaryGreen : accentColor)
                 .scaleEffect(y: 1.5)
+                .padding(.bottom, 6)
 
             if progressFraction >= 1.0 {
                 HStack(spacing: 4) {

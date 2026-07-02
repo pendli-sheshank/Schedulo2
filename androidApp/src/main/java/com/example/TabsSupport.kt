@@ -5,8 +5,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
@@ -65,7 +72,9 @@ fun MainLayout(
     }
 
     var showAddMenu by remember { mutableStateOf(false) }
+    BackHandler(enabled = showAddMenu) { showAddMenu = false }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
@@ -76,25 +85,7 @@ fun MainLayout(
                     restoreState = true
                 }
             })
-        },
-        floatingActionButton = {
-            Box {
-                FabPlaceholder(onClick = { showAddMenu = true }, isExpanded = showAddMenu)
-                DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Add Single Shift") },
-                        leadingIcon = { Icon(Icons.Default.Add, null) },
-                        onClick = { showAddMenu = false; navController.navigate("add_shift") }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Plan Entire Week") },
-                        leadingIcon = { Icon(Icons.Default.ViewWeek, null) },
-                        onClick = { showAddMenu = false; navController.navigate("add_week_plan") }
-                    )
-                }
-            }
-        },
-        floatingActionButtonPosition = FabPosition.Center
+        }
     ) { innerPadding ->
         when (currentRoute) {
             "dashboard" -> DashboardScreen(
@@ -133,6 +124,93 @@ fun MainLayout(
                 )
             }
         }
+    }
+
+    // Backdrop scrim: dims the whole dashboard (bottom bar included) while the
+    // FAB menu is open so background content can't bleed through the menu.
+    AnimatedVisibility(visible = showAddMenu, enter = fadeIn(), exit = fadeOut()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.35f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { showAddMenu = false }
+        )
+    }
+
+    // FAB docked in the bottom bar cradle: bar content is 64dp tall above the
+    // nav-bar inset, so a 36dp bottom offset puts the 56dp FAB's center right
+    // on the bar's top edge. The action menu is centered above it.
+    Column(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .padding(bottom = 36.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        AnimatedVisibility(
+            visible = showAddMenu,
+            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+            exit = fadeOut() + scaleOut(targetScale = 0.9f)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                FabActionMenu(
+                    onAddShift = { showAddMenu = false; navController.navigate("add_shift") },
+                    onPlanWeek = { showAddMenu = false; navController.navigate("add_week_plan") }
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+        }
+        FabPlaceholder(onClick = { showAddMenu = !showAddMenu }, isExpanded = showAddMenu)
+    }
+    }
+}
+
+@Composable
+private fun FabActionMenu(onAddShift: () -> Unit, onPlanWeek: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            FabActionMenuItem(Icons.Default.Add, "Add Single Shift", onAddShift)
+            FabActionMenuItem(Icons.Default.ViewWeek, "Plan Entire Week", onPlanWeek)
+        }
+    }
+}
+
+@Composable
+private fun FabActionMenuItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(PrimaryGreen.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = PrimaryGreen, modifier = Modifier.size(18.dp))
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
     }
 }
 
@@ -1126,7 +1204,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Weekly Target: ${if (job.goalType == "Hours") "${job.goalHours} hrs" else "$${job.goalHours}"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (!job.isGigWork) Text("Base Rate: $${job.defaultHourlyRate}/hr", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (!job.isGigWork) Text("Base Rate: $${"%.2f".format(job.defaultHourlyRate)}/hr", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             if (!job.isGigWork) {
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -2598,7 +2676,7 @@ fun AddWeekPlanScreen(viewModel: DashboardViewModel, onBack: () -> Unit) {
                     DropdownMenu(expanded = expandedCompany, onDismissRequest = { expandedCompany = false }) {
                         jobs.forEach { job ->
                             DropdownMenuItem(
-                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${job.defaultHourlyRate}/hr"})") },
+                                text = { Text("${job.title} (${if (job.isGigWork) "Gig" else "$${"%.2f".format(job.defaultHourlyRate)}/hr"})") },
                                 onClick = { selectedJob = job; expandedCompany = false }
                             )
                         }
