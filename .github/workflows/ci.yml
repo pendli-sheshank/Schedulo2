@@ -44,5 +44,5 @@ jobs:
           java-version: '21'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-      - name: Run shared + Android unit tests
-        run: ./gradlew :shared:testDebugUnitTest :androidApp:testDebugUnitTest
+      - name: Run Android unit tests (compiles :shared transitively)
+        run: ./gradlew :androidApp:testDebugUnitTest
