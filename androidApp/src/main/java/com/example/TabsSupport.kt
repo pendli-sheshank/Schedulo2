@@ -33,13 +33,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -1028,6 +1033,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
 
     var showDialog by remember { mutableStateOf(false) }
     var editingJobId by remember { mutableStateOf<String?>(null) }
+    var jobToDelete by remember { mutableStateOf<Job?>(null) }
 
     var title by remember { mutableStateOf("") }
     var isGigWork by remember { mutableStateOf(false) }
@@ -1118,27 +1124,19 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
         )
     }
 
-    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (onBack != null) {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                Text("Employers & Jobs", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            if (onBack != null) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                Spacer(modifier = Modifier.width(4.dp))
             }
-            Button(onClick = {
-                editingJobId = null; title = ""; isGigWork = false; rateStr = "15.0"; goalHoursStr = "20.0"
-                goalType = "Hours"; weeklyCycleStartDay = "Monday"; overtimeThresholdStr = "40.0"; overtimeMultiplierStr = "1.5"
-                bonusAmountStr = "0.0"; bonusReasonStr = ""
-                showDialog = true
-            }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen), shape = RoundedCornerShape(12.dp)) { Text("+ Add Job") }
+            Text("Employers & Jobs", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
         }
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1149,7 +1147,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                     .background(MaterialTheme.colorScheme.background),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No employers added yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No employers added yet. Tap + to add one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(
@@ -1157,7 +1155,7 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(jobs) { job ->
@@ -1188,16 +1186,16 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                                         Text(if (job.isGigWork) "Gig" else "Hourly", fontSize = 11.sp, fontWeight = FontWeight.Bold,
                                             color = if (job.isGigWork) AccentOrange else AccentBlue)
                                     }
-                                    IconButton(onClick = { dashboardViewModel.deleteJob(job.id) }) {
+                                    IconButton(onClick = { jobToDelete = job }) {
                                         Icon(Icons.Default.Delete, "Delete Job", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                                     }
                                 }
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Column { Text("SHIFTS", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("${jobShifts.size}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground) }
-                                Column { Text("HOURS", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("${"%.1f".format(jobShifts.sumOf { it.durationHours })} hrs", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground) }
-                                Column(horizontalAlignment = Alignment.End) { Text("EARNED", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("$${"%.2f".format(jobShifts.sumOf { it.totalEarned })}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryGreen) }
+                                JobMetric("SHIFTS", "${jobShifts.size}", MaterialTheme.colorScheme.onBackground)
+                                JobMetric("HOURS", "${"%.1f".format(jobShifts.sumOf { it.durationHours })} hrs", MaterialTheme.colorScheme.onBackground)
+                                JobMetric("EARNED", "$${"%.2f".format(jobShifts.sumOf { it.totalEarned })}", PrimaryGreen, alignEnd = true)
                             }
                             Spacer(modifier = Modifier.height(12.dp))
                             HorizontalDivider()
@@ -1221,6 +1219,40 @@ fun JobsScreen(modifier: Modifier = Modifier, dashboardViewModel: DashboardViewM
                 }
             }
         }
+        }
+
+        FloatingActionButton(
+            onClick = {
+                editingJobId = null; title = ""; isGigWork = false; rateStr = "15.0"; goalHoursStr = "20.0"
+                goalType = "Hours"; weeklyCycleStartDay = "Monday"; overtimeThresholdStr = "40.0"; overtimeMultiplierStr = "1.5"
+                bonusAmountStr = "0.0"; bonusReasonStr = ""
+                showDialog = true
+            },
+            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(20.dp),
+            containerColor = PrimaryGreen,
+            contentColor = Color.White,
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Icon(Icons.Default.Add, "Add Job")
+        }
+    }
+
+    jobToDelete?.let { job ->
+        AlertDialog(
+            onDismissRequest = { jobToDelete = null },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp)) },
+            title = { Text("Delete ${job.title}?", fontWeight = FontWeight.Bold) },
+            text = { Text("This removes the employer profile. Shifts already logged for it are kept.") },
+            confirmButton = {
+                Button(
+                    onClick = { dashboardViewModel.deleteJob(job.id); jobToDelete = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { jobToDelete = null }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
 
@@ -1859,15 +1891,20 @@ fun ProfileScreen(
                 StatCard(modifier = Modifier.weight(1f), label = "EARNED", value = "$${"%.0f".format(totalEarned)}")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Theme toggle
+            val context = LocalContext.current
+            val biometricAvailable = remember { authViewModel?.isBiometricAvailable(context) == true }
+
+            // ---- Preferences group ----
+            SettingsGroupLabel("Preferences")
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
+                // Appearance
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Palette, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
@@ -1890,79 +1927,29 @@ fun ProfileScreen(
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                SettingsGroupDivider()
 
-            // Change Password card
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { showChangePasswordDialog = true },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Lock, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Change Password", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
-                        Text("Update your account password", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Biometric Login toggle
-            val context = LocalContext.current
-            val biometricAvailable = remember { authViewModel?.isBiometricAvailable(context) == true }
-            if (biometricAvailable) {
-                val biometricOn by authViewModel?.biometricEnabled?.collectAsState() ?: remember { mutableStateOf(false) }
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Fingerprint, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Biometric Login", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
-                            Text("Use fingerprint or face to sign in", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = biometricOn,
-                            onCheckedChange = { authViewModel?.setBiometricEnabled(context, it) },
-                            colors = SwitchDefaults.colors(checkedTrackColor = PrimaryGreen)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // Notification Preferences card
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
+                // Notification Preferences
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Notifications, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Notification Preferences", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     val remindersOn by dashboardViewModel.remindersEnabled.collectAsState()
                     val defaultReminder by dashboardViewModel.defaultReminderMinutes.collectAsState()
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Enable Shift Reminders", fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "Enable Shift Reminders", fontSize = 14.sp, lineHeight = 20.sp,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                        )
                         Switch(checked = remindersOn, onCheckedChange = { dashboardViewModel.setRemindersEnabled(it) }, colors = SwitchDefaults.colors(checkedTrackColor = PrimaryGreen))
                     }
                     if (remindersOn) {
@@ -1976,7 +1963,7 @@ fun ProfileScreen(
                                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
                                         .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
                                         .clickable { dashboardViewModel.setDefaultReminderMinutes(minutes) }
-                                        .padding(vertical = 10.dp),
+                                        .padding(vertical = 12.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(label, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -1985,55 +1972,48 @@ fun ProfileScreen(
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                SettingsGroupDivider()
 
-            // Calendar Sync card
-            run {
-                var calendarSyncOn by remember { mutableStateOf(CalendarService.isCalendarSyncEnabled(context)) }
-                var availableCalendars by remember { mutableStateOf<List<CalendarInfo>>(emptyList()) }
-                var selectedCalendarId by remember { mutableStateOf(CalendarService.getSelectedCalendarId(context)) }
-                var calendarDropdownExpanded by remember { mutableStateOf(false) }
+                // Calendar Sync
+                run {
+                    var calendarSyncOn by remember { mutableStateOf(CalendarService.isCalendarSyncEnabled(context)) }
+                    var availableCalendars by remember { mutableStateOf<List<CalendarInfo>>(emptyList()) }
+                    var selectedCalendarId by remember { mutableStateOf(CalendarService.getSelectedCalendarId(context)) }
+                    var calendarDropdownExpanded by remember { mutableStateOf(false) }
 
-                val calendarPermissionLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestMultiplePermissions()
-                ) { permissions ->
-                    val allGranted = permissions.values.all { it }
-                    if (allGranted) {
-                        CalendarService.setCalendarSyncEnabled(context, true)
-                        calendarSyncOn = true
-                        availableCalendars = CalendarService.getWritableCalendars(context)
-                        if (availableCalendars.isNotEmpty() && selectedCalendarId == -1L) {
-                            selectedCalendarId = availableCalendars.first().id
-                            CalendarService.setSelectedCalendarId(context, selectedCalendarId)
-                        }
-                        CalendarService.syncAllShifts(context, shifts)
-                    } else {
-                        calendarSyncOn = false
-                        CalendarService.setCalendarSyncEnabled(context, false)
-                    }
-                }
-
-                LaunchedEffect(calendarSyncOn) {
-                    if (calendarSyncOn) {
-                        availableCalendars = CalendarService.getWritableCalendars(context)
-                        if (selectedCalendarId == -1L && availableCalendars.isNotEmpty()) {
-                            selectedCalendarId = availableCalendars.first().id
-                            CalendarService.setSelectedCalendarId(context, selectedCalendarId)
+                    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestMultiplePermissions()
+                    ) { permissions ->
+                        val allGranted = permissions.values.all { it }
+                        if (allGranted) {
+                            CalendarService.setCalendarSyncEnabled(context, true)
+                            calendarSyncOn = true
+                            availableCalendars = CalendarService.getWritableCalendars(context)
+                            if (availableCalendars.isNotEmpty() && selectedCalendarId == -1L) {
+                                selectedCalendarId = availableCalendars.first().id
+                                CalendarService.setSelectedCalendarId(context, selectedCalendarId)
+                            }
+                            CalendarService.syncAllShifts(context, shifts)
+                        } else {
+                            calendarSyncOn = false
+                            CalendarService.setCalendarSyncEnabled(context, false)
                         }
                     }
-                }
 
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
+                    LaunchedEffect(calendarSyncOn) {
+                        if (calendarSyncOn) {
+                            availableCalendars = CalendarService.getWritableCalendars(context)
+                            if (selectedCalendarId == -1L && availableCalendars.isNotEmpty()) {
+                                selectedCalendarId = availableCalendars.first().id
+                                CalendarService.setSelectedCalendarId(context, selectedCalendarId)
+                            }
+                        }
+                    }
+
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                 Icon(Icons.Default.CalendarMonth, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
@@ -2111,96 +2091,122 @@ fun ProfileScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Employers card
+            // ---- Security & Data group ----
+            SettingsGroupLabel("Security & Data")
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onNavigateToJobs() },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.WorkOutline, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Employers & Jobs (${jobs.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
-                        Text(if (jobs.isNotEmpty()) jobs.joinToString(" · ") { it.title } else "Add employers to track shifts", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                SettingsNavRow(
+                    icon = Icons.Default.Lock,
+                    title = "Change Password",
+                    subtitle = "Update your account password",
+                    onClick = { showChangePasswordDialog = true }
+                )
+
+                if (biometricAvailable) {
+                    SettingsGroupDivider()
+                    val biometricOn by authViewModel?.biometricEnabled?.collectAsState() ?: remember { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Fingerprint, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Biometric Login", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                            Text("Use fingerprint or face to sign in", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = biometricOn,
+                            onCheckedChange = { authViewModel?.setBiometricEnabled(context, it) },
+                            colors = SwitchDefaults.colors(checkedTrackColor = PrimaryGreen)
+                        )
                     }
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 }
+
+                SettingsGroupDivider()
+
+                SettingsNavRow(
+                    icon = Icons.Default.WorkOutline,
+                    title = "Employers & Jobs (${jobs.size})",
+                    subtitle = if (jobs.isNotEmpty()) jobs.joinToString(" · ") { it.title } else "Add employers to track shifts",
+                    onClick = { onNavigateToJobs() }
+                )
+
+                SettingsGroupDivider()
+
+                SettingsNavRow(
+                    icon = Icons.Default.FileDownload,
+                    title = "Export Shift Report",
+                    subtitle = "Filter by week & employer",
+                    trailingIcon = Icons.Default.Share,
+                    onClick = { showExportDialog = true }
+                )
+
+                SettingsGroupDivider()
+
+                SettingsNavRow(
+                    icon = Icons.Default.Insights,
+                    title = "Earnings Insights",
+                    subtitle = "Charts, trends & analytics",
+                    onClick = { onNavigateToInsights() }
+                )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // Export Reports card
+            // ---- Default Shift Settings (auto-saved) ----
+            SettingsGroupLabel("Default Shift Settings")
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { showExportDialog = true },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.FileDownload, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Export Shift Report", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
-                        Text("Filter by week & employer", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onNavigateToInsights() },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Insights, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Earnings Insights", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
-                        Text("Charts, trends & analytics", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("Default Shift Settings", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                Spacer(modifier = Modifier.height(16.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(value = company, onValueChange = { company = it }, label = { Text("Default Job/Company") },
-                        readOnly = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) })
-                    Box(modifier = Modifier.matchParentSize().clickable { expanded = true })
-                    if (jobs.isNotEmpty()) {
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            jobs.forEach { job ->
-                                DropdownMenuItem(text = { Text(job.title) }, onClick = { company = job.title; rate = job.defaultHourlyRate.toString(); expanded = false })
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        "New shifts start with these values. Changes are saved automatically.",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val fieldColors = OutlinedTextFieldDefaults.colors(
+                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                        focusedLabelColor = PrimaryGreen,
+                        focusedBorderColor = PrimaryGreen
+                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(value = company, onValueChange = { company = it }, label = { Text("Default Job/Company") },
+                            readOnly = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) })
+                        Box(modifier = Modifier.matchParentSize().clickable { expanded = true })
+                        if (jobs.isNotEmpty()) {
+                            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                jobs.forEach { job ->
+                                    DropdownMenuItem(text = { Text(job.title) }, onClick = { company = job.title; rate = job.defaultHourlyRate.toString(); expanded = false })
+                                }
                             }
                         }
                     }
+                    OutlinedTextField(value = rate, onValueChange = { rate = it }, label = { Text("Default Hourly Rate (\$)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp), shape = RoundedCornerShape(12.dp), colors = fieldColors,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, lineHeight = 24.sp))
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(value = rate, onValueChange = { rate = it }, label = { Text("Default Hourly Rate (\$)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(onClick = { dashboardViewModel.saveSettings(company, rate.toDoubleOrNull() ?: 0.0); onBack() },
-                    modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) {
-                    Text("Save Settings", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(24.dp))
             }
+
+            // Auto-save defaults shortly after they change (no explicit Save button)
+            LaunchedEffect(company, rate) {
+                val parsedRate = rate.toDoubleOrNull() ?: return@LaunchedEffect
+                if (company == currentCompany && parsedRate == currentRate) return@LaunchedEffect
+                delay(600)
+                dashboardViewModel.saveSettings(company, parsedRate)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline)
             Spacer(modifier = Modifier.height(16.dp))
@@ -2342,11 +2348,16 @@ fun ProfileScreen(
             title = { Text("Change Password", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DialogDimScrim()
+                    var showCurrentPassword by remember { mutableStateOf(false) }
+                    var showNewPassword by remember { mutableStateOf(false) }
+                    var showConfirmPassword by remember { mutableStateOf(false) }
                     OutlinedTextField(
                         value = currentPassword,
                         onValueChange = { currentPassword = it },
                         label = { Text("Current Password") },
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (showCurrentPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = { PasswordVisibilityToggle(showCurrentPassword) { showCurrentPassword = !showCurrentPassword } },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
@@ -2355,7 +2366,8 @@ fun ProfileScreen(
                         value = newPassword,
                         onValueChange = { newPassword = it },
                         label = { Text("New Password") },
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = { PasswordVisibilityToggle(showNewPassword) { showNewPassword = !showNewPassword } },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -2365,7 +2377,8 @@ fun ProfileScreen(
                         value = confirmPassword,
                         onValueChange = { confirmPassword = it },
                         label = { Text("Confirm New Password") },
-                        visualTransformation = PasswordVisualTransformation(),
+                        visualTransformation = if (showConfirmPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = { PasswordVisibilityToggle(showConfirmPassword) { showConfirmPassword = !showConfirmPassword } },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -2385,7 +2398,12 @@ fun ProfileScreen(
             confirmButton = {
                 Button(
                     onClick = { authViewModel?.changePassword(currentPassword, newPassword) },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryGreen,
+                        contentColor = Color.White,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
                     enabled = currentPassword.isNotBlank() && newPassword.isNotBlank() && newPassword == confirmPassword && passwordChangeState !is PasswordChangeState.Loading
                 ) {
                     if (passwordChangeState is PasswordChangeState.Loading) {
@@ -2441,6 +2459,7 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
         title = { Text("Export Shift Report", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DialogDimScrim()
                 // Export mode toggle
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Pay Cycle", "Calendar Week").forEach { mode ->
@@ -2449,7 +2468,7 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
                                 .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
                                 .clickable { exportMode = mode }
-                                .padding(vertical = 10.dp),
+                                .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(mode, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -2522,7 +2541,7 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
                                 .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
                                 .clickable { exportFormat = format }
-                                .padding(vertical = 10.dp),
+                                .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(format, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -2533,9 +2552,10 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
                 // Preview
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-                    Text(preview.ifBlank { "No shifts for this selection." }, fontSize = 12.sp, modifier = Modifier.padding(12.dp),
-                        color = MaterialTheme.colorScheme.onBackground, style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                        lineHeight = 16.sp)
+                    Text(preview.ifBlank { "No shifts for this selection." }, fontSize = 12.sp, modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontWeight = FontWeight.Medium),
+                        lineHeight = 18.sp)
                 }
             }
         },
@@ -2556,6 +2576,81 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
         containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(16.dp)
     )
+}
+
+@Composable
+private fun JobMetric(label: String, value: String, valueColor: Color, alignEnd: Boolean = false) {
+    Column(horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start) {
+        Text(
+            label, fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = valueColor)
+    }
+}
+
+@Composable
+private fun SettingsGroupLabel(text: String) {
+    Text(
+        text.uppercase(Locale.US),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 28.dp, end = 28.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun SettingsGroupDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+    )
+}
+
+@Composable
+private fun SettingsNavRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    trailingIcon: ImageVector = Icons.AutoMirrored.Filled.ArrowForward,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = PrimaryGreen, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+            Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(trailingIcon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun PasswordVisibilityToggle(visible: Boolean, onToggle: () -> Unit) {
+    IconButton(onClick = onToggle) {
+        Icon(
+            if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+            contentDescription = if (visible) "Hide password" else "Show password",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// Dialogs render over a light platform scrim by default; darken it so the
+// settings layer behind the modal doesn't bleed through the edges.
+@Composable
+fun DialogDimScrim(dim: Float = 0.6f) {
+    val view = LocalView.current
+    LaunchedEffect(Unit) {
+        (view.parent as? DialogWindowProvider)?.window?.setDimAmount(dim)
+    }
 }
 
 @Composable
