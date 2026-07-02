@@ -16,7 +16,7 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "78").toInt()
+    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "79").toInt()
     versionCode = ciVersionCode
     versionName = "$ciVersionCode.0"
 
@@ -117,8 +117,13 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
-  implementation("androidx.glance:glance-appwidget:1.1.0")
-  implementation("androidx.glance:glance-material3:1.1.0")
+  implementation("androidx.glance:glance-appwidget:1.1.1")
+  implementation("androidx.glance:glance-material3:1.1.1")
+  // Force the patched protobuf artifacts to remediate CVE-2024-7254 flagged
+  // by Play Console; glance-appwidget 1.1.0 transitively pulled the
+  // vulnerable protobuf version even though 1.1.1 itself is unaffected.
+  implementation("androidx.glance:glance-appwidget-proto:1.1.1")
+  implementation("androidx.glance:glance-appwidget-external-protobuf:1.1.1")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
