@@ -25,10 +25,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
 import com.example.ui.theme.PrimaryGreen
-import com.example.ui.theme.SecondaryGreen
 import com.example.ui.theme.AccentBlue
-import com.example.ui.theme.AccentOrange
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,9 +65,9 @@ fun InsightsScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SummaryChip(Modifier.weight(1f), "Total Earned", "$${"%.0f".format(totalEarnings)}", PrimaryGreen)
-                SummaryChip(Modifier.weight(1f), "Total Hours", "${"%.0f".format(totalHours)}h", AccentBlue)
-                SummaryChip(Modifier.weight(1f), "Avg Rate", "$${"%.2f".format(avgHourlyRate)}/h", AccentOrange)
+                SummaryChip(Modifier.weight(1f), "Total Earned", "$${"%.0f".format(totalEarnings)}")
+                SummaryChip(Modifier.weight(1f), "Total Hours", "${"%.0f".format(totalHours)}h")
+                SummaryChip(Modifier.weight(1f), "Avg Rate", "$${"%.2f".format(avgHourlyRate)}/hr")
             }
 
             Card(
@@ -165,16 +164,17 @@ fun InsightsScreen(
 }
 
 @Composable
-private fun SummaryChip(modifier: Modifier, label: String, value: String, color: Color) {
+private fun SummaryChip(modifier: Modifier, label: String, value: String) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = color)
+            Text(value, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PrimaryGreen)
             Spacer(modifier = Modifier.height(2.dp))
-            Text(label, fontSize = 10.sp, color = color.copy(alpha = 0.7f), fontWeight = FontWeight.Medium)
+            Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -195,12 +195,22 @@ private fun WeeklyBarChart(weeks: List<DashboardViewModel.WeekSummary>) {
             val barHeight = if (maxEarnings > 0) (week.earnings / maxEarnings * chartHeight).toFloat() else 0f
             val x = index * spacing + (spacing - barWidth) / 2
 
-            drawRoundRect(
-                color = barColor,
-                topLeft = Offset(x, chartHeight - barHeight),
-                size = Size(barWidth, barHeight),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
-            )
+            if (week.earnings > 0) {
+                drawRoundRect(
+                    color = barColor,
+                    topLeft = Offset(x, chartHeight - barHeight),
+                    size = Size(barWidth, barHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
+                )
+            } else {
+                // Baseline tick so a zero-earning week reads as loaded data, not a gap
+                drawRoundRect(
+                    color = Color.Gray.copy(alpha = 0.4f),
+                    topLeft = Offset(x, chartHeight - 4f),
+                    size = Size(barWidth, 4f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f)
+                )
+            }
 
             val label = textMeasurer.measure(week.label, labelStyle)
             drawText(
