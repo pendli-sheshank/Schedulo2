@@ -382,6 +382,10 @@ final class TeamViewModel: ObservableObject {
 
     func createTeam(form: TeamFormData) {
         guard let uid = currentUserId else { return }
+        guard Auth.auth().currentUser?.isEmailVerified == true else {
+            errorMessage = "Please verify your email address before creating a team. Check your inbox for the verification link."
+            return
+        }
         guard !form.name.trimmingCharacters(in: .whitespaces).isEmpty else {
             errorMessage = "Team name cannot be empty."; return
         }
@@ -414,7 +418,12 @@ final class TeamViewModel: ObservableObject {
 
         let batch = db.batch()
         batch.setData(teamData, forDocument: db.collection("teams").document(teamId))
-        batch.setData(memberData, forDocument: db.collection("team_members").document(UUID().uuidString))
+        // Deterministic membership id "{teamId}_{userId}" lets security rules prove
+        // membership with a single exists() check.
+        batch.setData(memberData, forDocument: db.collection("team_members").document("\(teamId)_\(uid)"))
+        // Public-by-secret lookup so joiners can resolve a code -> teamId without
+        // the teams collection being world-readable.
+        batch.setData(["teamId": teamId], forDocument: db.collection("invite_codes").document(inviteCode))
 
         batch.commit { [weak self] error in
             DispatchQueue.main.async {
@@ -477,57 +486,66 @@ final class TeamViewModel: ObservableObject {
 
     func joinTeam(inviteCode: String) {
         guard let uid = currentUserId else { return }
+        guard Auth.auth().currentUser?.isEmailVerified == true else {
+            errorMessage = "Please verify your email address before joining a team. Check your inbox for the verification link."
+            return
+        }
         isLoading = true
+        let code = inviteCode.uppercased()
 
-        db.collection("teams")
-            .whereField("inviteCode", isEqualTo: inviteCode.uppercased())
-            .getDocuments { [weak self] snapshot, error in
-                guard let doc = snapshot?.documents.first else {
+        // Resolve the code -> teamId via the public-by-secret lookup collection
+        // (a direct get() by document id; the teams collection is not queryable
+        // by non-members).
+        db.collection("invite_codes").document(code)
+            .getDocument { [weak self] snapshot, error in
+                guard let self = self else { return }
+                guard let teamId = snapshot?.data()?["teamId"] as? String, !teamId.isEmpty else {
                     DispatchQueue.main.async {
-                        self?.isLoading = false
-                        self?.errorMessage = "Invalid invite code"
+                        self.isLoading = false
+                        self.errorMessage = "Invalid invite code"
                     }
                     return
                 }
 
-                let teamId = doc.documentID
+                let memberRef = self.db.collection("team_members").document("\(teamId)_\(uid)")
 
-                self?.db.collection("team_members")
-                    .whereField("teamId", isEqualTo: teamId)
-                    .whereField("userId", isEqualTo: uid)
-                    .getDocuments { existingSnapshot, _ in
-                        if let existingDocs = existingSnapshot?.documents, !existingDocs.isEmpty {
-                            DispatchQueue.main.async {
-                                self?.isLoading = false
-                                self?.errorMessage = "You are already a member of this team."
-                            }
-                            return
+                // Check if already a member (direct read of the deterministic doc).
+                memberRef.getDocument { existingSnapshot, _ in
+                    if existingSnapshot?.exists == true {
+                        DispatchQueue.main.async {
+                            self.isLoading = false
+                            self.errorMessage = "You are already a member of this team."
                         }
+                        return
+                    }
 
-                        let memberData: [String: Any] = [
-                            "teamId": teamId,
-                            "userId": uid,
-                            "role": "member",
-                            "joinedAt": Int64(Date().timeIntervalSince1970 * 1000),
-                            "displayName": self?.currentUserEmail ?? "",
-                            "email": self?.currentUserEmail ?? ""
-                        ]
+                    let memberData: [String: Any] = [
+                        "teamId": teamId,
+                        "userId": uid,
+                        "role": "member",
+                        "joinedAt": Int64(Date().timeIntervalSince1970 * 1000),
+                        "displayName": self.currentUserEmail ?? "",
+                        "email": self.currentUserEmail ?? "",
+                        // Included so the security rule can verify the joiner
+                        // presented the correct invite code.
+                        "inviteCode": code
+                    ]
 
-                        let batch = self?.db.batch()
-                        batch?.setData(memberData, forDocument: self?.db.collection("team_members").document(UUID().uuidString) ?? self!.db.collection("team_members").document())
-                        batch?.updateData(["memberCount": FieldValue.increment(Int64(1))], forDocument: self?.db.collection("teams").document(teamId) ?? self!.db.collection("teams").document(teamId))
+                    let batch = self.db.batch()
+                    batch.setData(memberData, forDocument: memberRef)
+                    batch.updateData(["memberCount": FieldValue.increment(Int64(1))], forDocument: self.db.collection("teams").document(teamId))
 
-                        batch?.commit { error in
-                            DispatchQueue.main.async {
-                                self?.isLoading = false
-                                if let error = error {
-                                    self?.errorMessage = error.localizedDescription
-                                } else {
-                                    self?.loadTeams()
-                                }
+                    batch.commit { error in
+                        DispatchQueue.main.async {
+                            self.isLoading = false
+                            if let error = error {
+                                self.errorMessage = error.localizedDescription
+                            } else {
+                                self.loadTeams()
                             }
                         }
                     }
+                }
             }
     }
 
@@ -701,6 +719,11 @@ final class TeamViewModel: ObservableObject {
                 self?.isLoading = false
                 self?.errorMessage = deleteError.localizedDescription
                 return
+            }
+            // Remove the invite-code lookup entry alongside the team.
+            if let inviteCode = self?.currentTeam?.inviteCode,
+               self?.currentTeam?.id == teamId, !inviteCode.isEmpty {
+                self?.db.collection("invite_codes").document(inviteCode).delete()
             }
             self?.db.collection("teams").document(teamId).delete { error in
                 DispatchQueue.main.async {
@@ -1251,7 +1274,33 @@ final class TeamViewModel: ObservableObject {
             }
     }
 
+    /// Detach every Firestore listener and clear all team state. Must be called
+    /// on sign-out / delete-account: this view model lives for the whole app
+    /// lifetime, so without this the previous account's team data (chat, shifts,
+    /// roster) keeps streaming into a still-alive view model after a switch.
     func removeAllListeners() {
+        teamsListener?.remove(); teamsListener = nil
+        membersListener?.remove(); membersListener = nil
+        shiftsListener?.remove(); shiftsListener = nil
+        memberJobsListener?.remove(); memberJobsListener = nil
+        messagesListener?.remove(); messagesListener = nil
+        swapRequestsListener?.remove(); swapRequestsListener = nil
+        teamTasksListener?.remove(); teamTasksListener = nil
+
+        teams = []
+        currentTeam = nil
+        members = []
+        teamShifts = []
+        memberJobs = []
+        teamMessages = []
+        swapRequests = []
+        teamTasks = []
+        userRole = "member"
+        errorMessage = nil
+        isLoading = false
+    }
+
+    deinit {
         teamsListener?.remove()
         membersListener?.remove()
         shiftsListener?.remove()

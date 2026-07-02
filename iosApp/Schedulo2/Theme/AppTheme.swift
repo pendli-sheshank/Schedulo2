@@ -54,6 +54,34 @@ extension Color {
     }
 }
 
+// MARK: - Typography Scale
+//
+// A shared type scale so screens stop hand-picking `.font(.system(size:weight:))`
+// at every call site (which is why headings/body drift between views). Each token
+// is backed by a Dynamic Type text style, so text also respects the user's
+// system text-size setting. Adopt in new code; migrate existing call sites
+// opportunistically, e.g. `.font(AppFont.headline)`.
+
+enum AppFont {
+    static let largeTitle = Font.system(.largeTitle, design: .default).weight(.bold)   // ~34
+    static let title = Font.system(.title, design: .default).weight(.bold)             // ~28
+    static let title2 = Font.system(.title2, design: .default).weight(.bold)           // ~22
+    static let title3 = Font.system(.title3, design: .default).weight(.semibold)       // ~20
+    static let headline = Font.system(.headline)                                       // ~17 semibold
+    static let body = Font.system(.body)                                               // ~17
+    static let callout = Font.system(.callout)                                         // ~16
+    static let subheadline = Font.system(.subheadline)                                 // ~15
+    static let footnote = Font.system(.footnote)                                       // ~13
+    static let caption = Font.system(.caption)                                         // ~12
+    static let caption2 = Font.system(.caption2)                                       // ~11
+
+    /// Body weight helpers for emphasis without leaving the scale.
+    static func body(_ weight: Font.Weight) -> Font { Font.system(.body).weight(weight) }
+    static func callout(_ weight: Font.Weight) -> Font { Font.system(.callout).weight(weight) }
+    static func subheadline(_ weight: Font.Weight) -> Font { Font.system(.subheadline).weight(weight) }
+    static func caption(_ weight: Font.Weight) -> Font { Font.system(.caption).weight(weight) }
+}
+
 // MARK: - View Modifiers
 
 struct CardStyle: ViewModifier {

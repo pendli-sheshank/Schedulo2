@@ -1,0 +1,16 @@
+{
+  "name": "schedulo2-rules-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Firestore security-rules unit tests for Schedulo2 (membership scoping + invite-code verification).",
+  "type": "module",
+  "scripts": {
+    "test": "cd .. && firebase emulators:exec --only firestore --project schedulo2-test \"./firebase-tests/node_modules/.bin/mocha --timeout 10000 firebase-tests/firestore.rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^13.0.0",
+    "mocha": "^10.4.0"
+  }
+}

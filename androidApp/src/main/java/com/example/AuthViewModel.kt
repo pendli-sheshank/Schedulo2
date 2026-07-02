@@ -160,11 +160,34 @@ class AuthViewModel : ViewModel() {
                         "created_at" to System.currentTimeMillis()
                     )
                     db?.collection("profiles")?.document(user.uid)?.set(profile)?.await()
+                    // Send a verification email so team features can be gated on a
+                    // verified address (see isEmailVerified / createTeam/joinTeam).
+                    try { user.sendEmailVerification().await() } catch (_: Exception) { }
                 }
                 _authState.value = AuthState.Authenticated
             } catch (e: Exception) {
                 _authState.value = AuthState.Error(e.message ?: "Signup failed")
             }
+        }
+    }
+
+    /** Whether the signed-in user has a verified email (team features are gated on this). */
+    val isEmailVerified: Boolean
+        get() = auth?.currentUser?.isEmailVerified == true
+
+    /** Re-send the verification email to the current user. */
+    fun resendVerificationEmail() {
+        val user = auth?.currentUser ?: return
+        viewModelScope.launch {
+            try { user.sendEmailVerification().await() } catch (_: Exception) { }
+        }
+    }
+
+    /** Refresh the cached user so isEmailVerified reflects a link the user just clicked. */
+    fun refreshEmailVerification() {
+        val user = auth?.currentUser ?: return
+        viewModelScope.launch {
+            try { user.reload().await() } catch (_: Exception) { }
         }
     }
 

@@ -8,6 +8,18 @@ plugins {
   alias(libs.plugins.firebase.crashlytics.plugin)
 }
 
+// Materialize the shared debug keystore from its committed base64 form when it
+// is missing. A debug keystore is public (password "android"), not a secret; it
+// is committed as base64 so every clone signs debug builds with the same
+// Firebase debug SHA-1, and the decoded .keystore stays gitignored.
+run {
+  val debugKeystore = file("${rootDir}/debug.keystore")
+  val debugKeystoreB64 = file("${rootDir}/debug.keystore.base64")
+  if (!debugKeystore.exists() && debugKeystoreB64.exists()) {
+    debugKeystore.writeBytes(java.util.Base64.getMimeDecoder().decode(debugKeystoreB64.readText()))
+  }
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -16,7 +28,7 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "79").toInt()
+    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "80").toInt()
     versionCode = ciVersionCode
     versionName = "$ciVersionCode.0"
 

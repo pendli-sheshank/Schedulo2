@@ -1,22 +1,36 @@
 package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import com.schedulo.shared.util.DesignTokens
 
-val BackgroundLight = Color(0xFFF8F9FA)
+// Brand + surface palette derived from the shared cross-platform source of truth
+// (shared/.../util/DesignTokens.kt) so Android and iOS cannot drift apart.
+val PrimaryGreen = Color(DesignTokens.PrimaryGreen)
+val SecondaryGreen = Color(DesignTokens.SecondaryGreen)
+val AccentBlue = Color(DesignTokens.AccentBlue)
+val AccentOrange = Color(DesignTokens.AccentOrange)
+
+val BackgroundLight = Color(DesignTokens.LightBackground)
+val SurfaceLight = Color(DesignTokens.LightSurface)
+val OutlineLight = Color(DesignTokens.LightOutline)
+
+val BackgroundDark = Color(DesignTokens.DarkBackground)
+val SurfaceDark = Color(DesignTokens.DarkSurface)
+val SurfaceVariantDark = Color(DesignTokens.DarkSurfaceVariant)
+val OutlineDark = Color(DesignTokens.DarkOutline)
+
+// Palette values not (yet) represented in the shared token set.
 val OnBackgroundLight = Color(0xFF1A1C1E)
-val PrimaryGreen = Color(0xFF2D6A4F)
-val SecondaryGreen = Color(0xFF74C69D)
-val SurfaceLight = Color(0xFFFFFFFF)
-val OutlineLight = Color(0xFFE8E8ED)
 val SurfaceVariantLight = Color(0xFFF0F1F5)
 val OnSurfaceVariantLight = Color(0xFF6B7280)
-
-val AccentBlue = Color(0xFF3B82F6)
-val AccentOrange = Color(0xFFF59E0B)
-
-val BackgroundDark = Color(0xFF0F1117)
 val OnBackgroundDark = Color(0xFFE8EAED)
-val SurfaceDark = Color(0xFF1A1D24)
-val SurfaceVariantDark = Color(0xFF242831)
 val OnSurfaceVariantDark = Color(0xFF9CA3AF)
-val OutlineDark = Color(0xFF2E3240)
+
+// Semantic accents used across feature screens. Named here so the same value is
+// not re-hardcoded as a literal in individual composables.
+val AlarmOrange = Color(0xFFF97316)
+val DestructiveRed = Color(0xFFEF4444)
+val DarkGreenGradientEnd = Color(0xFF1B4332)
+val WarningAmber = Color(0xFFF59E0B)
+val WarningAmberContainer = Color(0xFFFEF3C7)
+val WarningAmberText = Color(0xFF92400E)

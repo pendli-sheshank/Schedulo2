@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.ui.theme.AlarmOrange
 import android.app.KeyguardManager
 import android.content.Context
 import android.media.AudioAttributes
@@ -196,13 +197,13 @@ fun AlarmScreen(
                 modifier = Modifier
                     .size(100.dp)
                     .scale(scale)
-                    .background(Color(0xFFF97316).copy(alpha = 0.2f), CircleShape),
+                    .background(AlarmOrange.copy(alpha = 0.2f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Filled.Work,
                     contentDescription = null,
-                    tint = Color(0xFFF97316),
+                    tint = AlarmOrange,
                     modifier = Modifier.size(48.dp)
                 )
             }
@@ -213,7 +214,7 @@ fun AlarmScreen(
                 text = "SHIFT REMINDER",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFF97316),
+                color = AlarmOrange,
                 letterSpacing = 3.sp
             )
 
@@ -251,7 +252,7 @@ fun AlarmScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF97316))
+                colors = ButtonDefaults.buttonColors(containerColor = AlarmOrange)
             ) {
                 Icon(Icons.Filled.Close, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))

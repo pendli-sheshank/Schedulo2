@@ -234,6 +234,42 @@ Schedulo2/
 
 ---
 
+## Security
+
+Team data is isolated per team. Both `firestore.rules` and `storage.rules` scope
+every team collection (and each user's `jobs`/`shifts`) to the requesting user's
+membership — a signed-in user can only read teams they belong to, and joining a
+team requires the correct invite code (verified server-side, not just in the app).
+Membership documents use the deterministic id `{teamId}_{userId}` so the rules can
+prove membership with a single `exists()` check, and an `invite_codes/{CODE}`
+lookup lets joiners resolve a code to a team without the `teams` collection being
+world-readable.
+
+Security-rules changes are validated by an emulator test suite in `firebase-tests/`
+(run `cd firebase-tests && npm install && npm test`) and in CI on every pull
+request. **Rules are not deployed by CI** — after merging, deploy them manually:
+
+```bash
+firebase deploy --only firestore:rules,storage
+```
+
+Team features (creating/joining a team) require a **verified email address**; a
+verification link is sent at signup.
+
+### Operational hardening (console actions)
+
+- **Restrict the Android API key** in the Google Cloud console to the app's
+  package name + release/debug SHA-1 fingerprints. The key in
+  `google-services.json` is not a secret, but restricting it limits abuse.
+- **Enable Firebase App Check** (Play Integrity on Android, App Attest on iOS) so
+  only genuine app builds can reach Firestore/Storage with a user token.
+- The committed `debug.keystore.base64` is a **public, non-secret** debug keystore
+  (password `android`), shared so every clone signs debug builds with the same
+  Firebase debug SHA-1. The Gradle build decodes it to a gitignored
+  `debug.keystore` automatically.
+
+---
+
 ## Upcoming Features
 
 - [ ] **Push Notifications** — Shift reminders via Firebase Cloud Messaging

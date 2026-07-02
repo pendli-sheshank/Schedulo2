@@ -1,0 +1,197 @@
+// Security-rules unit tests for Schedulo2.
+//
+// Verifies the multi-tenant isolation guarantees added to firestore.rules:
+//   * per-user collections stay private (jobs cross-user read is denied)
+//   * team collections are readable only by team members
+//   * self-join requires the correct invite code + deterministic member id
+//   * field lockdown (hasOnly) rejects unknown fields on membership docs
+//
+// Run with: npm test   (starts the Firestore emulator, then mocha)
+
+import { readFileSync } from 'node:fs';
+import { strict as assert } from 'node:assert';
+import {
+  initializeTestEnvironment,
+  assertFails,
+  assertSucceeds,
+} from '@firebase/rules-unit-testing';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  writeBatch,
+  increment,
+  collection,
+  query,
+  where,
+  getDocs,
+} from 'firebase/firestore';
+
+const PROJECT_ID = 'schedulo2-test';
+const OWNER = 'owner_uid';
+const MEMBER = 'member_uid';
+const OUTSIDER = 'outsider_uid';
+const TEAM = 'team1';
+const CODE = 'ABC123';
+
+let testEnv;
+
+// Deterministic membership id used throughout the rules.
+const memberId = (teamId, uid) => `${teamId}_${uid}`;
+
+before(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    firestore: {
+      rules: readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8'),
+      host: '127.0.0.1',
+      port: 8080,
+    },
+  });
+});
+
+after(async () => {
+  await testEnv.cleanup();
+});
+
+beforeEach(async () => {
+  await testEnv.clearFirestore();
+  // Seed a team with an owner (manager) and one member, bypassing rules.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'teams', TEAM), {
+      name: 'Cafe',
+      ownerId: OWNER,
+      inviteCode: CODE,
+      createdAt: 1,
+      memberCount: 2,
+    });
+    await setDoc(doc(db, 'invite_codes', CODE), { teamId: TEAM });
+    await setDoc(doc(db, 'team_members', memberId(TEAM, OWNER)), {
+      teamId: TEAM, userId: OWNER, role: 'manager', joinedAt: 1,
+      displayName: 'Owner', email: 'o@x.com', defaultHourlyRate: 0,
+    });
+    await setDoc(doc(db, 'team_members', memberId(TEAM, MEMBER)), {
+      teamId: TEAM, userId: MEMBER, role: 'member', joinedAt: 1,
+      displayName: 'Member', email: 'm@x.com',
+    });
+    await setDoc(doc(db, 'team_messages', 'msg1'), {
+      teamId: TEAM, senderId: MEMBER, senderName: 'Member', text: 'hi',
+      isAnnouncement: false, isPinned: false, createdAt: 1,
+    });
+    // A job owned by MEMBER — used for the cross-user read test.
+    await setDoc(doc(db, 'jobs', 'job1'), {
+      userId: MEMBER, title: 'Barista', defaultHourlyRate: 15, goalHours: 40,
+    });
+  });
+});
+
+const ctxFor = (uid) => testEnv.authenticatedContext(uid).firestore();
+
+describe('jobs are private to their owner', () => {
+  it('owner of the job can read it', async () => {
+    await assertSucceeds(getDoc(doc(ctxFor(MEMBER), 'jobs', 'job1')));
+  });
+  it('another authenticated user cannot read it', async () => {
+    await assertFails(getDoc(doc(ctxFor(OUTSIDER), 'jobs', 'job1')));
+  });
+});
+
+describe('team data is readable only by members', () => {
+  it('a member can read the team doc', async () => {
+    await assertSucceeds(getDoc(doc(ctxFor(MEMBER), 'teams', TEAM)));
+  });
+  it('an outsider cannot read the team doc', async () => {
+    await assertFails(getDoc(doc(ctxFor(OUTSIDER), 'teams', TEAM)));
+  });
+  it('a member can query the team roster', async () => {
+    const q = query(collection(ctxFor(MEMBER), 'team_members'), where('teamId', '==', TEAM));
+    await assertSucceeds(getDocs(q));
+  });
+  it('an outsider cannot query the team roster', async () => {
+    const q = query(collection(ctxFor(OUTSIDER), 'team_members'), where('teamId', '==', TEAM));
+    await assertFails(getDocs(q));
+  });
+  it('an outsider cannot read team messages', async () => {
+    const q = query(collection(ctxFor(OUTSIDER), 'team_messages'), where('teamId', '==', TEAM));
+    await assertFails(getDocs(q));
+  });
+  it('a user can get their own (not-yet-existing) membership doc for the pre-join check', async () => {
+    await assertSucceeds(getDoc(doc(ctxFor(OUTSIDER), 'team_members', memberId(TEAM, OUTSIDER))));
+  });
+});
+
+describe('invite-code lookup', () => {
+  it('any signed-in user can GET an invite code by its exact id', async () => {
+    await assertSucceeds(getDoc(doc(ctxFor(OUTSIDER), 'invite_codes', CODE)));
+  });
+  it('invite codes cannot be listed/queried', async () => {
+    await assertFails(getDocs(collection(ctxFor(OUTSIDER), 'invite_codes')));
+  });
+});
+
+describe('self-join requires the correct invite code', () => {
+  it('joining with the correct code and deterministic id succeeds', async () => {
+    const db = ctxFor(OUTSIDER);
+    await assertSucceeds(setDoc(doc(db, 'team_members', memberId(TEAM, OUTSIDER)), {
+      teamId: TEAM, userId: OUTSIDER, role: 'member', joinedAt: 2,
+      displayName: 'New', email: 'n@x.com', inviteCode: CODE,
+    }));
+  });
+  it('joining with a WRONG code is denied', async () => {
+    const db = ctxFor(OUTSIDER);
+    await assertFails(setDoc(doc(db, 'team_members', memberId(TEAM, OUTSIDER)), {
+      teamId: TEAM, userId: OUTSIDER, role: 'member', joinedAt: 2,
+      displayName: 'New', email: 'n@x.com', inviteCode: 'WRONG!',
+    }));
+  });
+  it('joining without any code is denied', async () => {
+    const db = ctxFor(OUTSIDER);
+    await assertFails(setDoc(doc(db, 'team_members', memberId(TEAM, OUTSIDER)), {
+      teamId: TEAM, userId: OUTSIDER, role: 'member', joinedAt: 2,
+      displayName: 'New', email: 'n@x.com',
+    }));
+  });
+  it('a non-deterministic membership id is denied', async () => {
+    const db = ctxFor(OUTSIDER);
+    await assertFails(setDoc(doc(db, 'team_members', 'random_id'), {
+      teamId: TEAM, userId: OUTSIDER, role: 'member', joinedAt: 2,
+      displayName: 'New', email: 'n@x.com', inviteCode: CODE,
+    }));
+  });
+  it('self-promoting to manager without owning the team is denied', async () => {
+    const db = ctxFor(OUTSIDER);
+    await assertFails(setDoc(doc(db, 'team_members', memberId(TEAM, OUTSIDER)), {
+      teamId: TEAM, userId: OUTSIDER, role: 'manager', joinedAt: 2,
+      displayName: 'New', email: 'n@x.com', inviteCode: CODE,
+    }));
+  });
+});
+
+describe('join batch (membership write + memberCount increment)', () => {
+  it('a joiner may write their membership and bump memberCount atomically', async () => {
+    const db = ctxFor(OUTSIDER);
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'team_members', memberId(TEAM, OUTSIDER)), {
+      teamId: TEAM, userId: OUTSIDER, role: 'member', joinedAt: 2,
+      displayName: 'New', email: 'n@x.com', inviteCode: CODE,
+    });
+    batch.update(doc(db, 'teams', TEAM), { memberCount: increment(1) });
+    await assertSucceeds(batch.commit());
+  });
+  it('a non-owner cannot change other team fields', async () => {
+    await assertFails(updateDoc(doc(ctxFor(OUTSIDER), 'teams', TEAM), { name: 'Hacked' }));
+  });
+});
+
+describe('field lockdown', () => {
+  it('an unknown field on a membership doc is rejected', async () => {
+    const db = ctxFor(OUTSIDER);
+    await assertFails(setDoc(doc(db, 'team_members', memberId(TEAM, OUTSIDER)), {
+      teamId: TEAM, userId: OUTSIDER, role: 'member', joinedAt: 2,
+      displayName: 'New', email: 'n@x.com', inviteCode: CODE,
+      isSuperAdmin: true,
+    }));
+  });
+});

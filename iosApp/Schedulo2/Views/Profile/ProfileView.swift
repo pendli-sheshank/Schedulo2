@@ -5,6 +5,7 @@ import EventKit
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
+    @EnvironmentObject var teamViewModel: TeamViewModel
     @Environment(\.dismiss) private var dismiss
 
     var onNavigateToInsights: () -> Void = {}
@@ -87,6 +88,7 @@ struct ProfileView: View {
                     // Logout
                     Button(action: {
                         dashboardViewModel.reset()
+                        teamViewModel.removeAllListeners()
                         authViewModel.logout()
                         dismiss()
                     }) {
@@ -134,6 +136,8 @@ struct ProfileView: View {
         }
         .alert("Delete Account", isPresented: $showDeleteAccount) {
             Button("Delete", role: .destructive) {
+                dashboardViewModel.reset()
+                teamViewModel.removeAllListeners()
                 authViewModel.deleteAccount(password: nil)
             }
             Button("Cancel", role: .cancel) {}
@@ -143,6 +147,8 @@ struct ProfileView: View {
         .alert("Re-enter Password", isPresented: $showReauthDialog) {
             SecureField("Password", text: $deletePassword)
             Button("Delete", role: .destructive) {
+                dashboardViewModel.reset()
+                teamViewModel.removeAllListeners()
                 authViewModel.deleteAccount(password: deletePassword)
                 deletePassword = ""
             }

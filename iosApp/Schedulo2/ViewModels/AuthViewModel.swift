@@ -175,6 +175,24 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Email verification
+
+    /// Whether the signed-in user has a verified email (team features are gated on this).
+    var isEmailVerified: Bool { Auth.auth().currentUser?.isEmailVerified ?? false }
+
+    /// Re-send the verification email to the current user.
+    func resendVerificationEmail() {
+        Task { try? await service.resendVerificationEmail() }
+    }
+
+    /// Refresh the cached user so isEmailVerified reflects a link the user just clicked.
+    func refreshEmailVerification() {
+        Task {
+            try? await service.reloadUser()
+            objectWillChange.send()
+        }
+    }
+
     // MARK: - Logout
 
     func logout() {

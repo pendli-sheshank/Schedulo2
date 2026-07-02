@@ -3,6 +3,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ---- Helpers -----------------------------------------------------------
+
+    // True when the caller holds a membership document for the given team.
+    // Membership documents use the deterministic id "{teamId}_{userId}", so a
+    // single exists() proves membership without needing a query.
+    function isTeamMember(teamId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/team_members/$(teamId + '_' + request.auth.uid));
+    }
+
+    // True when the caller owns the given team.
+    function isTeamOwner(teamId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/teams/$(teamId))
+        && get(/databases/$(database)/documents/teams/$(teamId)).data.ownerId == request.auth.uid;
+    }
+
     // Validates the optional team fields (company, working hours, address).
     // Each field is optional; when present it must be the right type/length.
     function teamOptionalFieldsValid(data) {
@@ -12,6 +29,7 @@ service cloud.firestore {
         && (!('region' in data) || (data.region is string && data.region.size() <= 100))
         && (!('postalCode' in data) || (data.postalCode is string && data.postalCode.size() <= 20))
         && (!('open24Hours' in data) || data.open24Hours is bool)
+        && (!('weeklyCycleStartDay' in data) || data.weeklyCycleStartDay is int)
         && (!('workStartMinutes' in data) || (data.workStartMinutes is int && data.workStartMinutes >= 0 && data.workStartMinutes <= 1440))
         && (!('workEndMinutes' in data) || (data.workEndMinutes is int && data.workEndMinutes >= 0 && data.workEndMinutes <= 1440));
     }
@@ -69,9 +87,10 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
-    // Jobs: users can read own jobs; team managers can read member jobs
+    // Jobs: users can only read/write their OWN jobs. (Previously any signed-in
+    // user could read every user's job titles and pay rates.)
     match /jobs/{jobId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.title is string
@@ -111,9 +130,29 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
-    // Teams: owner can manage, members can read
+    // Invite codes: a small public-by-secret lookup so joiners can resolve a
+    // code to a teamId WITHOUT the teams collection being world-readable.
+    // Reads are allowed only by exact document id (the code itself is the
+    // secret) — never by list/query. Owners create/delete alongside the team.
+    match /invite_codes/{code} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.resource.data.teamId is string
+        && request.resource.data.keys().hasOnly(['teamId'])
+        // During team creation the team doc is written in the same batch and is
+        // not yet committed, so allow the not-yet-exists case (the batching
+        // teams-create rule guarantees ownerId == the caller).
+        && (!exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
+          || isTeamOwner(request.resource.data.teamId));
+      allow delete: if request.auth != null
+        && (!exists(/databases/$(database)/documents/teams/$(resource.data.teamId))
+          || isTeamOwner(resource.data.teamId));
+    }
+
+    // Teams: readable only by members (and the owner); owner manages.
     match /teams/{teamId} {
-      allow read: if request.auth != null;
+      allow read: if isTeamMember(teamId) || (request.auth != null && resource.data.ownerId == request.auth.uid);
       allow create: if request.auth != null
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.name is string
@@ -121,46 +160,69 @@ service cloud.firestore {
         && request.resource.data.inviteCode is string
         && teamOptionalFieldsValid(request.resource.data);
       allow update: if request.auth != null
-        && resource.data.ownerId == request.auth.uid
-        && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.name is string
-        && request.resource.data.name.size() <= 100
-        && teamOptionalFieldsValid(request.resource.data);
+        && (
+          // Owner may edit the team's own fields.
+          (resource.data.ownerId == request.auth.uid
+            && request.resource.data.ownerId == request.auth.uid
+            && request.resource.data.name is string
+            && request.resource.data.name.size() <= 100
+            && teamOptionalFieldsValid(request.resource.data))
+          // Any authenticated user may adjust ONLY the (cosmetic) member counter
+          // — this is what a joining/leaving member does in the same batch as
+          // their membership write. No other field may change.
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount'])
+        );
       allow delete: if request.auth != null
         && resource.data.ownerId == request.auth.uid;
     }
 
-    // Team Members: self-join only; "manager" role requires team ownership
+    // Team Members: readable by the member themselves and by any teammate.
+    // Self-join requires presenting the correct invite code; membership docs
+    // must use the deterministic id "{teamId}_{userId}".
     match /team_members/{membershipId} {
-      allow read: if request.auth != null;
+      // A user may always get their own membership doc (including a "not found"
+      // for a doc that does not exist yet — the pre-join existence check), and
+      // teammates may read each other's membership docs.
+      allow read: if request.auth != null
+        && (resource == null
+          || resource.data.userId == request.auth.uid
+          || isTeamMember(resource.data.teamId));
       allow create: if request.auth != null
-        && request.resource.data.userId is string
+        && membershipId == request.resource.data.teamId + '_' + request.auth.uid
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.teamId is string
         && request.resource.data.role is string
-        && (request.resource.data.role == "member"
+        && request.resource.data.keys().hasOnly(['teamId', 'userId', 'role', 'joinedAt', 'displayName', 'email', 'defaultHourlyRate', 'inviteCode'])
+        && (!('defaultHourlyRate' in request.resource.data) || (request.resource.data.defaultHourlyRate is number && request.resource.data.defaultHourlyRate >= 0))
+        && (
+          // Self-join as a plain member: must present the correct invite code
+          // for an existing team.
+          (request.resource.data.role == "member"
+            && exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
+            && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.inviteCode == request.resource.data.inviteCode)
+          // Owner creating their own manager row. The team is written in the
+          // same batch as createTeam, so it may not be committed yet.
           || (request.resource.data.role == "manager"
             && (!exists(/databases/$(database)/documents/teams/$(request.resource.data.teamId))
-              || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid)))
-        && (!('defaultHourlyRate' in request.resource.data) || (request.resource.data.defaultHourlyRate is number && request.resource.data.defaultHourlyRate >= 0));
+              || isTeamOwner(request.resource.data.teamId)))
+        );
       allow update: if request.auth != null
-        && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+        && isTeamOwner(resource.data.teamId)
         && request.resource.data.teamId == resource.data.teamId
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.role is string
         && (request.resource.data.role == "member" || request.resource.data.role == "manager")
         && (!('defaultHourlyRate' in request.resource.data) || (request.resource.data.defaultHourlyRate is number && request.resource.data.defaultHourlyRate >= 0));
       allow delete: if request.auth != null
-        && (resource.data.userId == request.auth.uid
-          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
+        && (resource.data.userId == request.auth.uid || isTeamOwner(resource.data.teamId));
     }
 
-    // Team Shifts: managers can assign, members can read/accept/decline their own
+    // Team Shifts: readable by team members; managers assign, members respond.
     match /team_shifts/{shiftId} {
-      allow read: if request.auth != null;
+      allow read: if isTeamMember(resource.data.teamId);
       allow create: if request.auth != null
         && request.resource.data.teamId is string
-        && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid
+        && isTeamOwner(request.resource.data.teamId)
         && request.resource.data.assignedTo is string
         && request.resource.data.assignedBy == request.auth.uid
         && request.resource.data.company is string
@@ -183,7 +245,7 @@ service cloud.firestore {
           // Manager (assignedBy) or team owner can update mutable fields including
           // status, assignedTo and hourlyRate (a swap moves each person's rate with them).
           (resource.data.assignedBy == request.auth.uid
-            || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid)
+            || isTeamOwner(resource.data.teamId))
           // Assigned member can only change status to accepted or declined; assignedTo
           // and hourlyRate must stay the same.
           || (resource.data.assignedTo == request.auth.uid
@@ -195,11 +257,12 @@ service cloud.firestore {
         && resource.data.assignedBy == request.auth.uid;
     }
 
-    // Team Messages: authenticated users can read; sender or owner can delete
+    // Team Messages: readable by team members; sender or owner can delete.
     match /team_messages/{messageId} {
-      allow read: if request.auth != null;
+      allow read: if isTeamMember(resource.data.teamId);
       allow create: if request.auth != null
         && request.resource.data.teamId is string
+        && isTeamMember(request.resource.data.teamId)
         && request.resource.data.senderId == request.auth.uid
         && request.resource.data.senderName is string
         && request.resource.data.text is string
@@ -209,27 +272,27 @@ service cloud.firestore {
         && request.resource.data.createdAt is int
         && (request.resource.data.text.size() > 0 || ('imageUrl' in request.resource.data && request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() > 0))
         && (!request.resource.data.isAnnouncement
-          || get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid);
+          || isTeamOwner(request.resource.data.teamId));
       allow update: if request.auth != null
         && request.resource.data.teamId == resource.data.teamId
         && request.resource.data.senderId == resource.data.senderId
         && request.resource.data.createdAt == resource.data.createdAt
         && (resource.data.senderId == request.auth.uid
-          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+          || isTeamOwner(resource.data.teamId)
           || (request.resource.data.text == resource.data.text
             && request.resource.data.keys().hasOnly(resource.data.keys())
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy'])));
       allow delete: if request.auth != null
         && (resource.data.senderId == request.auth.uid
-          || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid);
+          || isTeamOwner(resource.data.teamId));
     }
 
     // Team Tasks: managers (team owner) create/delete; assignee or owner can advance status
     match /team_tasks/{taskId} {
-      allow read: if request.auth != null;
+      allow read: if isTeamMember(resource.data.teamId);
       allow create: if request.auth != null
         && request.resource.data.teamId is string
-        && get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.ownerId == request.auth.uid
+        && isTeamOwner(request.resource.data.teamId)
         && request.resource.data.assignedTo is string
         && request.resource.data.assignedBy == request.auth.uid
         && request.resource.data.title is string
@@ -243,24 +306,28 @@ service cloud.firestore {
         && request.resource.data.title == resource.data.title
         && request.resource.data.status in ['pending', 'in_progress', 'completed']
         && (
-          get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+          isTeamOwner(resource.data.teamId)
           || resource.data.assignedTo == request.auth.uid
         );
       allow delete: if request.auth != null
-        && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid;
+        && isTeamOwner(resource.data.teamId);
     }
 
     // Swap Requests: requester creates, target responds, manager approves
     match /swap_requests/{requestId} {
-      allow read: if request.auth != null;
+      allow read: if isTeamMember(resource.data.teamId);
       allow create: if request.auth != null
         && request.resource.data.requesterId == request.auth.uid
         && request.resource.data.status == "pending"
         && request.resource.data.teamId is string
+        && isTeamMember(request.resource.data.teamId)
         && request.resource.data.requesterShiftId is string
         && request.resource.data.targetMemberId is string
         && request.resource.data.targetShiftId is string
-        && request.resource.data.createdAt is int;
+        && request.resource.data.createdAt is int
+        // The two referenced shifts must belong to this same team.
+        && get(/databases/$(database)/documents/team_shifts/$(request.resource.data.requesterShiftId)).data.teamId == request.resource.data.teamId
+        && get(/databases/$(database)/documents/team_shifts/$(request.resource.data.targetShiftId)).data.teamId == request.resource.data.teamId;
       allow update: if request.auth != null
         && request.resource.data.teamId == resource.data.teamId
         && request.resource.data.requesterId == resource.data.requesterId
@@ -273,7 +340,7 @@ service cloud.firestore {
             && resource.data.status == "pending"
             && (request.resource.data.status == "target_accepted" || request.resource.data.status == "declined"))
           // Manager can approve or decline after target accepted
-          || (get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.ownerId == request.auth.uid
+          || (isTeamOwner(resource.data.teamId)
             && resource.data.status == "target_accepted"
             && (request.resource.data.status == "approved" || request.resource.data.status == "declined"))
         );
