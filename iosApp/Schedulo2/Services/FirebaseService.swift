@@ -176,6 +176,19 @@ final class FirebaseService {
             "created_at": Int64(Date().timeIntervalSince1970 * 1000)
         ]
         try await db.collection("profiles").document(user.uid).setData(profile)
+        // Send a verification email so team features can be gated on a verified
+        // address (see AuthViewModel.isEmailVerified / TeamViewModel gating).
+        try? await user.sendEmailVerification()
+    }
+
+    /// Re-send the verification email to the current user.
+    func resendVerificationEmail() async throws {
+        try await auth.currentUser?.sendEmailVerification()
+    }
+
+    /// Reload the cached user so isEmailVerified reflects a just-clicked link.
+    func reloadUser() async throws {
+        try await auth.currentUser?.reload()
     }
 
     func signOut() throws {

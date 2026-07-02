@@ -3,6 +3,7 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
+    @EnvironmentObject var teamViewModel: TeamViewModel
     @StateObject private var connectivityManager = ConnectivityManager()
 
     var onEditShift: (String) -> Void = { _ in }
@@ -147,6 +148,7 @@ struct DashboardView: View {
             HStack(spacing: 4) {
                 Button(action: {
                     dashboardViewModel.reset()
+                    teamViewModel.removeAllListeners()
                     authViewModel.logout()
                 }) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")

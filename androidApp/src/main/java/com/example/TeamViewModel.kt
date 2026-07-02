@@ -422,6 +422,10 @@ class TeamViewModel : ViewModel() {
     fun createTeam(form: TeamFormData) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
+        if (auth?.currentUser?.isEmailVerified != true) {
+            _errorMessage.value = "Please verify your email address before creating a team. Check your inbox for the verification link."
+            return
+        }
         if (form.name.isBlank()) {
             _errorMessage.value = "Team name cannot be empty."
             return
@@ -460,7 +464,12 @@ class TeamViewModel : ViewModel() {
 
         val batch = database.batch()
         batch.set(database.collection("teams").document(teamId), teamData)
-        batch.set(database.collection("team_members").document(), memberData)
+        // Deterministic membership id "{teamId}_{userId}" lets security rules prove
+        // membership with a single exists() check.
+        batch.set(database.collection("team_members").document("${teamId}_$uid"), memberData)
+        // Public-by-secret lookup so joiners can resolve a code -> teamId without
+        // the teams collection being world-readable.
+        batch.set(database.collection("invite_codes").document(inviteCode), hashMapOf("teamId" to teamId))
 
         batch.commit()
             .addOnSuccessListener {
@@ -524,6 +533,10 @@ class TeamViewModel : ViewModel() {
     fun joinTeam(inviteCode: String) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
+        if (auth?.currentUser?.isEmailVerified != true) {
+            _errorMessage.value = "Please verify your email address before joining a team. Check your inbox for the verification link."
+            return
+        }
         if (inviteCode.isBlank()) {
             _errorMessage.value = "Invite code cannot be empty."
             return
@@ -531,26 +544,27 @@ class TeamViewModel : ViewModel() {
         _isLoading.value = true
         _errorMessage.value = null
 
-        database.collection("teams")
-            .whereEqualTo("inviteCode", inviteCode.trim().uppercase())
+        val code = inviteCode.trim().uppercase()
+
+        // Resolve the code -> teamId via the public-by-secret lookup collection
+        // (a direct get() by document id; the teams collection is not queryable
+        // by non-members).
+        database.collection("invite_codes").document(code)
             .get()
-            .addOnSuccessListener { teamDocs ->
-                if (teamDocs.isEmpty) {
+            .addOnSuccessListener { codeDoc ->
+                val teamId = codeDoc.getString("teamId")
+                if (!codeDoc.exists() || teamId.isNullOrBlank()) {
                     _errorMessage.value = "No team found with that invite code."
                     _isLoading.value = false
                     return@addOnSuccessListener
                 }
 
-                val teamDoc = teamDocs.documents.first()
-                val teamId = teamDoc.id
+                val memberRef = database.collection("team_members").document("${teamId}_$uid")
 
-                // Check if already a member
-                database.collection("team_members")
-                    .whereEqualTo("teamId", teamId)
-                    .whereEqualTo("userId", uid)
-                    .get()
+                // Check if already a member (direct read of the deterministic doc).
+                memberRef.get()
                     .addOnSuccessListener { existingMember ->
-                        if (!existingMember.isEmpty) {
+                        if (existingMember.exists()) {
                             _errorMessage.value = "You are already a member of this team."
                             _isLoading.value = false
                             return@addOnSuccessListener
@@ -566,11 +580,14 @@ class TeamViewModel : ViewModel() {
                             "role" to "member",
                             "joinedAt" to now,
                             "displayName" to displayName,
-                            "email" to email
+                            "email" to email,
+                            // Included so the security rule can verify the joiner
+                            // presented the correct invite code.
+                            "inviteCode" to code
                         )
 
                         val batch = database.batch()
-                        batch.set(database.collection("team_members").document(), memberData)
+                        batch.set(memberRef, memberData)
                         batch.update(database.collection("teams").document(teamId), "memberCount", FieldValue.increment(1))
 
                         batch.commit()
@@ -726,6 +743,11 @@ class TeamViewModel : ViewModel() {
                         val batch = database.batch()
                         for (doc in memberDocs.documents) batch.delete(doc.reference)
                         for (doc in shiftDocs.documents) batch.delete(doc.reference)
+                        // Remove the invite-code lookup entry alongside the team.
+                        val inviteCode = _currentTeam.value?.takeIf { it.id == teamId }?.inviteCode
+                        if (!inviteCode.isNullOrBlank()) {
+                            batch.delete(database.collection("invite_codes").document(inviteCode))
+                        }
                         batch.delete(database.collection("teams").document(teamId))
                         batch.commit()
                             .addOnSuccessListener {

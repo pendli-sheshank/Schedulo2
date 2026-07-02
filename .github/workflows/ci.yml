@@ -1,0 +1,48 @@
+name: CI
+
+# Quality gate run on every pull request. Unlike the deploy workflows (which run
+# on push to main), this never ships anything — it just verifies the build and
+# the security rules before code can be merged.
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firestore-rules:
+    name: Firestore security-rules tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set up JDK (Firestore emulator needs Java)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install rules-test dependencies
+        working-directory: firebase-tests
+        run: npm install
+      - name: Run security-rules test suite
+        working-directory: firebase-tests
+        run: npm test
+
+  unit-tests:
+    name: Kotlin unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Run Android unit tests (compiles :shared transitively)
+        run: ./gradlew :androidApp:testDebugUnitTest
