@@ -247,14 +247,34 @@ world-readable.
 
 Security-rules changes are validated by an emulator test suite in `firebase-tests/`
 (run `cd firebase-tests && npm install && npm test`) and in CI on every pull
-request. **Rules are not deployed by CI** — after merging, deploy them manually:
+request.
+
+Team features (creating/joining a team) require a **verified email address**; a
+verification link is sent at signup.
+
+### Deploying the rules
+
+Rules target the **named `schedulo2` Firestore database** (see `firebase.json`) —
+not `(default)`. From a machine with the Firebase CLI:
 
 ```bash
 firebase deploy --only firestore:rules,storage
 ```
 
-Team features (creating/joining a team) require a **verified email address**; a
-verification link is sent at signup.
+No machine handy? The **Deploy Firebase rules** GitHub Actions workflow
+(`.github/workflows/deploy-firebase-rules.yml`) does it for you — trigger it from
+the **Actions** tab (the **Run workflow** button works from the GitHub mobile
+site), or it runs automatically when a rules file changes on `main`. It needs one
+repository secret:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/iam-admin/serviceaccounts)
+   for project `gen-lang-client-0769292643`, create a **service account** and
+   grant it the **Firebase Rules Admin** role (`roles/firebaserules.admin`).
+2. Create a **JSON key** for that account and download it.
+3. In GitHub → **Settings → Secrets and variables → Actions → New repository
+   secret**, name it `FIREBASE_SERVICE_ACCOUNT` and paste the entire JSON.
+
+Then run the workflow. All three steps work from a phone browser.
 
 ### Operational hardening (console actions)
 
