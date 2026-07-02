@@ -257,6 +257,9 @@ private fun weekRangeLabel(offset: Int): String {
     return "$start – $end"
 }
 
+private fun formatShiftDuration(hours: Double): String =
+    if (hours % 1.0 == 0.0) "${hours.toInt()}h" else "${"%.1f".format(hours)}h"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -286,8 +289,15 @@ fun DashboardScreen(
         }
     }
     val greetingName = remember(userName, userEmail) {
-        if (userName.isNotBlank()) userName.split(" ").firstOrNull() ?: "there"
-        else userEmail.substringBefore("@").ifEmpty { "there" }
+        // Prefer the profile first name; otherwise derive a friendly name from the
+        // email handle by dropping trailing digits ("sheshank336" -> "Sheshank").
+        val raw = if (userName.isNotBlank()) {
+            userName.trim().split(" ").firstOrNull() ?: ""
+        } else {
+            val prefix = userEmail.substringBefore("@")
+            prefix.takeWhile { it.isLetter() }.ifEmpty { prefix }
+        }
+        raw.ifBlank { "there" }.replaceFirstChar { it.uppercase() }
     }
     val now = System.currentTimeMillis()
 
@@ -333,7 +343,7 @@ fun DashboardScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                .padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -388,8 +398,9 @@ fun DashboardScreen(
             }
         }
 
-        // Week filter chip
-        Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+        // Week filter chip — kept tight under the greeting so the header reads
+        // as one block instead of leaving a gap above the earnings card.
+        Box(modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 4.dp)) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -584,13 +595,13 @@ fun EarningsAndHoursCard(totalEarned: Double, totalHours: Double, shiftCount: In
                         modifier = Modifier.weight(1f)
                     )
                     StatPill(
-                        label = "Shifts",
+                        label = "Scheduled",
                         value = "$shiftCount",
                         modifier = Modifier.weight(1f)
                     )
                     StatPill(
                         label = "Avg/Shift",
-                        value = if (shiftCount > 0) "$${"%.0f".format(totalEarned / shiftCount)}" else "$0",
+                        value = if (shiftCount > 0) "$${"%.2f".format(totalEarned / shiftCount)}" else "$0.00",
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -610,7 +621,9 @@ private fun StatPill(label: String, value: String, modifier: Modifier = Modifier
     ) {
         Text(value, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(modifier = Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, color = Color.White.copy(alpha = 0.6f))
+        // Soft near-white keeps the labels readable against the dark green
+        // gradient (the 0.6-alpha white failed contrast under bright light).
+        Text(label, fontSize = 11.sp, color = Color(0xFFE0E0E0))
     }
 }
 
@@ -683,7 +696,7 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            if (isGig) "Gig Work" else "$${job.defaultHourlyRate}/hr",
+                            if (isGig) "Gig Work" else "$${"%.2f".format(job.defaultHourlyRate)}/hr",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -713,7 +726,9 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
                     )
                 }
                 Column {
-                    Text("Shifts", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // "Completed" (worked shifts) vs. "Scheduled" on the earnings
+                    // card, so the two counts can't read as a mismatch.
+                    Text("Completed", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         "${shiftsForJob.size}",
                         fontSize = 15.sp,
@@ -764,6 +779,7 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
                 color = if (progressFraction >= 1.0) PrimaryGreen else accentColor,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
+            Spacer(modifier = Modifier.height(6.dp))
             if (progressFraction >= 1.0) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -844,8 +860,10 @@ fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (Strin
                                     ),
                                 contentAlignment = Alignment.Center
                             ) {
+                                // Same employer iconography as the goals cards, so one
+                                // employer never shows two different symbols.
                                 Icon(
-                                    if (shift.isGig) Icons.Default.DeliveryDining else Icons.Default.Work,
+                                    if (shift.isGig) Icons.Default.DeliveryDining else Icons.Default.Business,
                                     null,
                                     tint = if (shift.isGig) AccentOrange else AccentBlue,
                                     modifier = Modifier.size(20.dp)
@@ -865,12 +883,20 @@ fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (Strin
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Text(
-                                "$${"%.2f".format(shift.totalEarned)}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryGreen
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                // "Est." marks this as a projection, not money in hand.
+                                Text(
+                                    "Est. $${"%.2f".format(shift.totalEarned)}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryGreen
+                                )
+                                Text(
+                                    formatShiftDuration(shift.durationHours),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                         if (index < upcomingShifts.lastIndex) {
                             HorizontalDivider(
@@ -885,12 +911,45 @@ fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (Strin
     }
 }
 
+/**
+ * Bar outline with a smooth Bezier notch at the top center so the docked FAB
+ * (56dp, centered on the bar's top edge) sits in a cradle with a ~6dp gap
+ * instead of the bar cutting straight through it.
+ */
+class BottomBarCutoutShape(
+    private val fabSize: androidx.compose.ui.unit.Dp = 56.dp,
+    private val fabGap: androidx.compose.ui.unit.Dp = 6.dp
+) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density
+    ): androidx.compose.ui.graphics.Outline {
+        val r = with(density) { (fabSize / 2 + fabGap).toPx() }
+        val cx = size.width / 2f
+        val path = androidx.compose.ui.graphics.Path().apply {
+            moveTo(0f, 0f)
+            lineTo(cx - r * 1.75f, 0f)
+            // Left shoulder eases in horizontally, dips to the notch floor…
+            cubicTo(cx - r * 0.9f, 0f, cx - r * 0.75f, r, cx, r)
+            // …and the right shoulder mirrors it back up to the top edge.
+            cubicTo(cx + r * 0.75f, r, cx + r * 0.9f, 0f, cx + r * 1.75f, 0f)
+            lineTo(size.width, 0f)
+            lineTo(size.width, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        return androidx.compose.ui.graphics.Outline.Generic(path)
+    }
+}
+
 @Composable
 fun BottomNavigationBar(currentRoute: String, onNavigate: (String) -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp
+        shadowElevation = 8.dp,
+        shape = BottomBarCutoutShape()
     ) {
         Row(
             modifier = Modifier
@@ -903,7 +962,7 @@ fun BottomNavigationBar(currentRoute: String, onNavigate: (String) -> Unit) {
         ) {
             NavBarItem(icon = Icons.Default.Home, label = "Home", selected = currentRoute == "dashboard", onClick = { onNavigate("dashboard") })
             NavBarItem(icon = Icons.Default.CalendarMonth, label = "Plan", selected = currentRoute == "plan", onClick = { onNavigate("plan") })
-            Spacer(modifier = Modifier.width(56.dp))
+            Spacer(modifier = Modifier.width(72.dp))
             NavBarItem(icon = Icons.Default.Payments, label = "Pay", selected = currentRoute == "pay", onClick = { onNavigate("pay") })
             NavBarItem(icon = Icons.Default.Groups, label = "Team", selected = currentRoute == "team", onClick = { onNavigate("team") })
         }
@@ -970,9 +1029,10 @@ fun FabPlaceholder(onClick: () -> Unit = {}, isExpanded: Boolean = false) {
         label = "fabScale"
     )
 
+    // Positioned by MainLayout so its center lands on the bottom bar's top
+    // edge, inside the BottomBarCutoutShape cradle.
     Box(
         modifier = Modifier
-            .offset(y = 16.dp)
             .scale(fabScale)
             .shadow(8.dp, RoundedCornerShape(16.dp))
             .size(56.dp)
