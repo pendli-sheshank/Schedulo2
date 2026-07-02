@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -16,7 +18,7 @@ run {
   val debugKeystore = file("${rootDir}/debug.keystore")
   val debugKeystoreB64 = file("${rootDir}/debug.keystore.base64")
   if (!debugKeystore.exists() && debugKeystoreB64.exists()) {
-    debugKeystore.writeBytes(java.util.Base64.getMimeDecoder().decode(debugKeystoreB64.readText()))
+    debugKeystore.writeBytes(Base64.getMimeDecoder().decode(debugKeystoreB64.readText()))
   }
 }
 
