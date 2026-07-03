@@ -1,7 +1,10 @@
 {
-  "firestore": {
-    "rules": "firestore.rules"
-  },
+  "firestore": [
+    {
+      "database": "schedulo2",
+      "rules": "firestore.rules"
+    }
+  ],
   "storage": {
     "rules": "storage.rules"
   },
