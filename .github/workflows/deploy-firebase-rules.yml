@@ -4,7 +4,7 @@ name: Deploy Firebase rules
 # Run it by hand from the Actions tab (works from the GitHub mobile site too), or
 # it runs automatically when the rules change on main.
 #
-# Requires one repository secret, FIREBASE_SERVICE_ACCOUNT: the full JSON of a
+# Requires one repository secret, PLAY_SERVICE_ACCOUNT_JSON: the full JSON of a
 # Google service account key with the "Firebase Rules Admin" role on the project.
 # See README (Security section) for how to create it from a browser.
 on:
@@ -32,13 +32,13 @@ jobs:
           node-version: '20'
       - name: Write service account key
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
-          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
-            echo "::error::The FIREBASE_SERVICE_ACCOUNT secret is not set. Add it in Settings → Secrets and variables → Actions." >&2
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::The PLAY_SERVICE_ACCOUNT_JSON secret is not set. Add it in Settings → Secrets and variables → Actions." >&2
             exit 1
           fi
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/service-account.json"
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/service-account.json"
       - name: Deploy Firestore + Storage rules
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
