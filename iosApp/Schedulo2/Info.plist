@@ -48,11 +48,11 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Schedulo uses Face ID for quick and secure login</string>
+	<string>Shifnex uses Face ID for quick and secure login</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Schedulo syncs your shifts to your calendar so you never miss a shift</string>
+	<string>Shifnex syncs your shifts to your calendar so you never miss a shift</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Schedulo needs full calendar access to create and manage shift events</string>
+	<string>Shifnex needs full calendar access to create and manage shift events</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIBackgroundModes</key>
