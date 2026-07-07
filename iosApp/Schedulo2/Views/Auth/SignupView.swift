@@ -89,7 +89,7 @@ struct SignupView: View {
                                     .font(.system(size: 24))
                                     .foregroundColor(.white)
                             )
-                        Text("Schedulo")
+                        Text("Shifnex")
                             .font(.system(size: 28, weight: .bold))
                             .foregroundColor(.white)
                             .tracking(-0.5)
