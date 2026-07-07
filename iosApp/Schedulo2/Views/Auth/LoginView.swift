@@ -287,7 +287,10 @@ struct LoginView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
-                if authViewModel.biometricAvailable && authViewModel.biometricEnabled {
+                // Only auto-prompt when a persisted session still exists. After a
+                // logout there is none, so auto-prompting would just fail with a
+                // "No saved session" error the moment the user lands here.
+                if authViewModel.biometricAvailable && authViewModel.biometricEnabled && authViewModel.hasActiveSession {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         authViewModel.authenticateWithBiometric()
                     }

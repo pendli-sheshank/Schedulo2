@@ -383,6 +383,23 @@ class AuthViewModel : ViewModel() {
         BiometricPrompt(activity, executor, callback).authenticate(promptInfo)
     }
 
+    // True when a persisted Firebase session still exists. Biometric login on the
+    // login screen is only a convenience to unlock that existing session — it does
+    // not re-establish one.
+    fun hasActiveSession(): Boolean = auth?.currentUser != null
+
+    // Biometric entry point for the login screen. After an explicit logout the
+    // Firebase session is gone, so biometric must NOT grant access — otherwise the
+    // prompt's success would bounce the user straight back to the dashboard,
+    // producing a logout loop. In that case require an email/password sign-in.
+    fun loginWithBiometric(activity: FragmentActivity, onAuthenticated: () -> Unit) {
+        if (auth?.currentUser == null) {
+            _authState.value = AuthState.Error("No saved session. Please sign in with email and password.")
+            return
+        }
+        showBiometricPrompt(activity, onAuthenticated)
+    }
+
     override fun onCleared() {
         super.onCleared()
         authStateListener?.let { auth?.removeAuthStateListener(it) }
