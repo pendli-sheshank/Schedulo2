@@ -30,7 +30,7 @@ android {
     applicationId = "com.schedulo2.app"
     minSdk = 24
     targetSdk = 36
-    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "81").toInt()
+    val ciVersionCode = (System.getenv("VERSION_CODE") ?: "82").toInt()
     versionCode = ciVersionCode
     versionName = "$ciVersionCode.0"
 
