@@ -328,6 +328,11 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - Helpers
 
+    // True when a persisted Firebase session still exists. Biometric login on the
+    // login screen only unlocks that existing session; after a logout there is none,
+    // so the login screen should not auto-prompt for biometrics.
+    var hasActiveSession: Bool { service.currentUser != nil }
+
     private func isValidEmail(_ email: String) -> Bool {
         let pattern = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
         return NSPredicate(format: "SELF MATCHES %@", pattern).evaluate(with: email)

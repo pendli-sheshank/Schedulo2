@@ -343,11 +343,15 @@ fun LoginScreen(
                     val biometricAvailable = remember { viewModel.isBiometricAvailable(context) }
                     val biometricEnabled by viewModel.biometricEnabled.collectAsState()
 
+                    // Only auto-prompt when a persisted Firebase session still exists.
+                    // After a logout there is no session, so auto-prompting would
+                    // either fail or (worse) bounce the user back to the dashboard,
+                    // creating a logout loop.
                     LaunchedEffect(biometricAvailable, biometricEnabled) {
-                        if (biometricAvailable && biometricEnabled) {
+                        if (biometricAvailable && biometricEnabled && viewModel.hasActiveSession()) {
                             val activity = context as? FragmentActivity
                             if (activity != null) {
-                                viewModel.showBiometricPrompt(activity) {
+                                viewModel.loginWithBiometric(activity) {
                                     onNavigateToDashboard()
                                 }
                             }
@@ -362,7 +366,7 @@ fun LoginScreen(
                             onClick = {
                                 val activity = context as? FragmentActivity
                                 if (activity != null) {
-                                    viewModel.showBiometricPrompt(activity) {
+                                    viewModel.loginWithBiometric(activity) {
                                         onNavigateToDashboard()
                                     }
                                 }
