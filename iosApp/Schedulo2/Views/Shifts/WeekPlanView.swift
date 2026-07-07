@@ -14,14 +14,39 @@ struct WeekPlanView: View {
         Calendar.current.date(bySettingHour: 17, minute: 0, second: 0, of: Date()) ?? Date()
     }
 
-    private let daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    private static let allDays: [String] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+    private var cycleStartDay: String {
+        selectedJob?.weeklyCycleStartDay ?? "Monday"
+    }
+
+    private var daysOfWeek: [String] {
+        let all = Self.allDays
+        let idx: Int = all.firstIndex(of: cycleStartDay) ?? 1
+        return Array(all[idx...]) + Array(all[..<idx])
+    }
+
+    private static func weekdayNumber(for dayName: String) -> Int {
+        switch dayName {
+        case "Sunday": return 1
+        case "Monday": return 2
+        case "Tuesday": return 3
+        case "Wednesday": return 4
+        case "Thursday": return 5
+        case "Friday": return 6
+        case "Saturday": return 7
+        default: return 2
+        }
+    }
 
     private var weekStartDate: Date {
         let cal = Calendar.current
-        var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
-        comps.weekday = 2 // Monday
-        let thisMonday = cal.date(from: comps) ?? Date()
-        return cal.date(byAdding: .weekOfYear, value: weekOffset, to: thisMonday) ?? thisMonday
+        let targetWeekday: Int = Self.weekdayNumber(for: cycleStartDay)
+        let today = Date()
+        let todayWeekday: Int = cal.component(.weekday, from: today)
+        let diff: Int = (todayWeekday - targetWeekday + 7) % 7
+        let cycleStart: Date = cal.startOfDay(for: cal.date(byAdding: .day, value: -diff, to: today)!)
+        return cal.date(byAdding: .weekOfYear, value: weekOffset, to: cycleStart) ?? cycleStart
     }
 
     private func dayDate(for index: Int) -> Date {
@@ -103,7 +128,7 @@ struct WeekPlanView: View {
                         Text("\(fmt.string(from: weekStartDate)) - \(fmt.string(from: endDate))")
                             .font(.system(size: 16, weight: .bold))
 
-                        Text(weekOffset == 0 ? "This Week" : weekOffset == 1 ? "Next Week" : "In \(weekOffset) weeks")
+                        Text(weekOffset == 0 ? "Current Cycle (\(cycleStartDay) start)" : weekOffset == 1 ? "Next Week" : "In \(weekOffset) weeks")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.primaryGreen)
                     }
