@@ -82,6 +82,16 @@ jobs:
           sed -i '' "s/CURRENT_PROJECT_VERSION: \"[0-9]*\"/CURRENT_PROJECT_VERSION: \"$BUILD_NUMBER\"/" iosApp/project.yml
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
           echo "Build number set to: $BUILD_NUMBER"
+          # Derive the marketing version's major.minor from project.yml (the source of
+          # truth — bump it there for a real release) and use the build number as the
+          # patch so every upload has a unique, monotonically increasing
+          # CFBundleShortVersionString. This avoids App Store Connect rejecting a build
+          # because its marketing version was already approved / its train is closed.
+          MARKETING_BASE=$(grep 'MARKETING_VERSION:' iosApp/project.yml | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+).*"/\1/')
+          MARKETING_VERSION="${MARKETING_BASE}.${BUILD_NUMBER}"
+          sed -i '' "s/MARKETING_VERSION: \"[^\"]*\"/MARKETING_VERSION: \"$MARKETING_VERSION\"/" iosApp/project.yml
+          echo "MARKETING_VERSION=$MARKETING_VERSION" >> $GITHUB_ENV
+          echo "Marketing version set to: $MARKETING_VERSION"
 
       - name: Generate Xcode project
         working-directory: iosApp
