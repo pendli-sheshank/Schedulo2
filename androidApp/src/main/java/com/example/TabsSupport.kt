@@ -2572,7 +2572,7 @@ fun ExportFilterDialog(dashboardViewModel: DashboardViewModel, onDismiss: () -> 
                 val mimeType = if (exportFormat == "CSV") "text/csv" else "text/plain"
                 val sendIntent = Intent(Intent.ACTION_SEND).apply {
                     type = mimeType
-                    putExtra(Intent.EXTRA_SUBJECT, "Schedulo Shift Report")
+                    putExtra(Intent.EXTRA_SUBJECT, "Shifnex Shift Report")
                     putExtra(Intent.EXTRA_TEXT, preview)
                 }
                 context.startActivity(Intent.createChooser(sendIntent, "Share Report"))

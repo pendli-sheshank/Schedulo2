@@ -27,7 +27,7 @@ struct BiometricLockView: View {
 
                 Spacer().frame(height: 24)
 
-                Text("Schedulo is locked")
+                Text("Shifnex is locked")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(.white)
 

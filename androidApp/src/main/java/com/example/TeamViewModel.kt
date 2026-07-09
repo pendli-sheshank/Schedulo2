@@ -469,13 +469,29 @@ class TeamViewModel : ViewModel() {
             }
     }
 
-    fun createTeam(form: TeamFormData) {
-        val uid = auth?.currentUser?.uid ?: return
-        val database = db ?: return
-        if (auth?.currentUser?.isEmailVerified != true) {
-            _errorMessage.value = "Please verify your email address before creating a team. Check your inbox for the verification link."
-            return
+    /**
+     * Team features require a verified email. FirebaseUser.isEmailVerified is a
+     * cached value that only refreshes after reload(), so a user who has already
+     * verified (here or on another device) could be wrongly blocked by a stale
+     * token. Reload first, then run [onVerified] if verified; otherwise (re)send a
+     * verification email — covering the case where the signup email never arrived —
+     * and surface a clear message.
+     */
+    private fun withVerifiedEmail(actionLabel: String, onVerified: () -> Unit) {
+        val user = auth?.currentUser ?: return
+        user.reload().addOnCompleteListener {
+            val refreshed = auth?.currentUser
+            if (refreshed?.isEmailVerified == true) {
+                onVerified()
+            } else {
+                try { refreshed?.sendEmailVerification() } catch (_: Exception) { }
+                val address = refreshed?.email ?: "your inbox"
+                _errorMessage.value = "Please verify your email before $actionLabel a team. We've sent a verification link to $address — open it, then try again."
+            }
         }
+    }
+
+    fun createTeam(form: TeamFormData) {
         if (form.name.isBlank()) {
             _errorMessage.value = "Team name cannot be empty."
             return
@@ -484,6 +500,12 @@ class TeamViewModel : ViewModel() {
             _errorMessage.value = "Company name cannot be empty."
             return
         }
+        withVerifiedEmail("creating") { performCreateTeam(form) }
+    }
+
+    private fun performCreateTeam(form: TeamFormData) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
         _isLoading.value = true
         _errorMessage.value = null
 
@@ -581,16 +603,16 @@ class TeamViewModel : ViewModel() {
     }
 
     fun joinTeam(inviteCode: String) {
-        val uid = auth?.currentUser?.uid ?: return
-        val database = db ?: return
-        if (auth?.currentUser?.isEmailVerified != true) {
-            _errorMessage.value = "Please verify your email address before joining a team. Check your inbox for the verification link."
-            return
-        }
         if (inviteCode.isBlank()) {
             _errorMessage.value = "Invite code cannot be empty."
             return
         }
+        withVerifiedEmail("joining") { performJoinTeam(inviteCode) }
+    }
+
+    private fun performJoinTeam(inviteCode: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
         _isLoading.value = true
         _errorMessage.value = null
 

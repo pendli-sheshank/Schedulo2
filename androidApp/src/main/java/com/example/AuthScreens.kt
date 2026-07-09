@@ -115,7 +115,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Schedulo",
+                text = "Shifnex",
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -511,7 +511,7 @@ fun BiometricUnlockScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Schedulo is locked",
+            text = "Shifnex is locked",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White
@@ -628,7 +628,7 @@ fun SignupScreen(
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Schedulo",
+                    text = "Shifnex",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,

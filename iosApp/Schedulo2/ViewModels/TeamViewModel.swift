@@ -389,18 +389,41 @@ final class TeamViewModel: ObservableObject {
 
     // MARK: - Team CRUD
 
-    func createTeam(form: TeamFormData) {
-        guard let uid = currentUserId else { return }
-        guard Auth.auth().currentUser?.isEmailVerified == true else {
-            errorMessage = "Please verify your email address before creating a team. Check your inbox for the verification link."
-            return
+    /// Team features require a verified email. `isEmailVerified` is a cached value
+    /// that only refreshes after reload(), so a user who has already verified (here
+    /// or on another device) could be wrongly blocked by a stale token. Reload
+    /// first, then run `onVerified` if verified; otherwise (re)send a verification
+    /// email — covering the case where the signup email never arrived — and surface
+    /// a clear message.
+    private func withVerifiedEmail(_ actionLabel: String, _ onVerified: @escaping () -> Void) {
+        guard let user = Auth.auth().currentUser else { return }
+        user.reload { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if Auth.auth().currentUser?.isEmailVerified == true {
+                    onVerified()
+                } else {
+                    Auth.auth().currentUser?.sendEmailVerification(completion: nil)
+                    let address = Auth.auth().currentUser?.email ?? "your inbox"
+                    self.errorMessage = "Please verify your email before \(actionLabel) a team. We've sent a verification link to \(address) — open it, then try again."
+                }
+            }
         }
+    }
+
+    func createTeam(form: TeamFormData) {
+        guard currentUserId != nil else { return }
         guard !form.name.trimmingCharacters(in: .whitespaces).isEmpty else {
             errorMessage = "Team name cannot be empty."; return
         }
         guard !form.companyName.trimmingCharacters(in: .whitespaces).isEmpty else {
             errorMessage = "Company name cannot be empty."; return
         }
+        withVerifiedEmail("creating") { [weak self] in self?.performCreateTeam(form: form) }
+    }
+
+    private func performCreateTeam(form: TeamFormData) {
+        guard let uid = currentUserId else { return }
         isLoading = true
         let teamId = UUID().uuidString
         let inviteCode = generateInviteCode()
@@ -494,11 +517,12 @@ final class TeamViewModel: ObservableObject {
     }
 
     func joinTeam(inviteCode: String) {
+        guard currentUserId != nil else { return }
+        withVerifiedEmail("joining") { [weak self] in self?.performJoinTeam(inviteCode: inviteCode) }
+    }
+
+    private func performJoinTeam(inviteCode: String) {
         guard let uid = currentUserId else { return }
-        guard Auth.auth().currentUser?.isEmailVerified == true else {
-            errorMessage = "Please verify your email address before joining a team. Check your inbox for the verification link."
-            return
-        }
         isLoading = true
         let code = inviteCode.uppercased()
 

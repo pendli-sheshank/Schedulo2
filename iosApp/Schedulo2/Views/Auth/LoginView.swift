@@ -70,7 +70,7 @@ struct LoginView: View {
 
                         Spacer().frame(height: 20)
 
-                        Text("Schedulo")
+                        Text("Shifnex")
                             .font(.system(size: 36, weight: .bold))
                             .foregroundColor(.white)
                             .tracking(-1)

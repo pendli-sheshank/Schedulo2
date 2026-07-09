@@ -284,7 +284,7 @@ final class AuthViewModel: ObservableObject {
 
     func authenticateWithBiometric() {
         let context = LAContext()
-        let reason = "Log in to Schedulo"
+        let reason = "Log in to Shifnex"
 
         context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) { success, error in
             DispatchQueue.main.async {
