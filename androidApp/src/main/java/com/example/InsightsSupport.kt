@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -16,9 +19,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.foundation.Canvas
-import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -28,6 +30,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.BorderStroke
 import com.example.ui.theme.PrimaryGreen
 import com.example.ui.theme.AccentBlue
+import com.example.ui.theme.AccentOrange
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,22 +42,51 @@ fun InsightsScreen(
     onBack: () -> Unit
 ) {
     val shifts by dashboardViewModel.shifts.collectAsState()
-    val weeklySummary = remember(shifts) { dashboardViewModel.getWeeklyEarningsSummary(8) }
-    val earningsByEmployer = remember(shifts) { dashboardViewModel.getEarningsByEmployer() }
 
-    val now = System.currentTimeMillis()
-    val completedShifts = shifts.filter { it.startTime < now }
-    val totalEarnings = completedShifts.sumOf { it.totalEarned }
-    val totalHours = completedShifts.sumOf { it.durationHours }
+    // View customization state
+    var viewMode by remember { mutableStateOf("Weekly") } // Weekly | Monthly
+    var weekCount by remember { mutableStateOf(8) }
+    var monthCount by remember { mutableStateOf(6) }
+    var employerFilter by remember { mutableStateOf<String?>(null) }
+    var selectedPeriodIndex by remember { mutableStateOf<Int?>(null) }
+
+    val periodSummary = remember(shifts, viewMode, weekCount, monthCount, employerFilter) {
+        if (viewMode == "Weekly") dashboardViewModel.getWeeklyPeriodSummary(weekCount, employerFilter)
+        else dashboardViewModel.getMonthlyPeriodSummary(monthCount, employerFilter)
+    }
+    // Default to the latest period; clamp when the period count shrinks.
+    val effectiveSelectedIndex = selectedPeriodIndex?.coerceAtMost(periodSummary.lastIndex)
+        ?: periodSummary.lastIndex
+    val selectedPeriod = periodSummary.getOrNull(effectiveSelectedIndex)
+    val selectedPeriodShifts = remember(shifts, selectedPeriod, employerFilter) {
+        selectedPeriod?.let {
+            dashboardViewModel.getShiftsInPeriod(it.periodStart, it.periodEnd, employerFilter)
+                .filter { shift -> shift.startTime < System.currentTimeMillis() }
+        } ?: emptyList()
+    }
+
+    val earningsByEmployer = remember(shifts) { dashboardViewModel.getEarningsByEmployer() }
+    val projection = remember(shifts, employerFilter) { dashboardViewModel.getUpcomingProjection(employerFilter) }
+    val upcomingShifts = remember(shifts, employerFilter) {
+        val now = System.currentTimeMillis()
+        shifts.filter {
+            it.startTime >= now &&
+                (employerFilter == null || it.company.equals(employerFilter, ignoreCase = true))
+        }.sortedBy { it.startTime }.take(5)
+    }
+
+    val totalEarnings = periodSummary.sumOf { it.earnings }
+    val totalHours = periodSummary.sumOf { it.hours }
     val avgHourlyRate = if (totalHours > 0) totalEarnings / totalHours else 0.0
 
-    val bestWeek = weeklySummary.maxByOrNull { it.earnings }
-    val avgWeeklyEarnings = if (weeklySummary.isNotEmpty()) weeklySummary.sumOf { it.earnings } / weeklySummary.size else 0.0
+    val bestPeriod = periodSummary.maxByOrNull { it.earnings }
+    val avgPeriodEarnings = if (periodSummary.isNotEmpty()) totalEarnings / periodSummary.size else 0.0
+    val periodNoun = if (viewMode == "Weekly") "week" else "month"
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Insights") },
+                title = { Text("Earnings Insights") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
             )
         }
@@ -64,6 +99,61 @@ fun InsightsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Weekly / Monthly toggle (same pattern as Plan's Month/Week/Day toggle)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Weekly", "Monthly").forEach { mode ->
+                    val selected = viewMode == mode
+                    Box(
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                            .background(if (selected) PrimaryGreen else MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { viewMode = mode; selectedPeriodIndex = null }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(mode, color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
+                }
+            }
+
+            // Period count selector
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Show:", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val options = if (viewMode == "Weekly") listOf(4, 8, 12) else listOf(3, 6, 12)
+                val current = if (viewMode == "Weekly") weekCount else monthCount
+                options.forEach { count ->
+                    val selected = current == count
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            if (viewMode == "Weekly") weekCount = count else monthCount = count
+                            selectedPeriodIndex = null
+                        },
+                        label = { Text("$count ${if (viewMode == "Weekly") "wks" else "mos"}", fontSize = 12.sp) }
+                    )
+                }
+            }
+
+            // Employer filter chips
+            if (earningsByEmployer.size > 1) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = employerFilter == null,
+                        onClick = { employerFilter = null },
+                        label = { Text("All employers", fontSize = 12.sp) }
+                    )
+                    earningsByEmployer.keys.forEach { employer ->
+                        FilterChip(
+                            selected = employerFilter == employer,
+                            onClick = { employerFilter = if (employerFilter == employer) null else employer },
+                            label = { Text(employer, fontSize = 12.sp) }
+                        )
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SummaryChip(Modifier.weight(1f), "Total Earned", "$${"%.0f".format(totalEarnings)}")
                 SummaryChip(Modifier.weight(1f), "Total Hours", "${"%.0f".format(totalHours)}h")
@@ -76,11 +166,85 @@ fun InsightsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Weekly Earnings", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("${if (viewMode == "Weekly") "Weekly" else "Monthly"} Earnings", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Last 8 weeks", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "Tap a bar to see that $periodNoun's shifts",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
-                    WeeklyBarChart(weeklySummary)
+                    PeriodBarChart(
+                        periods = periodSummary,
+                        selectedIndex = effectiveSelectedIndex,
+                        onBarTap = { index -> selectedPeriodIndex = index }
+                    )
+                }
+            }
+
+            // Selected-period shift list
+            if (selectedPeriod != null) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Shifts · ${selectedPeriod.label}",
+                                fontWeight = FontWeight.Bold, fontSize = 16.sp
+                            )
+                            Text(
+                                "$${"%.2f".format(selectedPeriod.earnings)}",
+                                fontWeight = FontWeight.Bold, fontSize = 15.sp, color = PrimaryGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        if (selectedPeriodShifts.isEmpty()) {
+                            Text(
+                                "No completed shifts in this $periodNoun.",
+                                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            selectedPeriodShifts.forEach { shift -> InsightShiftRow(shift) }
+                        }
+                    }
+                }
+            }
+
+            // Upcoming projections
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, AccentBlue.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.TrendingUp, null, tint = AccentBlue, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Upcoming Projections", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SummaryChip(Modifier.weight(1f), "Projected", "$${"%.0f".format(projection.earnings)}")
+                        SummaryChip(Modifier.weight(1f), "Hours", "${"%.0f".format(projection.hours)}h")
+                        SummaryChip(Modifier.weight(1f), "Shifts", "${projection.shiftCount}")
+                    }
+                    if (upcomingShifts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        upcomingShifts.forEach { shift -> InsightShiftRow(shift, isProjection = true) }
+                    } else {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            "No upcoming shifts scheduled.",
+                            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -130,14 +294,14 @@ fun InsightsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Best Week", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Best ${periodNoun.replaceFirstChar { it.uppercase() }}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            if (bestWeek != null && bestWeek.earnings > 0) "$${"%.0f".format(bestWeek.earnings)}" else "--",
+                            if (bestPeriod != null && bestPeriod.earnings > 0) "$${"%.0f".format(bestPeriod.earnings)}" else "--",
                             fontWeight = FontWeight.Bold, fontSize = 22.sp, color = PrimaryGreen
                         )
-                        if (bestWeek != null && bestWeek.earnings > 0) {
-                            Text(bestWeek.label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (bestPeriod != null && bestPeriod.earnings > 0) {
+                            Text(bestPeriod.label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -147,13 +311,13 @@ fun InsightsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Avg Weekly", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Avg ${periodNoun.replaceFirstChar { it.uppercase() }}ly", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "$${"%.0f".format(avgWeeklyEarnings)}",
+                            "$${"%.0f".format(avgPeriodEarnings)}",
                             fontWeight = FontWeight.Bold, fontSize = 22.sp, color = AccentBlue
                         )
-                        Text("per week", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("per $periodNoun", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -180,39 +344,107 @@ private fun SummaryChip(modifier: Modifier, label: String, value: String) {
 }
 
 @Composable
-private fun WeeklyBarChart(weeks: List<DashboardViewModel.WeekSummary>) {
-    val maxEarnings = weeks.maxOfOrNull { it.earnings } ?: 1.0
-    val barColor = PrimaryGreen
+private fun InsightShiftRow(shift: Shift, isProjection: Boolean = false) {
+    val dateFormat = remember { SimpleDateFormat("EEE, MMM dd · h:mm a", Locale.US) }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background((if (shift.isGig) AccentOrange else AccentBlue).copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                if (shift.isGig) Icons.Default.DeliveryDining else Icons.Default.Business,
+                null,
+                tint = if (shift.isGig) AccentOrange else AccentBlue,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(shift.company, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+            Text(dateFormat.format(Date(shift.startTime)), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                (if (isProjection) "Est. " else "") + "$${"%.2f".format(shift.totalEarned)}",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isProjection) AccentBlue else PrimaryGreen
+            )
+            Text("${"%.1f".format(shift.durationHours)}h", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun PeriodBarChart(
+    periods: List<DashboardViewModel.PeriodSummary>,
+    selectedIndex: Int,
+    onBarTap: (Int) -> Unit
+) {
+    if (periods.isEmpty()) return
+    val maxEarnings = periods.maxOfOrNull { it.earnings } ?: 1.0
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 10.sp, color = Color.Gray)
+    val valueStyle = TextStyle(fontSize = 10.sp, color = PrimaryGreen, fontWeight = FontWeight.Bold)
 
-    Canvas(modifier = Modifier.fillMaxWidth().height(160.dp)) {
-        val barWidth = size.width / weeks.size * 0.6f
-        val spacing = size.width / weeks.size
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(170.dp)
+            .pointerInput(periods) {
+                detectTapGestures { offset ->
+                    val spacing = size.width.toFloat() / periods.size
+                    val index = (offset.x / spacing).toInt().coerceIn(0, periods.lastIndex)
+                    onBarTap(index)
+                }
+            }
+    ) {
+        val barWidth = size.width / periods.size * 0.6f
+        val spacing = size.width / periods.size
+        val topPadding = 20f // room for the selected bar's value label
         val chartHeight = size.height - 30f
 
-        weeks.forEachIndexed { index, week ->
-            val barHeight = if (maxEarnings > 0) (week.earnings / maxEarnings * chartHeight).toFloat() else 0f
+        periods.forEachIndexed { index, period ->
+            val isSelected = index == selectedIndex
+            val barHeight = if (maxEarnings > 0) ((period.earnings / maxEarnings) * (chartHeight - topPadding)).toFloat() else 0f
             val x = index * spacing + (spacing - barWidth) / 2
+            val barColor = if (isSelected) AccentBlue else PrimaryGreen
 
-            if (week.earnings > 0) {
+            if (period.earnings > 0) {
                 drawRoundRect(
-                    color = barColor,
+                    color = if (isSelected) barColor else barColor.copy(alpha = 0.75f),
                     topLeft = Offset(x, chartHeight - barHeight),
                     size = Size(barWidth, barHeight),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
                 )
             } else {
-                // Baseline tick so a zero-earning week reads as loaded data, not a gap
+                // Baseline tick so a zero-earning period reads as loaded data, not a gap
                 drawRoundRect(
-                    color = Color.Gray.copy(alpha = 0.4f),
+                    color = (if (isSelected) AccentBlue else Color.Gray).copy(alpha = 0.4f),
                     topLeft = Offset(x, chartHeight - 4f),
                     size = Size(barWidth, 4f),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f)
                 )
             }
 
-            val label = textMeasurer.measure(week.label, labelStyle)
+            if (isSelected) {
+                val value = textMeasurer.measure("$${"%.0f".format(period.earnings)}", valueStyle)
+                drawText(
+                    textLayoutResult = value,
+                    topLeft = Offset(
+                        (x + barWidth / 2 - value.size.width / 2).coerceIn(0f, size.width - value.size.width),
+                        (chartHeight - barHeight - value.size.height - 4f).coerceAtLeast(0f)
+                    )
+                )
+            }
+
+            val label = textMeasurer.measure(period.label, labelStyle)
             drawText(
                 textLayoutResult = label,
                 topLeft = Offset(x + barWidth / 2 - label.size.width / 2, chartHeight + 8f)

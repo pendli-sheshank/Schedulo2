@@ -515,12 +515,6 @@ private fun ScheduleDetailContent(
                     currentUserId = currentUserId,
                     onDelete = { teamViewModel.deleteTeamShift(shift.id) },
                     onToggleTask = { taskId -> teamViewModel.toggleTaskCompletion(shift.id, taskId) },
-                    onAccept = if (shift.assignedTo == currentUserId && shift.status == "assigned") {
-                        { teamViewModel.updateShiftStatus(shift.id, "accepted") }
-                    } else null,
-                    onDecline = if (shift.assignedTo == currentUserId && shift.status == "assigned") {
-                        { teamViewModel.updateShiftStatus(shift.id, "declined") }
-                    } else null,
                     onRequestSwap = if (shift.assignedTo != currentUserId && shift.status == "accepted" && myAcceptedShifts.isNotEmpty()) {
                         { swapTargetShift = shift }
                     } else null

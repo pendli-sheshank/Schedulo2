@@ -727,8 +727,6 @@ fun TeamShiftCard(
     currentUserId: String,
     onDelete: () -> Unit,
     onToggleTask: (String) -> Unit = {},
-    onAccept: (() -> Unit)? = null,
-    onDecline: (() -> Unit)? = null,
     onRequestSwap: (() -> Unit)? = null
 ) {
     val assignedMember = members.find { it.userId == shift.assignedTo }
@@ -838,37 +836,6 @@ fun TeamShiftCard(
                             fontSize = 13.sp,
                             color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
                         )
-                    }
-                }
-            }
-
-            if (isAssignedToMe && shift.status == "assigned") {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (onAccept != null) {
-                        Button(
-                            onClick = onAccept,
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Accept", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                    if (onDecline != null) {
-                        OutlinedButton(
-                            onClick = onDecline,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Decline", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
                     }
                 }
             }

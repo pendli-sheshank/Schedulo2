@@ -14,7 +14,8 @@ data class Shift(
     var isPaid: Boolean = false,
     var notes: String = "",
     var bonusApplied: Boolean = false,
-    var bonusAmount: Double = 0.0
+    var bonusAmount: Double = 0.0,
+    var teamShiftId: String = ""
 ) {
     val durationHours: Double
         get() = if (endTime > startTime) (endTime - startTime) / 3600000.0 else 0.0
