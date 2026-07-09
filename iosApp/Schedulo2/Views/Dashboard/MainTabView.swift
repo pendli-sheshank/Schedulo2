@@ -23,7 +23,8 @@ struct MainTabView: View {
                     DashboardView(
                         onEditShift: { id in editingShiftId = id; showAddShift = true },
                         onNavigateToProfile: { showProfile = true },
-                        onNavigateToPay: { selectedTab = 2 }
+                        onNavigateToPay: { selectedTab = 2 },
+                        onNavigateToInsights: { showInsights = true }
                     )
                     .transition(.opacity)
                 case 1:

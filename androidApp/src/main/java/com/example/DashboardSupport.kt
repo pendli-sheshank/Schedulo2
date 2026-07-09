@@ -100,7 +100,10 @@ data class Shift(
     var isPaid: Boolean = false,
     var notes: String = "",
     var bonusApplied: Boolean = false,
-    var bonusAmount: Double = 0.0
+    var bonusAmount: Double = 0.0,
+    // Set when this shift is a personal mirror of a team_shifts doc; the Plan
+    // calendar hides mirrors so the team card is the only one rendered.
+    var teamShiftId: String = ""
 ) {
     @get:com.google.firebase.firestore.Exclude
     val durationHours: Double
@@ -863,12 +866,35 @@ class DashboardViewModel : ViewModel() {
             }
     }
 
-    data class WeekSummary(val weekStart: Long, val label: String, val hours: Double, val earnings: Double, val shiftCount: Int)
+    fun getEarningsByEmployer(): Map<String, Double> {
+        val now = System.currentTimeMillis()
+        return _shifts.value.filter { it.startTime < now }
+            .groupBy { it.company }
+            .mapValues { (_, shifts) -> shifts.sumOf { it.totalEarned } }
+            .toList().sortedByDescending { it.second }.toMap()
+    }
 
-    fun getWeeklyEarningsSummary(weeks: Int = 8): List<WeekSummary> {
+    // Generic earnings bucket for the Insights chart — a calendar week or month.
+    data class PeriodSummary(
+        val periodStart: Long,
+        val periodEnd: Long,
+        val label: String,
+        val hours: Double,
+        val earnings: Double,
+        val shiftCount: Int
+    )
+
+    data class UpcomingProjection(
+        val earnings: Double,
+        val hours: Double,
+        val shiftCount: Int,
+        val nextShiftStart: Long?
+    )
+
+    fun getWeeklyPeriodSummary(weeks: Int = 8, employer: String? = null): List<PeriodSummary> {
         val weekFormat = SimpleDateFormat("MMM dd", Locale.US)
         val now = System.currentTimeMillis()
-        val completedShifts = _shifts.value.filter { it.startTime < now }
+        val completedShifts = shiftsForEmployer(employer).filter { it.startTime < now }
         return (0 until weeks).map { offset ->
             val cal = Calendar.getInstance().apply {
                 firstDayOfWeek = Calendar.MONDAY
@@ -879,8 +905,9 @@ class DashboardViewModel : ViewModel() {
             val weekStart = cal.timeInMillis
             val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
             val weekShifts = completedShifts.filter { it.startTime in weekStart until weekEnd }
-            WeekSummary(
-                weekStart = weekStart,
+            PeriodSummary(
+                periodStart = weekStart,
+                periodEnd = weekEnd,
                 label = weekFormat.format(Date(weekStart)),
                 hours = weekShifts.sumOf { it.durationHours },
                 earnings = weekShifts.sumOf { it.totalEarned },
@@ -889,13 +916,49 @@ class DashboardViewModel : ViewModel() {
         }.reversed()
     }
 
-    fun getEarningsByEmployer(): Map<String, Double> {
+    fun getMonthlyPeriodSummary(months: Int = 6, employer: String? = null): List<PeriodSummary> {
+        val monthFormat = SimpleDateFormat("MMM", Locale.US)
         val now = System.currentTimeMillis()
-        return _shifts.value.filter { it.startTime < now }
-            .groupBy { it.company }
-            .mapValues { (_, shifts) -> shifts.sumOf { it.totalEarned } }
-            .toList().sortedByDescending { it.second }.toMap()
+        val completedShifts = shiftsForEmployer(employer).filter { it.startTime < now }
+        return (0 until months).map { offset ->
+            val cal = Calendar.getInstance().apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                add(Calendar.MONTH, -offset)
+            }
+            val monthStart = cal.timeInMillis
+            val monthEnd = (cal.clone() as Calendar).apply { add(Calendar.MONTH, 1) }.timeInMillis
+            val monthShifts = completedShifts.filter { it.startTime in monthStart until monthEnd }
+            PeriodSummary(
+                periodStart = monthStart,
+                periodEnd = monthEnd,
+                label = monthFormat.format(Date(monthStart)),
+                hours = monthShifts.sumOf { it.durationHours },
+                earnings = monthShifts.sumOf { it.totalEarned },
+                shiftCount = monthShifts.size
+            )
+        }.reversed()
     }
+
+    fun getUpcomingProjection(employer: String? = null): UpcomingProjection {
+        val now = System.currentTimeMillis()
+        val upcoming = shiftsForEmployer(employer).filter { it.startTime >= now }
+        return UpcomingProjection(
+            earnings = upcoming.sumOf { it.totalEarned },
+            hours = upcoming.sumOf { it.durationHours },
+            shiftCount = upcoming.size,
+            nextShiftStart = upcoming.minOfOrNull { it.startTime }
+        )
+    }
+
+    fun getShiftsInPeriod(start: Long, end: Long, employer: String? = null): List<Shift> =
+        shiftsForEmployer(employer)
+            .filter { it.startTime in start until end }
+            .sortedByDescending { it.startTime }
+
+    private fun shiftsForEmployer(employer: String?): List<Shift> =
+        if (employer.isNullOrBlank()) _shifts.value
+        else _shifts.value.filter { it.company.equals(employer, ignoreCase = true) }
 
     fun generateCsvReport(weekStart: Long, employer: String): String {
         val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L

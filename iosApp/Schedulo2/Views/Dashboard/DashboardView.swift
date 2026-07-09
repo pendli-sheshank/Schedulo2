@@ -9,6 +9,7 @@ struct DashboardView: View {
     var onEditShift: (String) -> Void = { _ in }
     var onNavigateToProfile: () -> Void = {}
     var onNavigateToPay: () -> Void = {}
+    var onNavigateToInsights: () -> Void = {}
 
     @State private var weekOffset = 0
     @State private var showWeekPicker = false
@@ -92,8 +93,14 @@ struct DashboardView: View {
                         SkeletalLoader()
                             .springScale()
                     } else {
-                        // Earnings card
+                        // Earnings card (completed shifts only)
                         earningsCard
+
+                        // Projected money from future shifts — separate card so it's
+                        // never mistaken for money already earned.
+                        if weekOffset == 0 {
+                            upcomingEarningsCard
+                        }
 
                         // Employer Goals
                         if !dashboardViewModel.jobs.isEmpty {
@@ -103,8 +110,11 @@ struct DashboardView: View {
                                 .padding(.horizontal, 16)
 
                             ForEach(dashboardViewModel.jobs, id: \.id) { job in
-                                JobGoalTrackerCard(job: job, shifts: dashboardViewModel.shifts, weekOffset: weekOffset)
-                                    .padding(.horizontal, 16)
+                                Button(action: onNavigateToInsights) {
+                                    JobGoalTrackerCard(job: job, shifts: dashboardViewModel.shifts, weekOffset: weekOffset)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 16)
                             }
                         }
 
@@ -226,7 +236,7 @@ struct DashboardView: View {
         return VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Weekly Earnings")
+                    Text("This Week's Earnings")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white.opacity(0.7))
                     Text("$\(totalEarned, specifier: "%.2f")")
@@ -271,6 +281,61 @@ struct DashboardView: View {
                     )
                 )
         )
+        .contentShape(RoundedRectangle(cornerRadius: 20))
+        .onTapGesture { onNavigateToInsights() }
+        .padding(.horizontal, 16)
+    }
+
+    private var upcomingEarningsCard: some View {
+        let now = Date()
+        let upcoming = dashboardViewModel.shifts.filter { $0.startDate >= now }
+        let projected = upcoming.reduce(0.0) { $0 + $1.totalEarned }
+        let hours = upcoming.reduce(0.0) { $0 + $1.durationHours }
+        let nextStart = upcoming.map(\.startDate).min()
+
+        let nextLabel: String
+        if let nextStart = nextStart {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "EEE, MMM dd · h:mm a"
+            nextLabel = "Next shift \(fmt.string(from: nextStart))"
+        } else {
+            nextLabel = "No upcoming shifts scheduled"
+        }
+
+        return Button(action: onNavigateToInsights) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Upcoming Earnings")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                        Text("Est. $\(projected, specifier: "%.2f")")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.accentBlue)
+                            .tracking(-1)
+                    }
+                    Spacer()
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 20))
+                        .foregroundColor(.accentBlue)
+                }
+                Text("\(upcoming.count) scheduled · \(Self.durationLabel(hours)) · \(nextLabel)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(UIColor.systemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(Color.accentBlue.opacity(0.4), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
         .padding(.horizontal, 16)
     }
 
@@ -335,8 +400,18 @@ struct DashboardView: View {
         }()
 
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Upcoming Shifts")
-                .font(.system(size: 17, weight: .bold))
+            Button(action: onNavigateToInsights) {
+                HStack {
+                    Text("Upcoming Shifts")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chart.bar.xaxis")
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
 
             if upcoming.isEmpty {
                 VStack(spacing: 8) {

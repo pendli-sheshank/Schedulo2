@@ -195,3 +195,55 @@ describe('field lockdown', () => {
     }));
   });
 });
+
+describe('schedule-assignment notifications', () => {
+  const SHIFT = 'tshift1';
+  const notification = (overrides = {}) => ({
+    userId: MEMBER,
+    type: 'shift_assigned',
+    teamId: TEAM,
+    teamShiftId: SHIFT,
+    teamName: 'Cafe',
+    company: 'Cafe',
+    startTime: 100,
+    endTime: 200,
+    createdAt: 100,
+    read: false,
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'team_shifts', SHIFT), {
+        teamId: TEAM, assignedTo: MEMBER, assignedBy: OWNER,
+        company: 'Cafe', role: '', startTime: 100, endTime: 200,
+        hourlyRate: 15, notes: '', status: 'accepted', tasks: [],
+      });
+      await setDoc(doc(db, 'notifications', 'n1'), notification());
+    });
+  });
+
+  it('the shift assigner can create a notification for the assignee', async () => {
+    await assertSucceeds(setDoc(doc(ctxFor(OWNER), 'notifications', 'n2'), notification()));
+  });
+  it('a random user cannot create a notification (not the assigner)', async () => {
+    await assertFails(setDoc(doc(ctxFor(OUTSIDER), 'notifications', 'n2'), notification()));
+  });
+  it('the assigner cannot address the notification to someone other than the assignee', async () => {
+    await assertFails(setDoc(doc(ctxFor(OWNER), 'notifications', 'n2'), notification({ userId: OUTSIDER })));
+  });
+  it('the recipient can query their own notifications', async () => {
+    const q = query(collection(ctxFor(MEMBER), 'notifications'), where('userId', '==', MEMBER));
+    await assertSucceeds(getDocs(q));
+  });
+  it('another user cannot read someone else\'s notification', async () => {
+    await assertFails(getDoc(doc(ctxFor(OUTSIDER), 'notifications', 'n1')));
+  });
+  it('the recipient can mark it read', async () => {
+    await assertSucceeds(updateDoc(doc(ctxFor(MEMBER), 'notifications', 'n1'), { read: true }));
+  });
+  it('the recipient cannot rewrite other fields', async () => {
+    await assertFails(updateDoc(doc(ctxFor(MEMBER), 'notifications', 'n1'), { company: 'Other' }));
+  });
+});

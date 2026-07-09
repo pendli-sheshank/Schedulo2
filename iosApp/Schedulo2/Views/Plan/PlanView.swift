@@ -12,9 +12,14 @@ struct PlanView: View {
     @State private var searchQuery = ""
 
     private var filteredShifts: [Shift] {
-        if searchQuery.isEmpty { return dashboardViewModel.shifts }
-        return dashboardViewModel.shifts.filter {
-            $0.company.localizedCaseInsensitiveContains(searchQuery)
+        // Team shifts also exist as personal mirror copies (for reminders/earnings).
+        // Hide a mirror only when its team card is rendered here, so the shift shows
+        // once as "Team created plan". Mirrors from other (non-selected) teams keep
+        // rendering as personal shifts — their team cards aren't loaded.
+        let renderedTeamShiftIds = Set(myTeamShifts.map(\.id))
+        return dashboardViewModel.shifts.filter { shift in
+            (shift.teamShiftId.isEmpty || !renderedTeamShiftIds.contains(shift.teamShiftId)) &&
+                (searchQuery.isEmpty || shift.company.localizedCaseInsensitiveContains(searchQuery))
         }
     }
 
@@ -214,12 +219,12 @@ struct TeamShiftPlanCard: View {
                 HStack(spacing: 8) {
                     Text(shift.company)
                         .font(.system(size: 15, weight: .semibold))
-                    Text("TEAM")
-                        .font(.system(size: 8, weight: .bold))
+                    Text("Team created plan")
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(Color.accentOrange))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentOrange))
                 }
                 Text("\(Self.timeFormat.string(from: shift.startDate)) -> \(Self.timeFormat.string(from: shift.endDate))")
                     .font(.system(size: 12))

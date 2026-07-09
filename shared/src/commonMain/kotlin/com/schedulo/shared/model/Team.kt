@@ -104,7 +104,7 @@ data class TeamShift(
     var endTime: Long = 0,
     var hourlyRate: Double = 0.0,
     var notes: String = "",
-    var status: String = "assigned",
+    var status: String = "accepted",
     var tasks: List<ShiftTask> = emptyList()
 ) {
     val durationHours: Double

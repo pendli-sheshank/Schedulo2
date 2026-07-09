@@ -257,6 +257,27 @@ service cloud.firestore {
         && resource.data.assignedBy == request.auth.uid;
     }
 
+    // Schedule notifications: written by the shift assigner for the assignee;
+    // only the recipient can read them, flip the read flag, or delete them.
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId is string
+        && request.resource.data.type == "shift_assigned"
+        && request.resource.data.teamShiftId is string
+        && request.resource.data.company is string
+        && request.resource.data.startTime is int
+        && request.resource.data.endTime is int
+        && request.resource.data.createdAt is int
+        && request.resource.data.read == false
+        && get(/databases/$(database)/documents/team_shifts/$(request.resource.data.teamShiftId)).data.assignedBy == request.auth.uid
+        && get(/databases/$(database)/documents/team_shifts/$(request.resource.data.teamShiftId)).data.assignedTo == request.resource.data.userId;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
     // Team Messages: readable by team members; sender or owner can delete.
     match /team_messages/{messageId} {
       allow read: if isTeamMember(resource.data.teamId);

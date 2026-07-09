@@ -56,7 +56,7 @@ struct TeamShiftInfo: Identifiable, Equatable {
     var endTime: Int64 = 0
     var hourlyRate: Double = 0.0
     var notes: String = ""
-    var status: String = "assigned"
+    var status: String = "accepted"
     var tasks: [ShiftTaskInfo] = []
 
     var durationHours: Double {
@@ -218,6 +218,7 @@ final class TeamViewModel: ObservableObject {
     private var messagesListener: ListenerRegistration?
     private var swapRequestsListener: ListenerRegistration?
     private var teamTasksListener: ListenerRegistration?
+    private var scheduleNotificationsListener: ListenerRegistration?
 
     var currentUserId: String? { Auth.auth().currentUser?.uid }
     var currentUserEmail: String? { Auth.auth().currentUser?.email }
@@ -371,10 +372,18 @@ final class TeamViewModel: ObservableObject {
                         endTime: (data["endTime"] as? NSNumber)?.int64Value ?? 0,
                         hourlyRate: data["hourlyRate"] as? Double ?? 0.0,
                         notes: data["notes"] as? String ?? "",
-                        status: data["status"] as? String ?? "assigned",
+                        // Schedules are approved on assignment now; treat legacy
+                        // "assigned" docs from older builds as accepted.
+                        status: {
+                            let raw = data["status"] as? String ?? "accepted"
+                            return raw == "assigned" ? "accepted" : raw
+                        }(),
                         tasks: parsedTasks
                     )
                 }.sorted { $0.startTime > $1.startTime }
+                if let shifts = self?.teamShifts {
+                    self?.reconcilePersonalMirrors(teamShifts: shifts, teamId: teamId)
+                }
             }
     }
 
@@ -567,7 +576,7 @@ final class TeamViewModel: ObservableObject {
             "endTime": endTime,
             "hourlyRate": hourlyRate,
             "notes": notes,
-            "status": "assigned",
+            "status": "accepted",
             "tasks": tasksData
         ]
 
@@ -584,16 +593,95 @@ final class TeamViewModel: ObservableObject {
                     endTime: endTime,
                     hourlyRate: hourlyRate,
                     notes: notes,
-                    status: "assigned",
+                    status: "accepted",
                     tasks: tasks
                 )
                 self?.createPersonalShiftFromTeam(teamShift, targetUserId: memberId)
+                self?.notifyScheduleAssigned(teamShift, targetUserId: memberId)
             } else {
                 DispatchQueue.main.async {
                     self?.errorMessage = error?.localizedDescription
                 }
             }
         }
+    }
+
+    /// Writes a notifications doc so the assignee's device can surface the new schedule.
+    private func notifyScheduleAssigned(_ teamShift: TeamShiftInfo, targetUserId: String) {
+        guard let uid = currentUserId, targetUserId != uid else { return }
+        let data: [String: Any] = [
+            "userId": targetUserId,
+            "type": "shift_assigned",
+            "teamId": teamShift.teamId,
+            "teamShiftId": teamShift.id,
+            "teamName": currentTeam?.name ?? "",
+            "company": teamShift.company,
+            "startTime": teamShift.startTime,
+            "endTime": teamShift.endTime,
+            "createdAt": Int64(Date().timeIntervalSince1970 * 1000),
+            "read": false
+        ]
+        // Best-effort: the schedule itself is already saved; a failed notification
+        // write must not surface as an assignment error.
+        db.collection("notifications").document().setData(data)
+    }
+
+    /// Global listener for schedule-assignment notifications addressed to the
+    /// current user. Unlike the team listeners (which only run while a team is
+    /// selected), this runs for the whole signed-in session, so assignments land
+    /// as a device notification no matter which screen is open. A persisted
+    /// createdAt watermark stops docs from re-firing on every cold start.
+    func startScheduleNotificationsListener() {
+        guard let uid = currentUserId else { return }
+        let watermarkKey = "scheduleNotificationsLastSeen_\(uid)"
+        let defaults = UserDefaults.standard
+
+        scheduleNotificationsListener?.remove()
+        scheduleNotificationsListener = db.collection("notifications")
+            .whereField("userId", isEqualTo: uid)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let self = self, let docs = snapshot?.documents else { return }
+                // Default the watermark to "now" on first run so a fresh install
+                // doesn't replay the full history as banners.
+                if defaults.object(forKey: watermarkKey) == nil {
+                    defaults.set(Int64(Date().timeIntervalSince1970 * 1000), forKey: watermarkKey)
+                }
+                var watermark = Int64(defaults.double(forKey: watermarkKey))
+                let newDocs = docs
+                    .filter { (($0.data()["createdAt"] as? NSNumber)?.int64Value ?? 0) > watermark }
+                    .sorted { (($0.data()["createdAt"] as? NSNumber)?.int64Value ?? 0) < (($1.data()["createdAt"] as? NSNumber)?.int64Value ?? 0) }
+                for doc in newDocs {
+                    let data = doc.data()
+                    self.postScheduleNotification(
+                        teamName: data["teamName"] as? String ?? "",
+                        company: data["company"] as? String ?? "",
+                        startTime: (data["startTime"] as? NSNumber)?.int64Value ?? 0,
+                        endTime: (data["endTime"] as? NSNumber)?.int64Value ?? 0
+                    )
+                    watermark = max(watermark, (data["createdAt"] as? NSNumber)?.int64Value ?? 0)
+                }
+                if !newDocs.isEmpty {
+                    defaults.set(Double(watermark), forKey: watermarkKey)
+                }
+            }
+    }
+
+    private func postScheduleNotification(teamName: String, company: String, startTime: Int64, endTime: Int64) {
+        let startDate = Date(timeIntervalSince1970: Double(startTime) / 1000.0)
+        let endDate = Date(timeIntervalSince1970: Double(endTime) / 1000.0)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEE, MMM dd · h:mm a"
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "h:mm a"
+        let sameDay = Calendar.current.isDate(startDate, inSameDayAs: endDate)
+        let endLabel = sameDay ? timeFormatter.string(from: endDate) : dateFormatter.string(from: endDate)
+
+        let content = UNMutableNotificationContent()
+        content.title = teamName.isEmpty ? "New shift scheduled" : "New shift scheduled — \(teamName)"
+        content.body = "\(company): \(dateFormatter.string(from: startDate)) – \(endLabel)"
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     func toggleTaskCompletion(shiftId: String, taskId: String) {
@@ -640,13 +728,50 @@ final class TeamViewModel: ObservableObject {
             "notes": "Team shift: \(teamShift.notes)".trimmingCharacters(in: .whitespaces),
             "bonusApplied": false,
             "bonusAmount": 0.0,
-            "teamShiftId": teamShift.id
+            "teamShiftId": teamShift.id,
+            "teamId": teamShift.teamId
         ]
-        db.collection("shifts").document(UUID().uuidString).setData(shiftData) { [weak self] error in
+        // Deterministic doc id so concurrent mirror creation (assign + reconcile,
+        // or two devices) collapses into one document instead of duplicates.
+        db.collection("shifts").document("team_\(teamShift.id)").setData(shiftData) { [weak self] error in
             if let error = error {
                 DispatchQueue.main.async {
                     self?.errorMessage = error.localizedDescription
                 }
+            }
+        }
+    }
+
+    /// Keeps the current user's personal mirror copies in sync with the selected
+    /// team's shifts. Swaps only update team_shifts (assignedTo/hourlyRate), so
+    /// without this the old assignee keeps a stale mirror and the new assignee
+    /// never gets one. Operates only on the user's own docs (rules-compatible)
+    /// and only on mirrors tied to this team, so other teams' mirrors are untouched.
+    private func reconcilePersonalMirrors(teamShifts: [TeamShiftInfo], teamId: String) {
+        guard let uid = currentUserId else { return }
+        let shiftsById = Dictionary(uniqueKeysWithValues: teamShifts.map { ($0.id, $0) })
+
+        db.collection("shifts").whereField("userId", isEqualTo: uid).getDocuments { [weak self] snapshot, _ in
+            guard let self = self, let docs = snapshot?.documents else { return }
+            let mirrors = docs.filter { !(($0.data()["teamShiftId"] as? String) ?? "").isEmpty }
+            let mirroredTeamShiftIds = Set(mirrors.compactMap { $0.data()["teamShiftId"] as? String })
+
+            for doc in mirrors {
+                let data = doc.data()
+                guard let teamShiftId = data["teamShiftId"] as? String else { continue }
+                let teamShift = shiftsById[teamShiftId]
+                let mirrorTeamId = data["teamId"] as? String ?? ""
+                let orphaned = teamShift == nil && mirrorTeamId == teamId
+                let reassigned = teamShift != nil && teamShift?.assignedTo != uid
+                if orphaned || reassigned {
+                    doc.reference.delete()
+                    NotificationService.shared.cancelReminder(shiftId: doc.documentID)
+                }
+            }
+
+            for teamShift in teamShifts
+            where teamShift.assignedTo == uid && teamShift.status != "declined" && !mirroredTeamShiftIds.contains(teamShift.id) {
+                self.createPersonalShiftFromTeam(teamShift, targetUserId: uid)
             }
         }
     }
@@ -1236,21 +1361,6 @@ final class TeamViewModel: ObservableObject {
         }
     }
 
-    func updateShiftStatus(shiftId: String, newStatus: String) {
-        let previous = teamShifts
-        if let idx = teamShifts.firstIndex(where: { $0.id == shiftId }) {
-            teamShifts[idx].status = newStatus
-        }
-        db.collection("team_shifts").document(shiftId).updateData(["status": newStatus]) { [weak self] error in
-            if let error = error {
-                DispatchQueue.main.async {
-                    self?.teamShifts = previous
-                    self?.errorMessage = "Failed to update shift status: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
     func leaveTeam(teamId: String) {
         guard let uid = currentUserId else { return }
         db.collection("team_members")
@@ -1286,6 +1396,7 @@ final class TeamViewModel: ObservableObject {
         messagesListener?.remove(); messagesListener = nil
         swapRequestsListener?.remove(); swapRequestsListener = nil
         teamTasksListener?.remove(); teamTasksListener = nil
+        scheduleNotificationsListener?.remove(); scheduleNotificationsListener = nil
 
         teams = []
         currentTeam = nil
@@ -1308,6 +1419,7 @@ final class TeamViewModel: ObservableObject {
         messagesListener?.remove()
         swapRequestsListener?.remove()
         teamTasksListener?.remove()
+        scheduleNotificationsListener?.remove()
     }
 
     private func generateInviteCode() -> String {
