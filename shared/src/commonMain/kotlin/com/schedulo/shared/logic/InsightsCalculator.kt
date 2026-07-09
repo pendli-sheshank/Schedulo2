@@ -1,6 +1,8 @@
 package com.schedulo.shared.logic
 
+import com.schedulo.shared.model.PeriodSummary
 import com.schedulo.shared.model.Shift
+import com.schedulo.shared.model.UpcomingProjection
 import com.schedulo.shared.model.WeekSummary
 import kotlinx.datetime.*
 
@@ -48,3 +50,52 @@ fun getEarningsByEmployer(
         .mapValues { (_, shifts) -> shifts.sumOf { it.totalEarned } }
         .toList().sortedByDescending { it.second }.toMap()
 }
+
+// Calendar-month buckets of completed earnings, oldest first (mirrors the
+// weekly summary but for the Insights monthly view).
+fun getMonthlyEarningsSummary(
+    shifts: List<Shift>,
+    months: Int = 6,
+    nowMillis: Long = Clock.System.now().toEpochMilliseconds()
+): List<PeriodSummary> {
+    val completedShifts = shifts.filter { it.startTime < nowMillis }
+    val tz = TimeZone.currentSystemDefault()
+    val today = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(tz).date
+
+    return (0 until months).map { offset ->
+        val firstOfMonth = LocalDate(today.year, today.month, 1).minus(offset, DateTimeUnit.MONTH)
+        val firstOfNext = firstOfMonth.plus(1, DateTimeUnit.MONTH)
+        val start = firstOfMonth.atStartOfDayIn(tz).toEpochMilliseconds()
+        val end = firstOfNext.atStartOfDayIn(tz).toEpochMilliseconds()
+
+        val monthShifts = completedShifts.filter { it.startTime in start until end }
+        val label = firstOfMonth.month.name.take(3).lowercase()
+            .replaceFirstChar { it.uppercase() }
+
+        PeriodSummary(
+            periodStart = start,
+            periodEnd = end,
+            label = label,
+            hours = monthShifts.sumOf { it.durationHours },
+            earnings = monthShifts.sumOf { it.totalEarned },
+            shiftCount = monthShifts.size
+        )
+    }.reversed()
+}
+
+// Projected earnings for shifts that haven't started yet.
+fun getUpcomingEarningsProjection(
+    shifts: List<Shift>,
+    nowMillis: Long = Clock.System.now().toEpochMilliseconds()
+): UpcomingProjection {
+    val upcoming = shifts.filter { it.startTime >= nowMillis }
+    return UpcomingProjection(
+        earnings = upcoming.sumOf { it.totalEarned },
+        hours = upcoming.sumOf { it.durationHours },
+        shiftCount = upcoming.size,
+        nextShiftStart = upcoming.minOfOrNull { it.startTime }
+    )
+}
+
+fun getShiftsInPeriod(shifts: List<Shift>, start: Long, end: Long): List<Shift> =
+    shifts.filter { it.startTime in start until end }.sortedByDescending { it.startTime }

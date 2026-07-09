@@ -108,7 +108,8 @@ fun MainLayout(
                         launchSingleTop = true
                         restoreState = true
                     }
-                }
+                },
+                onNavigateToInsights = { navController.navigate("insights") }
             )
             "plan" -> PlanScreen(
                 modifier = Modifier.padding(innerPadding),
@@ -236,6 +237,11 @@ fun PlanScreen(
     val myTeamShifts = remember(teamShifts, currentUserId) {
         teamShifts.filter { it.assignedTo == currentUserId && it.status != "declined" }
     }
+    // Team shifts also exist as personal mirror copies (for reminders/earnings).
+    // Hide a mirror only when its team card is rendered here, so the shift shows
+    // once as "Team created plan". Mirrors from other (non-selected) teams keep
+    // rendering as personal shifts — their team cards aren't loaded.
+    val renderedTeamShiftIds = remember(myTeamShifts) { myTeamShifts.map { it.id }.toSet() }
 
     var viewMode by remember { mutableStateOf("Month") }
     var selectedDate by remember {
@@ -245,9 +251,11 @@ fun PlanScreen(
     }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredShifts = remember(shifts, searchQuery) {
-        if (searchQuery.isBlank()) shifts
-        else shifts.filter { it.company.contains(searchQuery, ignoreCase = true) }
+    val filteredShifts = remember(shifts, searchQuery, renderedTeamShiftIds) {
+        shifts.filter { shift ->
+            (shift.teamShiftId.isEmpty() || shift.teamShiftId !in renderedTeamShiftIds) &&
+                (searchQuery.isBlank() || shift.company.contains(searchQuery, ignoreCase = true))
+        }
     }
 
     PullToRefreshBox(
@@ -945,8 +953,8 @@ private fun TeamShiftPlanCard(shift: TeamShift, timeFormat: SimpleDateFormat, mo
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(shift.company, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Surface(shape = RoundedCornerShape(3.dp), color = AccentOrange) {
-                        Text("TEAM", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp))
+                    Surface(shape = RoundedCornerShape(4.dp), color = AccentOrange) {
+                        Text("Team created plan", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                     }
                 }
                 Spacer(modifier = Modifier.height(2.dp))

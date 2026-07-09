@@ -20,6 +20,9 @@ struct Shift: Identifiable, Codable, Equatable {
     var notes: String = ""
     var bonusApplied: Bool = false
     var bonusAmount: Double = 0.0
+    // Set when this shift is a personal mirror of a team_shifts doc; the Plan
+    // calendar hides mirrors so the team card is the only one rendered.
+    var teamShiftId: String = ""
 
     var durationHours: Double {
         guard endTime > startTime else { return 0.0 }
@@ -342,7 +345,8 @@ final class FirebaseService {
                         isPaid: data["isPaid"] as? Bool ?? false,
                         notes: data["notes"] as? String ?? "",
                         bonusApplied: data["bonusApplied"] as? Bool ?? false,
-                        bonusAmount: data["bonusAmount"] as? Double ?? 0.0
+                        bonusAmount: data["bonusAmount"] as? Double ?? 0.0,
+                        teamShiftId: data["teamShiftId"] as? String ?? ""
                     )
                 }.sorted { $0.startTime > $1.startTime }
                 self?.shiftsSubject.send(shifts)
@@ -383,7 +387,7 @@ final class FirebaseService {
     }
 
     private func shiftToDict(_ s: Shift) -> [String: Any] {
-        return [
+        var dict: [String: Any] = [
             "id": s.id,
             "userId": s.userId,
             "company": s.company,
@@ -399,6 +403,10 @@ final class FirebaseService {
             "bonusApplied": s.bonusApplied,
             "bonusAmount": s.bonusAmount
         ]
+        if !s.teamShiftId.isEmpty {
+            dict["teamShiftId"] = s.teamShiftId
+        }
+        return dict
     }
 
     // MARK: - Jobs

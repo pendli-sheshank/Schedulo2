@@ -135,10 +135,7 @@ private struct TeamShiftCardView: View {
             if !shift.tasks.isEmpty {
                 tasksSection
             }
-            if isMyShift && shift.status == "assigned" {
-                acceptDeclineButtons
-            }
-            if isMyShift && (shift.status == "accepted" || shift.status == "assigned") {
+            if isMyShift && shift.status == "accepted" {
                 swapButton
             }
         }
@@ -195,46 +192,6 @@ private struct TeamShiftCardView: View {
         .padding(.top, 4)
     }
 
-    private var acceptDeclineButtons: some View {
-        HStack(spacing: 8) {
-            Button(action: {
-                teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "accepted")
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Accept")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primaryGreen))
-            }
-            .buttonStyle(.plain)
-
-            Button(action: {
-                teamViewModel.updateShiftStatus(shiftId: shift.id, newStatus: "declined")
-            }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Decline")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .foregroundColor(.red)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.red, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.top, 6)
-    }
-
     private var swapButton: some View {
         Button(action: { onRequestSwap?() }) {
             HStack(spacing: 4) {
@@ -284,7 +241,7 @@ struct SwapPickerView: View {
         return teamViewModel.teamShifts.filter {
             $0.assignedTo != teamViewModel.currentUserId &&
             $0.id != source.id &&
-            ($0.status == "accepted" || $0.status == "assigned")
+            $0.status == "accepted"
         }
     }
 

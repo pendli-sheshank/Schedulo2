@@ -90,8 +90,16 @@ class MainActivity : FragmentActivity() {
                         description = "Team chat message notifications"
                         enableVibration(true)
                     }
-                    androidx.core.app.NotificationManagerCompat.from(this@MainActivity)
-                        .createNotificationChannel(channel)
+                    val scheduleChannel = android.app.NotificationChannel(
+                        "team_schedule", "Team Schedule", android.app.NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "New team schedule assignment notifications"
+                        enableVibration(true)
+                    }
+                    androidx.core.app.NotificationManagerCompat.from(this@MainActivity).apply {
+                        createNotificationChannel(channel)
+                        createNotificationChannel(scheduleChannel)
+                    }
                 }
 
                 teamViewModel.chatNotificationCallback = { sender, body ->
@@ -119,6 +127,47 @@ class MainActivity : FragmentActivity() {
                             nm.notify(System.currentTimeMillis().toInt(), notification)
                         } catch (_: SecurityException) { }
                     }
+                }
+
+                teamViewModel.scheduleNotificationCallback = { teamName, company, startTime, endTime ->
+                    val dateFormat = java.text.SimpleDateFormat("EEE, MMM dd · h:mm a", java.util.Locale.US)
+                    val timeFormat = java.text.SimpleDateFormat("h:mm a", java.util.Locale.US)
+                    val dayStamp = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                    val sameDay = dayStamp.format(java.util.Date(startTime)) == dayStamp.format(java.util.Date(endTime))
+                    val endLabel = if (sameDay) timeFormat.format(java.util.Date(endTime))
+                        else dateFormat.format(java.util.Date(endTime))
+                    val body = "$company: ${dateFormat.format(java.util.Date(startTime))} – $endLabel"
+                    val openIntent = android.content.Intent(this@MainActivity, MainActivity::class.java).apply {
+                        flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    }
+                    val pendingIntent = android.app.PendingIntent.getActivity(
+                        this@MainActivity, 1, openIntent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                    )
+                    val notification = androidx.core.app.NotificationCompat.Builder(this@MainActivity, "team_schedule")
+                        .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
+                        .setContentTitle(if (teamName.isBlank()) "New shift scheduled" else "New shift scheduled — $teamName")
+                        .setContentText(body)
+                        .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
+                        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                        .setCategory(androidx.core.app.NotificationCompat.CATEGORY_EVENT)
+                        .setAutoCancel(true)
+                        .setContentIntent(pendingIntent)
+                        .build()
+                    val nm2 = androidx.core.app.NotificationManagerCompat.from(this@MainActivity)
+                    if (nm2.areNotificationsEnabled()) {
+                        try {
+                            nm2.notify(System.currentTimeMillis().toInt(), notification)
+                        } catch (_: SecurityException) { }
+                    }
+                }
+            }
+
+            // (Re)attach the schedule-notifications listener whenever the signed-in
+            // user changes — a listener started before login has no uid to watch.
+            LaunchedEffect(authState) {
+                if (authState is AuthState.Authenticated) {
+                    teamViewModel.startScheduleNotificationsListener(this@MainActivity)
                 }
             }
             val themeMode by dashboardViewModel.themeMode.collectAsState()
@@ -269,7 +318,8 @@ fun DashboardScreen(
     onNavigateToLogin: (() -> Unit)? = null,
     onEditShift: (String) -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
-    onNavigateToPay: () -> Unit = {}
+    onNavigateToPay: () -> Unit = {},
+    onNavigateToInsights: () -> Unit = {}
 ) {
     val shifts by dashboardViewModel?.shifts?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
     val jobs by dashboardViewModel?.jobs?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList()) }
@@ -487,7 +537,26 @@ fun DashboardScreen(
             contentPadding = PaddingValues(top = 12.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item { EarningsAndHoursCard(totalEarned, totalHours, weekShifts.size, onNavigateToPay) }
+            item {
+                EarningsAndHoursCard(
+                    totalEarned, totalHours, weekShifts.size,
+                    onNavigateToPay = onNavigateToPay,
+                    onClick = onNavigateToInsights
+                )
+            }
+
+            if (weekOffset == 0) {
+                item {
+                    val upcomingShifts = shifts.filter { it.startTime >= now }
+                    UpcomingEarningsCard(
+                        projectedEarnings = upcomingShifts.sumOf { it.totalEarned },
+                        projectedHours = upcomingShifts.sumOf { it.durationHours },
+                        shiftCount = upcomingShifts.size,
+                        nextShiftStart = upcomingShifts.minOfOrNull { it.startTime },
+                        onClick = onNavigateToInsights
+                    )
+                }
+            }
 
             if (jobs.isNotEmpty()) {
                 item {
@@ -499,12 +568,19 @@ fun DashboardScreen(
                     )
                 }
                 items(jobs) { job ->
-                    JobGoalTrackerCard(job, shifts, weekOffset)
+                    Box(
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onNavigateToInsights() }
+                    ) {
+                        JobGoalTrackerCard(job, shifts, weekOffset)
+                    }
                 }
             }
 
             if (weekOffset == 0) {
-                item { UpcomingShiftsSection(shifts, onEditShift) }
+                item { UpcomingShiftsSection(shifts, onEditShift, onHeaderClick = onNavigateToInsights) }
             }
         }
         }
@@ -517,12 +593,20 @@ fun DashboardScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EarningsAndHoursCard(totalEarned: Double, totalHours: Double, shiftCount: Int, onNavigateToPay: () -> Unit = {}) {
+fun EarningsAndHoursCard(
+    totalEarned: Double,
+    totalHours: Double,
+    shiftCount: Int,
+    onNavigateToPay: () -> Unit = {},
+    onClick: () -> Unit = {}
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        onClick = onClick
     ) {
         Box(
             modifier = Modifier
@@ -543,7 +627,7 @@ fun EarningsAndHoursCard(totalEarned: Double, totalHours: Double, shiftCount: In
                 ) {
                     Column {
                         Text(
-                            "Weekly Earnings",
+                            "This Week's Earnings",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color.White.copy(alpha = 0.7f)
@@ -606,6 +690,67 @@ fun EarningsAndHoursCard(totalEarned: Double, totalHours: Double, shiftCount: In
                     )
                 }
             }
+        }
+    }
+}
+
+// Projected money from shifts that haven't started yet. Deliberately a separate,
+// visually distinct card from "This Week's Earnings" so projections are never
+// mistaken for money already earned.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UpcomingEarningsCard(
+    projectedEarnings: Double,
+    projectedHours: Double,
+    shiftCount: Int,
+    nextShiftStart: Long?,
+    onClick: () -> Unit = {}
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, AccentBlue.copy(alpha = 0.4f)),
+        onClick = onClick
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column {
+                    Text(
+                        "Upcoming Earnings",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Est. $${"%.2f".format(projectedEarnings)}",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentBlue,
+                        letterSpacing = (-1).sp
+                    )
+                }
+                Icon(
+                    Icons.Default.Insights,
+                    contentDescription = "Earnings insights",
+                    tint = AccentBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            val nextLabel = nextShiftStart?.let {
+                "Next shift ${java.text.SimpleDateFormat("EEE, MMM dd · h:mm a", Locale.US).format(java.util.Date(it))}"
+            } ?: "No upcoming shifts scheduled"
+            Text(
+                "$shiftCount scheduled · ${"%.1f".format(projectedHours)}h · $nextLabel",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -793,17 +938,38 @@ fun JobGoalTrackerCard(job: Job, shifts: List<Shift>, weekOffset: Int = 0) {
 }
 
 @Composable
-fun UpcomingShiftsSection(shifts: List<Shift> = emptyList(), onEditShift: (String) -> Unit = {}) {
+fun UpcomingShiftsSection(
+    shifts: List<Shift> = emptyList(),
+    onEditShift: (String) -> Unit = {},
+    onHeaderClick: () -> Unit = {}
+) {
     val now = System.currentTimeMillis()
     val upcomingShifts = shifts.filter { it.startTime >= now }.sortedBy { it.startTime }.take(5)
     val timeFormat = remember { java.text.SimpleDateFormat("EEE, MMM dd · h:mm a", java.util.Locale.US) }
 
     Column(modifier = Modifier.padding(top = 4.dp)) {
-        Text(
-            "Upcoming Shifts",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onBackground
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onHeaderClick() },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Upcoming Shifts",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Icon(
+                Icons.Default.Insights,
+                contentDescription = "Earnings insights",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
         if (upcomingShifts.isEmpty()) {

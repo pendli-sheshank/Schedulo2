@@ -121,12 +121,58 @@ class TeamViewModel : ViewModel() {
     private var messagesListener: ListenerRegistration? = null
     private var swapRequestsListener: ListenerRegistration? = null
     private var teamTasksListener: ListenerRegistration? = null
+    private var scheduleNotificationsListener: ListenerRegistration? = null
 
     private val storage by lazy { try { FirebaseStorage.getInstance() } catch (e: Exception) { null } }
     private val _isUploadingImage = MutableStateFlow(false)
     val isUploadingImage = _isUploadingImage.asStateFlow()
 
     var chatNotificationCallback: ((String, String) -> Unit)? = null
+
+    /** (teamName, company, startTime, endTime) for a newly assigned schedule. */
+    var scheduleNotificationCallback: ((String, String, Long, Long) -> Unit)? = null
+
+    /**
+     * Global listener for schedule-assignment notifications addressed to the
+     * current user. Unlike the team listeners (which only run while a team is
+     * selected), this runs for the whole signed-in session, so assignments land
+     * as a device notification no matter which screen is open. A persisted
+     * createdAt watermark stops docs from re-firing on every cold start.
+     */
+    fun startScheduleNotificationsListener(context: android.content.Context) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val prefs = context.getSharedPreferences("schedule_notifications", android.content.Context.MODE_PRIVATE)
+        val watermarkKey = "last_seen_$uid"
+
+        scheduleNotificationsListener?.remove()
+        scheduleNotificationsListener = database.collection("notifications")
+            .whereEqualTo("userId", uid)
+            .addSnapshotListener { value, error ->
+                if (error != null || value == null) return@addSnapshotListener
+                // Default the watermark to "now" on first run so a fresh install
+                // doesn't replay the full history as banners.
+                var watermark = prefs.getLong(watermarkKey, System.currentTimeMillis())
+                if (!prefs.contains(watermarkKey)) {
+                    prefs.edit().putLong(watermarkKey, watermark).apply()
+                }
+                val newDocs = value.documents
+                    .filter { (it.getLong("createdAt") ?: 0L) > watermark }
+                    .sortedBy { it.getLong("createdAt") ?: 0L }
+                newDocs.forEach { doc ->
+                    scheduleNotificationCallback?.invoke(
+                        doc.getString("teamName") ?: "",
+                        doc.getString("company") ?: "",
+                        doc.getLong("startTime") ?: 0L,
+                        doc.getLong("endTime") ?: 0L
+                    )
+                    watermark = maxOf(watermark, doc.getLong("createdAt") ?: 0L)
+                }
+                if (newDocs.isNotEmpty()) {
+                    prefs.edit().putLong(watermarkKey, watermark).apply()
+                }
+            }
+    }
 
     fun clearError() {
         _errorMessage.value = null
@@ -304,10 +350,14 @@ class TeamViewModel : ViewModel() {
                             endTime = doc.getLong("endTime") ?: 0,
                             hourlyRate = doc.getDouble("hourlyRate") ?: 0.0,
                             notes = doc.getString("notes") ?: "",
-                            status = doc.getString("status") ?: "assigned",
+                            // Schedules are approved on assignment now; treat legacy
+                            // "assigned" docs from older builds as accepted.
+                            status = (doc.getString("status") ?: "accepted")
+                                .let { if (it == "assigned") "accepted" else it },
                             tasks = tasks
                         )
                     }.sortedByDescending { it.startTime }
+                    reconcilePersonalMirrors(_teamShifts.value, team.id)
                 }
             }
 
@@ -649,7 +699,7 @@ class TeamViewModel : ViewModel() {
             "endTime" to endTime,
             "hourlyRate" to hourlyRate,
             "notes" to notes.trim(),
-            "status" to "assigned",
+            "status" to "accepted",
             "tasks" to tasksList
         )
 
@@ -667,14 +717,37 @@ class TeamViewModel : ViewModel() {
                     endTime = endTime,
                     hourlyRate = hourlyRate,
                     notes = notes.trim(),
-                    status = "assigned",
+                    status = "accepted",
                     tasks = tasks
                 )
                 createPersonalShiftFromTeam(teamShift, memberId)
+                notifyScheduleAssigned(teamShift, memberId, team.name)
             }
             .addOnFailureListener { e ->
                 _errorMessage.value = "Failed to assign shift: ${e.message}"
             }
+    }
+
+    /** Writes a notifications doc so the assignee's device can surface the new schedule. */
+    private fun notifyScheduleAssigned(teamShift: TeamShift, targetUserId: String, teamName: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        if (targetUserId == uid) return // no point notifying yourself
+        val notificationData = hashMapOf(
+            "userId" to targetUserId,
+            "type" to "shift_assigned",
+            "teamId" to teamShift.teamId,
+            "teamShiftId" to teamShift.id,
+            "teamName" to teamName,
+            "company" to teamShift.company,
+            "startTime" to teamShift.startTime,
+            "endTime" to teamShift.endTime,
+            "createdAt" to System.currentTimeMillis(),
+            "read" to false
+        )
+        // Best-effort: the schedule itself is already saved; a failed notification
+        // write must not surface as an assignment error.
+        database.collection("notifications").document().set(notificationData)
     }
 
     private fun createPersonalShiftFromTeam(teamShift: TeamShift, targetUserId: String) {
@@ -693,12 +766,53 @@ class TeamViewModel : ViewModel() {
             "notes" to "Team shift: ${teamShift.notes}".trim(),
             "bonusApplied" to false,
             "bonusAmount" to 0.0,
-            "teamShiftId" to teamShift.id
+            "teamShiftId" to teamShift.id,
+            "teamId" to teamShift.teamId
         )
-        database.collection("shifts").document()
+        // Deterministic doc id so concurrent mirror creation (assign + reconcile,
+        // or two devices) collapses into one document instead of duplicates.
+        database.collection("shifts").document("team_${teamShift.id}")
             .set(shiftData)
             .addOnFailureListener { e ->
                 _errorMessage.value = "Failed to create personal shift: ${e.message}"
+            }
+    }
+
+    /**
+     * Keeps the current user's personal mirror copies in sync with the selected
+     * team's shifts. Swaps only update team_shifts (assignedTo/hourlyRate), so
+     * without this the old assignee keeps a stale mirror and the new assignee
+     * never gets one. Operates only on the user's own docs (rules-compatible)
+     * and only on mirrors tied to this team, so other teams' mirrors are untouched.
+     */
+    private fun reconcilePersonalMirrors(teamShifts: List<TeamShift>, teamId: String) {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        val shiftsById = teamShifts.associateBy { it.id }
+
+        database.collection("shifts").whereEqualTo("userId", uid).get()
+            .addOnSuccessListener { snapshot ->
+                val mirrors = snapshot.documents.filter {
+                    !it.getString("teamShiftId").isNullOrEmpty()
+                }
+                val mirroredTeamShiftIds = mirrors.mapNotNull { it.getString("teamShiftId") }.toSet()
+
+                mirrors.forEach { doc ->
+                    val teamShiftId = doc.getString("teamShiftId") ?: return@forEach
+                    val teamShift = shiftsById[teamShiftId]
+                    val mirrorTeamId = doc.getString("teamId") ?: ""
+                    val orphaned = teamShift == null && mirrorTeamId == teamId
+                    val reassigned = teamShift != null && teamShift.assignedTo != uid
+                    if (orphaned || reassigned) {
+                        doc.reference.delete()
+                        val ctx = try { FirebaseApp.getInstance().applicationContext } catch (_: Exception) { null }
+                        ctx?.let { try { NotificationHelper.cancelReminder(it, doc.id) } catch (_: Exception) {} }
+                    }
+                }
+
+                teamShifts
+                    .filter { it.assignedTo == uid && it.status != "declined" && it.id !in mirroredTeamShiftIds }
+                    .forEach { createPersonalShiftFromTeam(it, uid) }
             }
     }
 
@@ -1134,20 +1248,6 @@ class TeamViewModel : ViewModel() {
             }
     }
 
-    fun updateShiftStatus(shiftId: String, newStatus: String) {
-        val database = db ?: return
-        val previousShifts = _teamShifts.value
-        _teamShifts.value = _teamShifts.value.map {
-            if (it.id == shiftId) it.copy(status = newStatus) else it
-        }
-        database.collection("team_shifts").document(shiftId)
-            .update("status", newStatus)
-            .addOnFailureListener { e ->
-                _teamShifts.value = previousShifts
-                _errorMessage.value = "Failed to update shift status: ${e.message}"
-            }
-    }
-
     fun requestSwap(myShiftId: String, targetMemberId: String, targetShiftId: String) {
         val uid = auth?.currentUser?.uid ?: return
         val database = db ?: return
@@ -1334,5 +1434,6 @@ class TeamViewModel : ViewModel() {
         messagesListener?.remove()
         swapRequestsListener?.remove()
         teamTasksListener?.remove()
+        scheduleNotificationsListener?.remove()
     }
 }

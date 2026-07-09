@@ -8,6 +8,23 @@ data class WeekSummary(
     val shiftCount: Int
 )
 
+// Generic earnings bucket for the Insights chart — a calendar week or month.
+data class PeriodSummary(
+    val periodStart: Long,
+    val periodEnd: Long,
+    val label: String,
+    val hours: Double,
+    val earnings: Double,
+    val shiftCount: Int
+)
+
+data class UpcomingProjection(
+    val earnings: Double,
+    val hours: Double,
+    val shiftCount: Int,
+    val nextShiftStart: Long? = null
+)
+
 data class PayCycleOption(
     val cycleStart: Long,
     val cycleEnd: Long,

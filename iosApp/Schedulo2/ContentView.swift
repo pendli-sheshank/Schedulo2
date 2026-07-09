@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var dashboardViewModel: DashboardViewModel
+    @EnvironmentObject var teamViewModel: TeamViewModel
 
     var body: some View {
         Group {
@@ -19,6 +20,7 @@ struct ContentView: View {
                     ))
                     .onAppear {
                         dashboardViewModel.loadShifts()
+                        teamViewModel.startScheduleNotificationsListener()
                     }
             } else {
                 LoginView()
