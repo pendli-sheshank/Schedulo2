@@ -46,12 +46,15 @@ struct DashboardView: View {
         return prefix.count >= 2 ? String(prefix.prefix(2)).uppercased() : prefix.uppercased().isEmpty ? "U" : prefix.uppercased()
     }
 
+    // Fiscal pay week (per-job weeklyCycleStartDay), not a calendar week —
+    // e.g. a Friday start groups Fri–Thu into one payroll cycle.
     private func weekStart(for offset: Int) -> Date {
         let cal = Calendar.current
-        var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
-        comps.weekday = 2 // Monday
-        let thisMonday = cal.date(from: comps) ?? Date()
-        return cal.date(byAdding: .weekOfYear, value: offset, to: thisMonday) ?? thisMonday
+        let anchor = dashboardViewModel.startOfWeek(
+            containing: Date(),
+            weekStartDay: dashboardViewModel.resolveGlobalWeekStartDay()
+        )
+        return cal.date(byAdding: .weekOfYear, value: offset, to: anchor) ?? anchor
     }
 
     private func weekRangeLabel(for offset: Int) -> String {

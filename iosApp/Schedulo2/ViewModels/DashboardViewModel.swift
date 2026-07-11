@@ -182,8 +182,9 @@ final class DashboardViewModel: ObservableObject {
             defaults.set(0, forKey: "nextShiftEnd")
         }
 
-        let calendar = Calendar.current
-        let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+        // Widget totals use the same fiscal pay week as the app, not the
+        // device locale's calendar week.
+        let weekStart = startOfWeek(containing: now, weekStartDay: resolveGlobalWeekStartDay())
         let weekShifts = shifts.filter { $0.startDate >= weekStart && $0.startDate <= now.addingTimeInterval(7 * 86400) }
         defaults.set(weekShifts.reduce(0.0) { $0 + $1.totalEarned }, forKey: "weeklyEarnings")
         defaults.set(weekShifts.reduce(0.0) { $0 + $1.durationHours }, forKey: "weeklyHours")
@@ -531,13 +532,10 @@ final class DashboardViewModel: ObservableObject {
         let weekFmt = DateFormatter(); weekFmt.dateFormat = "MMM dd"
         var weeks = Set<Int64>()
 
+        let anchor = startOfWeek(containing: now, weekStartDay: resolveGlobalWeekStartDay())
         for offset in -8...4 {
-            var comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-            comps.weekday = 2 // Monday
-            guard var monday = calendar.date(from: comps) else { continue }
-            monday = calendar.date(byAdding: .weekOfYear, value: offset, to: monday)!
-            monday = calendar.startOfDay(for: monday)
-            weeks.insert(Int64(monday.timeIntervalSince1970 * 1000))
+            guard let weekStart = calendar.date(byAdding: .weekOfYear, value: offset, to: anchor) else { continue }
+            weeks.insert(Int64(calendar.startOfDay(for: weekStart).timeIntervalSince1970 * 1000))
         }
 
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
@@ -627,6 +625,36 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Fiscal week start
+
+    // Payroll weeks are per-job fiscal weeks (job.weeklyCycleStartDay), never
+    // calendar/locale weeks. For views that aggregate across jobs, use the most
+    // common weeklyCycleStartDay among non-gig jobs, ties broken by earliest
+    // day (Sunday first), Monday when there are no non-gig jobs. Deterministic
+    // regardless of Firestore result order.
+    func resolveGlobalWeekStartDay() -> String {
+        let dayOrder = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        var counts: [String: Int] = [:]
+        for job in jobs where !job.isGigWork {
+            let raw = job.weeklyCycleStartDay ?? "Monday"
+            let day = dayOrder.first { $0.caseInsensitiveCompare(raw) == .orderedSame } ?? "Monday"
+            counts[day, default: 0] += 1
+        }
+        guard let maxCount = counts.values.max() else { return "Monday" }
+        return dayOrder.first { counts[$0] == maxCount } ?? "Monday"
+    }
+
+    // Start-of-day of the most recent weekStartDay on or before the given date.
+    func startOfWeek(containing date: Date, weekStartDay: String) -> Date {
+        let calendar = Calendar.current
+        let targetWeekday = dayOfWeekNumber(from: weekStartDay)
+        var day = calendar.startOfDay(for: date)
+        while calendar.component(.weekday, from: day) != targetWeekday {
+            day = calendar.date(byAdding: .day, value: -1, to: day)!
+        }
+        return day
+    }
+
     // MARK: - Insights
 
     func getWeeklyEarningsSummary(weeks: Int = 8) -> [WeekSummary] {
@@ -636,21 +664,21 @@ final class DashboardViewModel: ObservableObject {
         let completedShifts = shifts.filter { $0.startTime < nowMs }
         let weekFmt = DateFormatter(); weekFmt.dateFormat = "MMM dd"
 
+        // Fiscal pay weeks anchored to the jobs' weeklyCycleStartDay (e.g.
+        // "Friday" = Fri–Thu cycles), not calendar weeks.
+        let anchor = startOfWeek(containing: now, weekStartDay: resolveGlobalWeekStartDay())
         return (0..<weeks).map { offset in
-            var comps = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-            comps.weekday = 2 // Monday
-            guard var monday = calendar.date(from: comps) else {
+            guard var weekStartDate = calendar.date(byAdding: .weekOfYear, value: -offset, to: anchor) else {
                 return WeekSummary(weekStart: 0, label: "", hours: 0, earnings: 0, shiftCount: 0)
             }
-            monday = calendar.date(byAdding: .weekOfYear, value: -offset, to: monday)!
-            monday = calendar.startOfDay(for: monday)
-            let weekStart = Int64(monday.timeIntervalSince1970 * 1000)
+            weekStartDate = calendar.startOfDay(for: weekStartDate)
+            let weekStart = Int64(weekStartDate.timeIntervalSince1970 * 1000)
             let weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000
 
             let weekShifts = completedShifts.filter { $0.startTime >= weekStart && $0.startTime < weekEnd }
             return WeekSummary(
                 weekStart: weekStart,
-                label: weekFmt.string(from: monday),
+                label: weekFmt.string(from: weekStartDate),
                 hours: weekShifts.reduce(0) { $0 + $1.durationHours },
                 earnings: weekShifts.reduce(0) { $0 + $1.totalEarned },
                 shiftCount: weekShifts.count
