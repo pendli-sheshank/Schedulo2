@@ -4,30 +4,23 @@ import android.content.Context
 import android.util.Log
 import androidx.glance.appwidget.updateAll
 import com.example.Shift
+import com.example.startOfWeekContaining
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 object WidgetDataProvider {
 
     private const val TAG = "WidgetDataProvider"
 
-    fun updateWidgetData(context: Context, shifts: List<Shift>) {
+    fun updateWidgetData(context: Context, shifts: List<Shift>, weekStartDay: String = "Monday") {
         val now = System.currentTimeMillis()
 
         val nextShift = shifts
             .filter { it.startTime > now }
             .minByOrNull { it.startTime }
 
-        val weekStart = Calendar.getInstance().apply {
-            firstDayOfWeek = Calendar.MONDAY
-            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
+        val weekStart = startOfWeekContaining(now, weekStartDay)
         val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
 
         val weekShifts = shifts.filter { it.startTime in weekStart until weekEnd }

@@ -4,32 +4,37 @@ import com.schedulo.shared.model.PeriodSummary
 import com.schedulo.shared.model.Shift
 import com.schedulo.shared.model.UpcomingProjection
 import com.schedulo.shared.model.WeekSummary
+import com.schedulo.shared.model.weekStartDayOfWeek
 import kotlinx.datetime.*
 
+// Weekly buckets are fiscal pay weeks anchored to weekStartDay (a job's
+// weeklyCycleStartDay, e.g. "Friday" = Fri–Thu cycles), not calendar weeks.
 fun getWeeklyEarningsSummary(
     shifts: List<Shift>,
     weeks: Int = 8,
-    nowMillis: Long = Clock.System.now().toEpochMilliseconds()
+    nowMillis: Long = Clock.System.now().toEpochMilliseconds(),
+    weekStartDay: String? = "Monday"
 ): List<WeekSummary> {
     val completedShifts = shifts.filter { it.startTime < nowMillis }
     val tz = TimeZone.currentSystemDefault()
+    val targetDay = weekStartDayOfWeek(weekStartDay)
 
     return (0 until weeks).map { offset ->
         val now = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(tz).date
-        var weekMonday = now
-        while (weekMonday.dayOfWeek != DayOfWeek.MONDAY) {
-            weekMonday = weekMonday.minus(1, DateTimeUnit.DAY)
+        var weekStartDate = now
+        while (weekStartDate.dayOfWeek != targetDay) {
+            weekStartDate = weekStartDate.minus(1, DateTimeUnit.DAY)
         }
-        weekMonday = weekMonday.minus(offset, DateTimeUnit.WEEK)
+        weekStartDate = weekStartDate.minus(offset, DateTimeUnit.WEEK)
 
-        val weekStart = weekMonday.atStartOfDayIn(tz).toEpochMilliseconds()
+        val weekStart = weekStartDate.atStartOfDayIn(tz).toEpochMilliseconds()
         val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
 
         val weekShifts = completedShifts.filter { it.startTime in weekStart until weekEnd }
 
-        val monthDay = weekMonday.month.name.take(3).lowercase()
+        val monthDay = weekStartDate.month.name.take(3).lowercase()
             .replaceFirstChar { it.uppercase() } + " " +
-            weekMonday.dayOfMonth.toString().padStart(2, '0')
+            weekStartDate.dayOfMonth.toString().padStart(2, '0')
 
         WeekSummary(
             weekStart = weekStart,

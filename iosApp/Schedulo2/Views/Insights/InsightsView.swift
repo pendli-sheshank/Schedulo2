@@ -437,11 +437,15 @@ struct InsightsView: View {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM dd"
 
+        // Buckets follow the fiscal pay week: the filtered employer's
+        // weeklyCycleStartDay, or the cross-job day when showing all employers.
+        let weekStartDay = employerFilter.flatMap { emp in
+            dashboardViewModel.jobs.first { $0.title.caseInsensitiveCompare(emp) == .orderedSame }?.weeklyCycleStartDay
+        } ?? dashboardViewModel.resolveGlobalWeekStartDay()
+        let anchor = dashboardViewModel.startOfWeek(containing: Date(), weekStartDay: weekStartDay)
+
         return (0..<weeks).reversed().map { offset in
-            var comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())
-            comps.weekday = 2
-            let thisMonday = cal.startOfDay(for: cal.date(from: comps) ?? Date())
-            let weekStart = cal.date(byAdding: .weekOfYear, value: -offset, to: thisMonday)!
+            let weekStart = cal.date(byAdding: .weekOfYear, value: -offset, to: anchor)!
             let weekEnd = cal.date(byAdding: .day, value: 7, to: weekStart)!
 
             let weekShifts = completedShifts.filter { $0.startDate >= weekStart && $0.startDate < weekEnd }
