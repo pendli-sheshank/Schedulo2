@@ -136,20 +136,22 @@ fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, D
         // Gig work doesn't have overtime
         return Pair(shifts.sumOf { it.totalEarned }, 0.0)
     }
-    val totalHours = shifts.sumOf { it.durationHours }
+    // Each shift is priced at its own stored hourlyRate (the rate in effect when
+    // it was worked) so editing the job's defaultHourlyRate never re-prices past
+    // cycles. Hours past the overtime threshold are split chronologically.
     val threshold = job.overtimeThresholdHours
-    val rate = job.defaultHourlyRate
     val multiplier = job.overtimeMultiplier
-
-    return if (totalHours <= threshold) {
-        Pair(totalHours * rate, 0.0)
-    } else {
-        val regularHours = threshold
-        val overtimeHours = totalHours - threshold
-        val regularEarnings = regularHours * rate
-        val overtimeEarnings = overtimeHours * rate * multiplier
-        Pair(regularEarnings, overtimeEarnings)
+    var hoursSoFar = 0.0
+    var regularEarnings = 0.0
+    var overtimeEarnings = 0.0
+    for (shift in shifts.sortedBy { it.startTime }) {
+        val hours = shift.durationHours
+        val regularPortion = (threshold - hoursSoFar).coerceIn(0.0, hours)
+        regularEarnings += regularPortion * shift.hourlyRate
+        overtimeEarnings += (hours - regularPortion) * shift.hourlyRate * multiplier
+        hoursSoFar += hours
     }
+    return Pair(regularEarnings, overtimeEarnings)
 }
 
 class DashboardViewModel : ViewModel() {
@@ -733,9 +735,12 @@ class DashboardViewModel : ViewModel() {
             val (regular, overtime) = calculateEarningsWithOvertime(filtered, job)
             val regularHours = totalHours.coerceAtMost(job.overtimeThresholdHours)
             val overtimeHours = (totalHours - regularHours).coerceAtLeast(0.0)
-            sb.appendLine("Regular: ${"%.1f".format(regularHours)} hrs × $${"%.2f".format(job.defaultHourlyRate)} = $${"%.2f".format(regular)}")
+            // Rates shown are derived from the shifts' stored rates, not the
+            // job's current defaultHourlyRate, so historical reports stay stable.
+            val regularRate = if (regularHours > 0) regular / regularHours else job.defaultHourlyRate
+            sb.appendLine("Regular: ${"%.1f".format(regularHours)} hrs × $${"%.2f".format(regularRate)} = $${"%.2f".format(regular)}")
             if (overtimeHours > 0) {
-                sb.appendLine("Overtime: ${"%.1f".format(overtimeHours)} hrs × $${"%.2f".format(job.defaultHourlyRate * job.overtimeMultiplier)} = $${"%.2f".format(overtime)}")
+                sb.appendLine("Overtime: ${"%.1f".format(overtimeHours)} hrs × $${"%.2f".format(overtime / overtimeHours)} = $${"%.2f".format(overtime)}")
             }
             sb.appendLine("TOTAL: ${"%.1f".format(totalHours)} hours · $${"%.2f".format(regular + overtime)}")
         } else {

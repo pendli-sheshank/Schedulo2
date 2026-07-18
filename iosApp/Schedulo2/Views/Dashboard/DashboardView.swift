@@ -532,7 +532,7 @@ struct JobGoalTrackerCard: View {
     }
 
     private var overtimeEarnings: Double {
-        overtimeHours * job.defaultHourlyRate * job.overtimeMultiplier
+        DashboardViewModel.calculateEarningsWithOvertime(shifts: shiftsForJob, job: job).overtime
     }
 
     private var progressFraction: Double {
