@@ -378,22 +378,27 @@ final class DashboardViewModel: ObservableObject {
 
     // MARK: - Overtime Calculation
 
-    func calculateEarningsWithOvertime(shifts: [Shift], job: Job) -> (regular: Double, overtime: Double) {
+    static func calculateEarningsWithOvertime(shifts: [Shift], job: Job) -> (regular: Double, overtime: Double) {
         if job.isGigWork {
             return (shifts.reduce(0) { $0 + $1.totalEarned }, 0.0)
         }
-        let totalHours = shifts.reduce(0.0) { $0 + $1.durationHours }
+        // Each shift is priced at its own stored hourlyRate (the rate in effect
+        // when it was worked) so editing the job's defaultHourlyRate never
+        // re-prices past cycles. Hours past the overtime threshold are split
+        // chronologically.
         let threshold = job.overtimeThresholdHours
-        let rate = job.defaultHourlyRate
         let multiplier = job.overtimeMultiplier
-
-        if totalHours <= threshold {
-            return (totalHours * rate, 0.0)
-        } else {
-            let regularEarnings = threshold * rate
-            let overtimeEarnings = (totalHours - threshold) * rate * multiplier
-            return (regularEarnings, overtimeEarnings)
+        var hoursSoFar = 0.0
+        var regularEarnings = 0.0
+        var overtimeEarnings = 0.0
+        for shift in shifts.sorted(by: { $0.startTime < $1.startTime }) {
+            let hours = shift.durationHours
+            let regularPortion = min(max(threshold - hoursSoFar, 0.0), hours)
+            regularEarnings += regularPortion * shift.hourlyRate
+            overtimeEarnings += (hours - regularPortion) * shift.hourlyRate * multiplier
+            hoursSoFar += hours
         }
+        return (regularEarnings, overtimeEarnings)
     }
 
     // MARK: - Report Generation
@@ -474,12 +479,15 @@ final class DashboardViewModel: ObservableObject {
         sb += String(repeating: "\u{2500}", count: 40) + "\n"
 
         if let j = job, !j.isGigWork {
-            let (regular, overtime) = calculateEarningsWithOvertime(shifts: filtered, job: j)
+            let (regular, overtime) = Self.calculateEarningsWithOvertime(shifts: filtered, job: j)
             let regularHours = min(totalHours, j.overtimeThresholdHours)
             let overtimeHours = max(totalHours - regularHours, 0.0)
-            sb += "Regular: \(String(format: "%.1f", regularHours)) hrs × $\(String(format: "%.2f", j.defaultHourlyRate)) = $\(String(format: "%.2f", regular))\n"
+            // Rates shown are derived from the shifts' stored rates, not the
+            // job's current defaultHourlyRate, so historical reports stay stable.
+            let regularRate = regularHours > 0 ? regular / regularHours : j.defaultHourlyRate
+            sb += "Regular: \(String(format: "%.1f", regularHours)) hrs × $\(String(format: "%.2f", regularRate)) = $\(String(format: "%.2f", regular))\n"
             if overtimeHours > 0 {
-                sb += "Overtime: \(String(format: "%.1f", overtimeHours)) hrs × $\(String(format: "%.2f", j.defaultHourlyRate * j.overtimeMultiplier)) = $\(String(format: "%.2f", overtime))\n"
+                sb += "Overtime: \(String(format: "%.1f", overtimeHours)) hrs × $\(String(format: "%.2f", overtime / overtimeHours)) = $\(String(format: "%.2f", overtime))\n"
             }
             sb += "TOTAL: \(String(format: "%.1f", totalHours)) hours · $\(String(format: "%.2f", regular + overtime))\n"
         } else {

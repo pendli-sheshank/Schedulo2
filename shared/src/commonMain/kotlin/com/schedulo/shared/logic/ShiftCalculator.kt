@@ -7,20 +7,22 @@ fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, D
     if (job.isGigWork) {
         return Pair(shifts.sumOf { it.totalEarned }, 0.0)
     }
-    val totalHours = shifts.sumOf { it.durationHours }
+    // Each shift is priced at its own stored hourlyRate (the rate in effect when
+    // it was worked) so editing the job's defaultHourlyRate never re-prices past
+    // cycles. Hours past the overtime threshold are split chronologically.
     val threshold = job.overtimeThresholdHours
-    val rate = job.defaultHourlyRate
     val multiplier = job.overtimeMultiplier
-
-    return if (totalHours <= threshold) {
-        Pair(totalHours * rate, 0.0)
-    } else {
-        val regularHours = threshold
-        val overtimeHours = totalHours - threshold
-        val regularEarnings = regularHours * rate
-        val overtimeEarnings = overtimeHours * rate * multiplier
-        Pair(regularEarnings, overtimeEarnings)
+    var hoursSoFar = 0.0
+    var regularEarnings = 0.0
+    var overtimeEarnings = 0.0
+    for (shift in shifts.sortedBy { it.startTime }) {
+        val hours = shift.durationHours
+        val regularPortion = (threshold - hoursSoFar).coerceIn(0.0, hours)
+        regularEarnings += regularPortion * shift.hourlyRate
+        overtimeEarnings += (hours - regularPortion) * shift.hourlyRate * multiplier
+        hoursSoFar += hours
     }
+    return Pair(regularEarnings, overtimeEarnings)
 }
 
 fun detectConflicts(
