@@ -1,6 +1,8 @@
 package com.schedulo.shared.logic
 
+import com.schedulo.shared.model.Job
 import com.schedulo.shared.model.Shift
+import com.schedulo.shared.model.resolveGlobalWeekStartDay
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -30,6 +32,79 @@ class InsightsCalculatorTest {
             endTime = start + hours * 3_600_000L,
             hourlyRate = rate
         )
+
+    // --- getWeeklyEarningsSummary ---
+
+    @Test
+    fun weeklySummaryDefaultsToMondayWeeks() {
+        // Sat 2026-07-11 → the current default week starts Mon 2026-07-06.
+        val now = millisAt(2026, Month.JULY, 11)
+        val bucket = getWeeklyEarningsSummary(emptyList(), weeks = 1, nowMillis = now).single()
+
+        val expectedStart = LocalDate(2026, Month.JULY, 6).atStartOfDayIn(tz).toEpochMilliseconds()
+        assertEquals(expectedStart, bucket.weekStart)
+    }
+
+    @Test
+    fun weeklySummaryHonorsCustomWeekStartDay() {
+        // Friday-anchored fiscal weeks: Thu 2026-07-09 belongs to the Fri Jul 3
+        // cycle, Fri 2026-07-10 starts the next cycle — no Sunday/Monday split.
+        val now = millisAt(2026, Month.JULY, 11) // Saturday
+        val thursdayShift = shift(millisAt(2026, Month.JULY, 9))
+        val fridayShift = shift(millisAt(2026, Month.JULY, 10))
+
+        val summary = getWeeklyEarningsSummary(
+            listOf(thursdayShift, fridayShift), weeks = 2, nowMillis = now, weekStartDay = "Friday"
+        )
+
+        assertEquals(2, summary.size)
+        val (previousWeek, currentWeek) = summary
+        val fridayJul3 = LocalDate(2026, Month.JULY, 3).atStartOfDayIn(tz).toEpochMilliseconds()
+        val fridayJul10 = LocalDate(2026, Month.JULY, 10).atStartOfDayIn(tz).toEpochMilliseconds()
+        assertEquals(fridayJul3, previousWeek.weekStart)
+        assertEquals(fridayJul10, currentWeek.weekStart)
+        assertEquals(1, previousWeek.shiftCount)
+        assertEquals(1, currentWeek.shiftCount)
+    }
+
+    @Test
+    fun weeklySummaryBucketBoundaryIsInclusiveOfCycleStart() {
+        val now = millisAt(2026, Month.JULY, 11)
+        val cycleStart = LocalDate(2026, Month.JULY, 10).atStartOfDayIn(tz).toEpochMilliseconds()
+        val atStart = shift(cycleStart)
+        val justBefore = shift(cycleStart - 1)
+
+        val summary = getWeeklyEarningsSummary(
+            listOf(atStart, justBefore), weeks = 2, nowMillis = now, weekStartDay = "Friday"
+        )
+
+        assertEquals(1, summary[0].shiftCount) // just-before → prior cycle
+        assertEquals(1, summary[1].shiftCount) // at-start → current cycle
+    }
+
+    // --- resolveGlobalWeekStartDay ---
+
+    private fun job(day: String?, gig: Boolean = false) =
+        Job(id = "j$day$gig", title = "T", isGigWork = gig, weeklyCycleStartDay = day)
+
+    @Test
+    fun globalWeekStartUsesMostCommonNonGigDay() {
+        val jobs = listOf(job("Friday"), job("Friday"), job("Monday"), job("Sunday", gig = true))
+        assertEquals("Friday", resolveGlobalWeekStartDay(jobs))
+    }
+
+    @Test
+    fun globalWeekStartBreaksTiesByEarliestDay() {
+        val jobs = listOf(job("Friday"), job("Sunday"))
+        assertEquals("Sunday", resolveGlobalWeekStartDay(jobs))
+    }
+
+    @Test
+    fun globalWeekStartFallsBackToMonday() {
+        assertEquals("Monday", resolveGlobalWeekStartDay(emptyList()))
+        assertEquals("Monday", resolveGlobalWeekStartDay(listOf(job("Friday", gig = true))))
+        assertEquals("Monday", resolveGlobalWeekStartDay(listOf(job(null), job("NotADay"))))
+    }
 
     // --- getMonthlyEarningsSummary ---
 

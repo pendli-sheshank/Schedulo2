@@ -27,8 +27,8 @@ cd iosApp && xcodegen generate
 # Run Android unit tests
 ./gradlew :androidApp:testDebugUnitTest
 
-# Run shared module tests
-./gradlew :shared:testDebugUnitTest
+# Run shared module tests (commonTest on the JVM)
+./gradlew :shared:testAndroidHostTest
 ```
 
 ## Firebase / Firestore
@@ -85,9 +85,9 @@ Security rules are in `firestore.rules`.
 
 **Every code change must bump the fallback version code** in `androidApp/build.gradle.kts`:
 ```kotlin
-val ciVersionCode = (System.getenv("VERSION_CODE") ?: "84").toInt()
+val ciVersionCode = (System.getenv("VERSION_CODE") ?: "87").toInt()
 ```
-CI sets `VERSION_CODE` from the GitHub run number + 100. The fallback (currently 84) must be incremented with each release to avoid Play Store "version code already used" errors.
+CI sets `VERSION_CODE` from the GitHub run number + 100. The fallback (currently 87) must be incremented with each release to avoid Play Store "version code already used" errors.
 
 ## CI/CD
 
@@ -116,6 +116,10 @@ When modifying features, changes must be made on **both platforms** plus the sha
 3. Update Android ViewModel + data class
 4. Update UI on both platforms
 5. Bump version code
+
+## Payroll Fiscal Weeks
+
+Payroll/earnings weekly grouping is anchored to each job's `weeklyCycleStartDay` (e.g. "Friday" → Friday–Thursday cycles), **never** hardcoded Monday or locale calendar weeks. Before touching any weekly grouping (pay cycles, insights, dashboard week cards, widgets), read `.claude/skills/payroll-fiscal-week/SKILL.md` for the rules, canonical helpers, and the persisted-`cycleKey` warning.
 
 ## iOS Project Generation
 

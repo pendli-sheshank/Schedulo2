@@ -56,23 +56,39 @@ data class Job(
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
 
-        val startDay = weeklyCycleStartDay?.lowercase(Locale.US) ?: "monday"
-        val targetDayOfWeek = when (startDay) {
-            "sunday" -> Calendar.SUNDAY
-            "monday" -> Calendar.MONDAY
-            "tuesday" -> Calendar.TUESDAY
-            "wednesday" -> Calendar.WEDNESDAY
-            "thursday" -> Calendar.THURSDAY
-            "friday" -> Calendar.FRIDAY
-            "saturday" -> Calendar.SATURDAY
-            else -> Calendar.MONDAY
-        }
-
-        while (calendar.get(Calendar.DAY_OF_WEEK) != targetDayOfWeek) {
+        while (calendar.get(Calendar.DAY_OF_WEEK) != weekStartCalendarDay(weeklyCycleStartDay)) {
             calendar.add(Calendar.DAY_OF_YEAR, -1)
         }
         return calendar.timeInMillis
     }
+}
+
+// Maps a stored week-start day name ("Friday") to its Calendar constant.
+// Payroll weeks are per-job fiscal weeks (job.weeklyCycleStartDay), never
+// calendar weeks — anchor all week math here instead of Calendar.MONDAY.
+fun weekStartCalendarDay(name: String?): Int = when (name?.lowercase(Locale.US) ?: "monday") {
+    "sunday" -> Calendar.SUNDAY
+    "monday" -> Calendar.MONDAY
+    "tuesday" -> Calendar.TUESDAY
+    "wednesday" -> Calendar.WEDNESDAY
+    "thursday" -> Calendar.THURSDAY
+    "friday" -> Calendar.FRIDAY
+    "saturday" -> Calendar.SATURDAY
+    else -> Calendar.MONDAY
+}
+
+// Start-of-day of the most recent weekStartDay on or before the given moment.
+fun startOfWeekContaining(millis: Long, weekStartDay: String?): Long {
+    val calendar = Calendar.getInstance()
+    calendar.timeInMillis = millis
+    calendar.set(Calendar.HOUR_OF_DAY, 0)
+    calendar.set(Calendar.MINUTE, 0)
+    calendar.set(Calendar.SECOND, 0)
+    calendar.set(Calendar.MILLISECOND, 0)
+    while (calendar.get(Calendar.DAY_OF_WEEK) != weekStartCalendarDay(weekStartDay)) {
+        calendar.add(Calendar.DAY_OF_YEAR, -1)
+    }
+    return calendar.timeInMillis
 }
 
 data class PayAdjustment(
@@ -120,20 +136,22 @@ fun calculateEarningsWithOvertime(shifts: List<Shift>, job: Job): Pair<Double, D
         // Gig work doesn't have overtime
         return Pair(shifts.sumOf { it.totalEarned }, 0.0)
     }
-    val totalHours = shifts.sumOf { it.durationHours }
+    // Each shift is priced at its own stored hourlyRate (the rate in effect when
+    // it was worked) so editing the job's defaultHourlyRate never re-prices past
+    // cycles. Hours past the overtime threshold are split chronologically.
     val threshold = job.overtimeThresholdHours
-    val rate = job.defaultHourlyRate
     val multiplier = job.overtimeMultiplier
-
-    return if (totalHours <= threshold) {
-        Pair(totalHours * rate, 0.0)
-    } else {
-        val regularHours = threshold
-        val overtimeHours = totalHours - threshold
-        val regularEarnings = regularHours * rate
-        val overtimeEarnings = overtimeHours * rate * multiplier
-        Pair(regularEarnings, overtimeEarnings)
+    var hoursSoFar = 0.0
+    var regularEarnings = 0.0
+    var overtimeEarnings = 0.0
+    for (shift in shifts.sortedBy { it.startTime }) {
+        val hours = shift.durationHours
+        val regularPortion = (threshold - hoursSoFar).coerceIn(0.0, hours)
+        regularEarnings += regularPortion * shift.hourlyRate
+        overtimeEarnings += (hours - regularPortion) * shift.hourlyRate * multiplier
+        hoursSoFar += hours
     }
+    return Pair(regularEarnings, overtimeEarnings)
 }
 
 class DashboardViewModel : ViewModel() {
@@ -146,7 +164,7 @@ class DashboardViewModel : ViewModel() {
         appContext = context.applicationContext
         val currentShifts = _shifts.value
         if (currentShifts.isNotEmpty()) {
-            try { WidgetDataProvider.updateWidgetData(context.applicationContext, currentShifts) } catch (_: Exception) {}
+            try { WidgetDataProvider.updateWidgetData(context.applicationContext, currentShifts, resolveGlobalWeekStartDay()) } catch (_: Exception) {}
         }
     }
 
@@ -502,7 +520,7 @@ class DashboardViewModel : ViewModel() {
                     _shifts.value = list
                     val ctx = appContext ?: try { com.google.firebase.FirebaseApp.getInstance().applicationContext } catch (_: Exception) { null }
                     ctx?.let { c ->
-                        try { WidgetDataProvider.updateWidgetData(c, list) } catch (_: Exception) {}
+                        try { WidgetDataProvider.updateWidgetData(c, list, resolveGlobalWeekStartDay()) } catch (_: Exception) {}
                     }
                 }
             }
@@ -717,9 +735,12 @@ class DashboardViewModel : ViewModel() {
             val (regular, overtime) = calculateEarningsWithOvertime(filtered, job)
             val regularHours = totalHours.coerceAtMost(job.overtimeThresholdHours)
             val overtimeHours = (totalHours - regularHours).coerceAtLeast(0.0)
-            sb.appendLine("Regular: ${"%.1f".format(regularHours)} hrs × $${"%.2f".format(job.defaultHourlyRate)} = $${"%.2f".format(regular)}")
+            // Rates shown are derived from the shifts' stored rates, not the
+            // job's current defaultHourlyRate, so historical reports stay stable.
+            val regularRate = if (regularHours > 0) regular / regularHours else job.defaultHourlyRate
+            sb.appendLine("Regular: ${"%.1f".format(regularHours)} hrs × $${"%.2f".format(regularRate)} = $${"%.2f".format(regular)}")
             if (overtimeHours > 0) {
-                sb.appendLine("Overtime: ${"%.1f".format(overtimeHours)} hrs × $${"%.2f".format(job.defaultHourlyRate * job.overtimeMultiplier)} = $${"%.2f".format(overtime)}")
+                sb.appendLine("Overtime: ${"%.1f".format(overtimeHours)} hrs × $${"%.2f".format(overtime / overtimeHours)} = $${"%.2f".format(overtime)}")
             }
             sb.appendLine("TOTAL: ${"%.1f".format(totalHours)} hours · $${"%.2f".format(regular + overtime)}")
         } else {
@@ -793,21 +814,29 @@ class DashboardViewModel : ViewModel() {
         return cycles.sortedWith(compareByDescending<PayCycleOption> { it.cycleStart }.thenBy { it.employer })
     }
 
+    // Week-start day for views that aggregate across jobs: the most common
+    // weeklyCycleStartDay among non-gig jobs, ties broken by earliest day
+    // (Sunday first), Monday when there are no non-gig jobs. Deterministic
+    // regardless of Firestore result order.
+    fun resolveGlobalWeekStartDay(): String {
+        val dayOrder = listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        val counts = _jobs.value.asSequence()
+            .filter { !it.isGigWork }
+            .map { job -> dayOrder.firstOrNull { it.equals(job.weeklyCycleStartDay ?: "Monday", ignoreCase = true) } ?: "Monday" }
+            .groupingBy { it }
+            .eachCount()
+        if (counts.isEmpty()) return "Monday"
+        val maxCount = counts.values.max()
+        return dayOrder.first { counts[it] == maxCount }
+    }
+
     fun getAvailableWeeks(): List<Pair<Long, String>> {
         val weekFormat = SimpleDateFormat("MMM dd", Locale.US)
         val weeks = mutableSetOf<Long>()
         val now = System.currentTimeMillis()
+        val anchor = startOfWeekContaining(now, resolveGlobalWeekStartDay())
         for (offset in -8..4) {
-            val cal = Calendar.getInstance().apply {
-                firstDayOfWeek = Calendar.MONDAY
-                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-                add(Calendar.WEEK_OF_YEAR, offset)
-            }
-            weeks.add(cal.timeInMillis)
+            weeks.add(anchor + offset * 7L * 24 * 60 * 60 * 1000L)
         }
         return weeks.sorted().map { start ->
             val end = start + 7L * 24 * 60 * 60 * 1000L
@@ -895,14 +924,14 @@ class DashboardViewModel : ViewModel() {
         val weekFormat = SimpleDateFormat("MMM dd", Locale.US)
         val now = System.currentTimeMillis()
         val completedShifts = shiftsForEmployer(employer).filter { it.startTime < now }
+        val weekStartDay = if (employer != null) {
+            _jobs.value.firstOrNull { it.title.equals(employer, ignoreCase = true) }?.weeklyCycleStartDay ?: "Monday"
+        } else {
+            resolveGlobalWeekStartDay()
+        }
+        val anchor = startOfWeekContaining(now, weekStartDay)
         return (0 until weeks).map { offset ->
-            val cal = Calendar.getInstance().apply {
-                firstDayOfWeek = Calendar.MONDAY
-                set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-                add(Calendar.WEEK_OF_YEAR, -offset)
-            }
-            val weekStart = cal.timeInMillis
+            val weekStart = anchor - offset * 7L * 24 * 60 * 60 * 1000L
             val weekEnd = weekStart + 7L * 24 * 60 * 60 * 1000L
             val weekShifts = completedShifts.filter { it.startTime in weekStart until weekEnd }
             PeriodSummary(

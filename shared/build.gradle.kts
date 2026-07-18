@@ -8,6 +8,10 @@ kotlin {
         namespace = "com.schedulo.shared"
         compileSdk = 36
         minSdk = 24
+
+        // Runs commonTest on the JVM (task: testAndroidHostTest); without this
+        // the shared test suite has no executable target.
+        withHostTestBuilder {}
     }
 
     listOf(

@@ -289,14 +289,9 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-private fun weekRangeLabel(offset: Int): String {
+private fun weekRangeLabel(offset: Int, weekStartDay: String = "Monday"): String {
     val cal = Calendar.getInstance().apply {
-        firstDayOfWeek = Calendar.MONDAY
-        set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-        set(Calendar.HOUR_OF_DAY, 0)
-        clear(Calendar.MINUTE)
-        clear(Calendar.SECOND)
-        clear(Calendar.MILLISECOND)
+        timeInMillis = startOfWeekContaining(System.currentTimeMillis(), weekStartDay)
         add(Calendar.WEEK_OF_YEAR, offset)
     }
     val fmt = java.text.SimpleDateFormat("MMM dd", Locale.US)
@@ -354,14 +349,14 @@ fun DashboardScreen(
     var weekOffset by remember { mutableStateOf(0) }
     var expanded by remember { mutableStateOf(false) }
 
-    val globalWeekStart = remember(weekOffset) {
+    // Fiscal pay week (per-job weeklyCycleStartDay), not a calendar week —
+    // e.g. a Friday start groups Fri–Thu into one payroll cycle.
+    val globalWeekStartDay = remember(jobs) {
+        dashboardViewModel?.resolveGlobalWeekStartDay() ?: "Monday"
+    }
+    val globalWeekStart = remember(weekOffset, globalWeekStartDay) {
         Calendar.getInstance().apply {
-            firstDayOfWeek = Calendar.MONDAY
-            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-            set(Calendar.HOUR_OF_DAY, 0)
-            clear(Calendar.MINUTE)
-            clear(Calendar.SECOND)
-            clear(Calendar.MILLISECOND)
+            timeInMillis = startOfWeekContaining(System.currentTimeMillis(), globalWeekStartDay)
             add(Calendar.WEEK_OF_YEAR, weekOffset)
         }.timeInMillis
     }
@@ -408,7 +403,7 @@ fun DashboardScreen(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = weekRangeLabel(weekOffset) + if (weekOffset == 0) " · This Week" else "",
+                    text = weekRangeLabel(weekOffset, globalWeekStartDay) + if (weekOffset == 0) " · This Week" else "",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -468,7 +463,7 @@ fun DashboardScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = weekRangeLabel(weekOffset) + if (weekOffset == 0) " (Current)" else "",
+                        text = weekRangeLabel(weekOffset, globalWeekStartDay) + if (weekOffset == 0) " (Current)" else "",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onBackground
@@ -487,7 +482,7 @@ fun DashboardScreen(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                weekRangeLabel(offset) + if (offset == 0) " (Current)" else "",
+                                weekRangeLabel(offset, globalWeekStartDay) + if (offset == 0) " (Current)" else "",
                                 fontWeight = if (offset == weekOffset) FontWeight.Bold else FontWeight.Normal
                             )
                         },
