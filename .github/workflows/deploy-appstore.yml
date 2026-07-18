@@ -189,6 +189,9 @@ jobs:
 
       - name: Upload IPA as artifact
         uses: actions/upload-artifact@v4
+        # Archival only — must never block the TestFlight upload (e.g. when the
+        # account's artifact storage quota is full).
+        continue-on-error: true
         with:
           name: release-ipa
           path: ${{ runner.temp }}/export/Schedulo2.ipa
