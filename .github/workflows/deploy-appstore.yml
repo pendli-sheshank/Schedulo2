@@ -195,6 +195,7 @@ jobs:
         with:
           name: release-ipa
           path: ${{ runner.temp }}/export/Schedulo2.ipa
+          retention-days: 7
 
       - name: Prepare App Store Connect API key
         env:
