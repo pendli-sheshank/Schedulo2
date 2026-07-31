@@ -223,6 +223,35 @@ final class TeamViewModel: ObservableObject {
     var currentUserId: String? { Auth.auth().currentUser?.uid }
     var currentUserEmail: String? { Auth.auth().currentUser?.email }
 
+    /// Latest `profiles/{uid}.full_name`; see `currentUserDisplayName`.
+    private var cachedProfileName: String?
+
+    /// The name teammates should see for the signed-in user.
+    ///
+    /// Sign-up stores the name the user typed in `profiles/{uid}.full_name` and
+    /// never writes the Firebase Auth profile, so `currentUser.displayName` is
+    /// normally nil — it is kept only as a fallback for accounts that set it
+    /// elsewhere. The last resort is the email local part, never the full
+    /// address: this value is published to the whole team roster, and chat and
+    /// task history, so it must not leak a teammate's email.
+    var currentUserDisplayName: String {
+        if let name = cachedProfileName, !name.isEmpty { return name }
+        if let name = Auth.auth().currentUser?.displayName, !name.isEmpty { return name }
+        guard let email = currentUserEmail else { return "" }
+        return String(email.prefix(while: { character in character != "@" }))
+    }
+
+    /// Cache `profiles/{uid}.full_name` so the name written onto memberships,
+    /// chat messages and task history is the user's real name. Refreshed
+    /// whenever the team screens load; cleared by `removeAllListeners`.
+    private func refreshCachedProfileName() {
+        guard let uid = currentUserId else { return }
+        db.collection("profiles").document(uid).getDocument { [weak self] snapshot, _ in
+            let name = snapshot?.data()?["full_name"] as? String ?? ""
+            DispatchQueue.main.async { self?.cachedProfileName = name }
+        }
+    }
+
     var isManager: Bool { userRole == "manager" }
 
     func fetchMemberJobs(userId: String) {
@@ -248,6 +277,7 @@ final class TeamViewModel: ObservableObject {
 
     func loadTeams() {
         guard let uid = currentUserId else { return }
+        refreshCachedProfileName()
         teamsListener?.remove()
 
         teamsListener = db.collection("team_members")
@@ -443,7 +473,7 @@ final class TeamViewModel: ObservableObject {
             "userId": uid,
             "role": "manager",
             "joinedAt": now,
-            "displayName": currentUserEmail ?? "",
+            "displayName": currentUserDisplayName,
             "email": currentUserEmail ?? "",
             "defaultHourlyRate": 0.0
         ]
@@ -518,13 +548,25 @@ final class TeamViewModel: ObservableObject {
 
     func joinTeam(inviteCode: String) {
         guard currentUserId != nil else { return }
-        withVerifiedEmail("joining") { [weak self] in self?.performJoinTeam(inviteCode: inviteCode) }
+        // Accept the code however the user presents it — lowercase, padded with
+        // spaces, hyphenated, or pasted with a trailing newline.
+        let code = Self.normalizeInviteCode(inviteCode)
+        guard !code.isEmpty else {
+            errorMessage = "Invite code cannot be empty."
+            return
+        }
+        guard Self.isWellFormedInviteCode(code) else {
+            errorMessage = "Invite codes are \(Self.inviteCodeLength) letters and numbers."
+            return
+        }
+        withVerifiedEmail("joining") { [weak self] in self?.performJoinTeam(inviteCode: code) }
     }
 
     private func performJoinTeam(inviteCode: String) {
         guard let uid = currentUserId else { return }
         isLoading = true
-        let code = inviteCode.uppercased()
+        // Already normalized by joinTeam.
+        let code = inviteCode
 
         // Resolve the code -> teamId via the public-by-secret lookup collection
         // (a direct get() by document id; the teams collection is not queryable
@@ -557,7 +599,7 @@ final class TeamViewModel: ObservableObject {
                         "userId": uid,
                         "role": "member",
                         "joinedAt": Int64(Date().timeIntervalSince1970 * 1000),
-                        "displayName": self.currentUserEmail ?? "",
+                        "displayName": self.currentUserDisplayName,
                         "email": self.currentUserEmail ?? "",
                         // Included so the security rule can verify the joiner
                         // presented the correct invite code.
@@ -997,7 +1039,7 @@ final class TeamViewModel: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let senderName = currentUserEmail ?? ""
+        let senderName = currentUserDisplayName
         let data: [String: Any] = [
             "teamId": teamId,
             "senderId": uid,
@@ -1021,7 +1063,7 @@ final class TeamViewModel: ObservableObject {
         guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
         isUploadingImage = true
 
-        let senderName = currentUserEmail ?? ""
+        let senderName = currentUserDisplayName
         let messageId = UUID().uuidString
         let maxDim: CGFloat = 800
         let scale: CGFloat = min(maxDim / image.size.width, maxDim / image.size.height, 1)
@@ -1199,7 +1241,7 @@ final class TeamViewModel: ObservableObject {
             return
         }
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        let actorName = currentUserEmail ?? ""
+        let actorName = currentUserDisplayName
         let data: [String: Any] = [
             "teamId": teamId,
             "title": trimmedTitle,
@@ -1228,7 +1270,7 @@ final class TeamViewModel: ObservableObject {
         guard let uid = currentUserId else { return }
         guard let task = teamTasks.first(where: { $0.id == taskId }), task.status != newStatus else { return }
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        let actorName = currentUserEmail ?? ""
+        let actorName = currentUserDisplayName
         let entry: [String: Any] = [
             "status": newStatus,
             "changedBy": uid,
@@ -1262,7 +1304,7 @@ final class TeamViewModel: ObservableObject {
     func requestSwap(myShiftId: String, targetMemberId: String, targetShiftId: String) {
         guard let uid = currentUserId, let teamId = currentTeam?.id else { return }
 
-        let requesterName = currentUserEmail ?? ""
+        let requesterName = currentUserDisplayName
         let targetMember = members.first { $0.userId == targetMemberId }
         let targetName = targetMember?.displayName.isEmpty == false ? targetMember!.displayName : (targetMember?.email ?? "")
 
@@ -1433,6 +1475,8 @@ final class TeamViewModel: ObservableObject {
         userRole = "member"
         errorMessage = nil
         isLoading = false
+        isUploadingImage = false
+        cachedProfileName = nil
     }
 
     deinit {
@@ -1446,8 +1490,38 @@ final class TeamViewModel: ObservableObject {
         scheduleNotificationsListener?.remove()
     }
 
+    // MARK: - Invite codes
+    //
+    // These mirror `InviteCode` in the shared KMP module
+    // (shared/src/commonMain/kotlin/com/schedulo/shared/util/InviteCode.kt),
+    // which is the canonical spec and carries the test suite. Keep the two in
+    // step: a code generated on one platform is joined on the other.
+
+    private static let inviteCodeLength = 6
+
+    /// Excludes `I`, `O`, `0` and `1` — the pairs I/1 and O/0 are what people
+    /// mistype when copying a code by eye, and codes are matched exactly.
+    private static let inviteCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
     private func generateInviteCode() -> String {
-        let chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return String((0..<6).map { _ in chars.randomElement()! })
+        String((0..<Self.inviteCodeLength).map { _ in Self.inviteCodeAlphabet.randomElement()! })
+    }
+
+    /// Canonicalize a code the user typed or pasted so presentation differences
+    /// never decide whether a join succeeds: case is folded up and separators
+    /// (spaces, hyphens, a trailing newline from a copied line) are dropped.
+    ///
+    /// Confusable characters are deliberately not folded onto one another —
+    /// codes issued before the alphabet excluded them are still live and can
+    /// legitimately contain `I`, `O`, `0` or `1`.
+    static func normalizeInviteCode(_ raw: String) -> String {
+        raw.uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    }
+
+    /// Whether `code` could be a real invite code. Accepts any alphanumeric code
+    /// of the right length, not just the current alphabet, so codes issued
+    /// earlier still pass. Expects an already-normalized string.
+    static func isWellFormedInviteCode(_ code: String) -> Bool {
+        code.count == inviteCodeLength && code.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
     }
 }

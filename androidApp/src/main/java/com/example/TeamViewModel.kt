@@ -17,6 +17,7 @@ import com.schedulo.shared.model.TaskHistoryEntry
 import com.schedulo.shared.model.TeamMessage
 import com.schedulo.shared.model.TeamShift
 import com.schedulo.shared.model.TeamTask
+import com.schedulo.shared.util.InviteCode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.*
@@ -123,6 +124,9 @@ class TeamViewModel : ViewModel() {
     private var teamTasksListener: ListenerRegistration? = null
     private var scheduleNotificationsListener: ListenerRegistration? = null
 
+    /** Latest `profiles/{uid}.full_name`; see [currentUserDisplayName]. */
+    private var cachedProfileName: String? = null
+
     private val storage by lazy { try { FirebaseStorage.getInstance() } catch (e: Exception) { null } }
     private val _isUploadingImage = MutableStateFlow(false)
     val isUploadingImage = _isUploadingImage.asStateFlow()
@@ -199,6 +203,7 @@ class TeamViewModel : ViewModel() {
         val database = db ?: return
         _isLoading.value = true
         _errorMessage.value = null
+        refreshCachedProfileName()
 
         teamsListener?.remove()
         teamsListener = database.collection("team_members")
@@ -522,7 +527,7 @@ class TeamViewModel : ViewModel() {
         ) + form.toFirestoreFields()
 
         val email = auth?.currentUser?.email ?: ""
-        val displayName = auth?.currentUser?.displayName ?: ""
+        val displayName = currentUserDisplayName()
 
         val memberData = hashMapOf(
             "teamId" to teamId,
@@ -603,11 +608,18 @@ class TeamViewModel : ViewModel() {
     }
 
     fun joinTeam(inviteCode: String) {
-        if (inviteCode.isBlank()) {
+        // Accept the code however the user presents it — lowercase, padded with
+        // spaces, hyphenated, or pasted with a trailing newline.
+        val code = InviteCode.normalize(inviteCode)
+        if (code.isEmpty()) {
             _errorMessage.value = "Invite code cannot be empty."
             return
         }
-        withVerifiedEmail("joining") { performJoinTeam(inviteCode) }
+        if (!InviteCode.isWellFormed(code)) {
+            _errorMessage.value = "Invite codes are ${InviteCode.LENGTH} letters and numbers."
+            return
+        }
+        withVerifiedEmail("joining") { performJoinTeam(code) }
     }
 
     private fun performJoinTeam(inviteCode: String) {
@@ -616,7 +628,8 @@ class TeamViewModel : ViewModel() {
         _isLoading.value = true
         _errorMessage.value = null
 
-        val code = inviteCode.trim().uppercase()
+        // Already normalized by joinTeam.
+        val code = inviteCode
 
         // Resolve the code -> teamId via the public-by-secret lookup collection
         // (a direct get() by document id; the teams collection is not queryable
@@ -643,7 +656,7 @@ class TeamViewModel : ViewModel() {
                         }
 
                         val email = auth?.currentUser?.email ?: ""
-                        val displayName = auth?.currentUser?.displayName ?: ""
+                        val displayName = currentUserDisplayName()
                         val now = System.currentTimeMillis()
 
                         val memberData = hashMapOf(
@@ -1033,8 +1046,35 @@ class TeamViewModel : ViewModel() {
             }
     }
 
-    private fun currentUserDisplayName(): String =
-        auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+    /**
+     * The name teammates should see for the signed-in user.
+     *
+     * Sign-up stores the name the user typed in `profiles/{uid}.full_name` and
+     * never calls into the Firebase Auth profile, so `currentUser.displayName`
+     * is always null here — it is kept only as a fallback for accounts that set
+     * it elsewhere. The final fallback is the email local part rather than the
+     * full address, so a teammate's email is never published to the roster.
+     */
+    private fun currentUserDisplayName(): String {
+        cachedProfileName?.takeIf { it.isNotBlank() }?.let { return it }
+        val user = auth?.currentUser ?: return ""
+        user.displayName?.takeIf { it.isNotBlank() }?.let { return it }
+        return user.email?.substringBefore("@").orEmpty()
+    }
+
+    /**
+     * Cache `profiles/{uid}.full_name` so the name written onto memberships,
+     * chat messages and task history is the user's real name. Refreshed
+     * whenever the team screens load; cleared by [reset] on sign-out.
+     */
+    private fun refreshCachedProfileName() {
+        val uid = auth?.currentUser?.uid ?: return
+        val database = db ?: return
+        database.collection("profiles").document(uid).get()
+            .addOnSuccessListener { doc ->
+                cachedProfileName = doc.getString("full_name").orEmpty()
+            }
+    }
 
     fun promoteMember(memberDocId: String) {
         val database = db ?: return
@@ -1086,7 +1126,7 @@ class TeamViewModel : ViewModel() {
         val team = _currentTeam.value ?: return
         if (text.isBlank()) return
 
-        val senderName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val senderName = currentUserDisplayName()
         val messageData = hashMapOf(
             "teamId" to team.id,
             "senderId" to uid,
@@ -1111,7 +1151,7 @@ class TeamViewModel : ViewModel() {
         val team = _currentTeam.value ?: return
         _isUploadingImage.value = true
 
-        val senderName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val senderName = currentUserDisplayName()
         val messageId = UUID.randomUUID().toString()
         val ref = storageRef.reference.child("chat_images/${team.id}/$messageId.jpg")
         val appContext = context.applicationContext
@@ -1275,7 +1315,7 @@ class TeamViewModel : ViewModel() {
         val database = db ?: return
         val team = _currentTeam.value ?: return
 
-        val requesterName = auth?.currentUser?.displayName?.ifBlank { auth?.currentUser?.email?.substringBefore("@") } ?: ""
+        val requesterName = currentUserDisplayName()
         val targetMember = _members.value.find { it.userId == targetMemberId }
         val targetName = targetMember?.displayName?.ifBlank { targetMember.email.substringBefore("@") } ?: ""
 
@@ -1442,9 +1482,42 @@ class TeamViewModel : ViewModel() {
             }
     }
 
-    private fun generateInviteCode(): String {
-        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        return (1..6).map { chars.random() }.joinToString("")
+    private fun generateInviteCode(): String = InviteCode.generate()
+
+    /**
+     * Detach every Firestore listener and clear all team state.
+     *
+     * This view model is scoped to the activity, so it outlives a sign-out:
+     * without this, the previous account's team listeners (chat, roster,
+     * shifts, tasks, swaps, assignment notifications) keep streaming into a
+     * live view model and the next person to sign in on the device can be shown
+     * that data. [onCleared] does not cover it — that only runs when the
+     * activity itself goes away. Driven from the auth-state change in
+     * MainActivity so no individual sign-out path has to remember to call it.
+     */
+    fun reset() {
+        teamsListener?.remove(); teamsListener = null
+        membersListener?.remove(); membersListener = null
+        shiftsListener?.remove(); shiftsListener = null
+        memberJobsListener?.remove(); memberJobsListener = null
+        messagesListener?.remove(); messagesListener = null
+        swapRequestsListener?.remove(); swapRequestsListener = null
+        teamTasksListener?.remove(); teamTasksListener = null
+        scheduleNotificationsListener?.remove(); scheduleNotificationsListener = null
+
+        _teams.value = emptyList()
+        _currentTeam.value = null
+        _members.value = emptyList()
+        _teamShifts.value = emptyList()
+        _memberJobs.value = emptyList()
+        _teamMessages.value = emptyList()
+        _swapRequests.value = emptyList()
+        _teamTasks.value = emptyList()
+        _userRole.value = "member"
+        _errorMessage.value = null
+        _isLoading.value = false
+        _isUploadingImage.value = false
+        cachedProfileName = null
     }
 
     override fun onCleared() {
