@@ -39,6 +39,7 @@ import com.example.ui.theme.AccentOrange
 import com.schedulo.shared.model.ShiftTask
 import com.schedulo.shared.model.TeamMember
 import com.schedulo.shared.model.TeamShift
+import com.schedulo.shared.util.InviteCode
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.text.SimpleDateFormat
 import java.util.*
@@ -1075,7 +1076,11 @@ fun JoinTeamDialog(onDismiss: () -> Unit, onJoin: (String) -> Unit) {
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = inviteCode,
-                    onValueChange = { if (it.length <= 6) inviteCode = it.uppercase() },
+                    // Normalize first, then cap. Testing the raw length instead
+                    // silently swallowed the whole paste when a code arrived
+                    // with a separator ("ABC-123" is 7 characters), leaving the
+                    // field empty with no explanation.
+                    onValueChange = { inviteCode = InviteCode.normalize(it).take(InviteCode.LENGTH) },
                     label = { Text("Invite Code") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1085,9 +1090,9 @@ fun JoinTeamDialog(onDismiss: () -> Unit, onJoin: (String) -> Unit) {
         },
         confirmButton = {
             Button(
-                onClick = { onJoin(inviteCode.trim()) },
+                onClick = { onJoin(inviteCode) },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen),
-                enabled = inviteCode.trim().length == 6
+                enabled = InviteCode.isWellFormed(inviteCode)
             ) { Text("Join", fontWeight = FontWeight.Bold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

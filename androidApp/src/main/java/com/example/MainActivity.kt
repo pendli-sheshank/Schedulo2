@@ -163,11 +163,26 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            // (Re)attach the schedule-notifications listener whenever the signed-in
-            // user changes — a listener started before login has no uid to watch.
-            LaunchedEffect(authState) {
-                if (authState is AuthState.Authenticated) {
+            // Keyed on the signed-in uid rather than authState, because authState
+            // also carries transient errors (a biometric sensor failure) that
+            // leave the session perfectly valid — tearing listeners down there
+            // would blank a signed-in user's screen.
+            //
+            // (Re)attach the schedule-notifications listener whenever the user
+            // changes; a listener started before login has no uid to watch. When
+            // the uid goes away, drop every team listener and its state: these
+            // view models are activity-scoped and outlive a sign-out, so anything
+            // still attached keeps streaming the previous account's team data to
+            // whoever signs in next. Owning that here rather than in each logout
+            // button means no sign-out path — logout, account deletion, or a
+            // session revoked server-side — can miss it.
+            val signedInUserId by authViewModel.currentUserId.collectAsState()
+            LaunchedEffect(signedInUserId) {
+                if (signedInUserId.isNotEmpty()) {
                     teamViewModel.startScheduleNotificationsListener(this@MainActivity)
+                } else {
+                    teamViewModel.reset()
+                    dashboardViewModel.reset()
                 }
             }
             val themeMode by dashboardViewModel.themeMode.collectAsState()

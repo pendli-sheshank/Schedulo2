@@ -5,6 +5,13 @@ struct JoinTeamView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var inviteCode = ""
 
+    /// What the code becomes once separators and casing are normalized away —
+    /// what actually gets looked up, so validate against this and not the raw
+    /// field, or "ABC-12" reads as 6 characters when it is really 5.
+    private var normalizedCode: String { TeamViewModel.normalizeInviteCode(inviteCode) }
+
+    private var canSubmit: Bool { TeamViewModel.isWellFormedInviteCode(normalizedCode) }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
@@ -30,7 +37,7 @@ struct JoinTeamView: View {
                 }
 
                 Button(action: {
-                    teamViewModel.joinTeam(inviteCode: inviteCode.trimmingCharacters(in: .whitespacesAndNewlines))
+                    teamViewModel.joinTeam(inviteCode: inviteCode)
                     dismiss()
                 }) {
                     Text("Join Store Team")
@@ -40,10 +47,10 @@ struct JoinTeamView: View {
                         .padding(.vertical, 14)
                         .background(
                             RoundedRectangle(cornerRadius: 12)
-                                .fill(inviteCode.count < 6 ? Color.gray : Color.primaryGreen)
+                                .fill(canSubmit ? Color.primaryGreen : Color.gray)
                         )
                 }
-                .disabled(inviteCode.count < 6)
+                .disabled(!canSubmit)
 
                 Spacer()
             }
