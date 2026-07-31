@@ -54,6 +54,7 @@ jobs:
         with:
           name: release-aab
           path: androidApp/build/outputs/bundle/release/androidApp-release.aab
+          retention-days: 7
 
       - name: Deploy to Play Store (Internal Testing)
         uses: r0adkll/upload-google-play@v1

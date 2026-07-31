@@ -1,9 +1,14 @@
 ---
 name: payroll-fiscal-week
-description: Fiscal-week grouping rules for all payroll, earnings, weekly-summary, pay-cycle, and widget code in Schedulo2. Use whenever adding or changing any code that groups shifts or earnings by week — payroll cycles, weekly insights, dashboard week cards, widget totals, exports — on Android, iOS, or the shared KMP module.
+description: Fiscal-week grouping and date/day formatting rules for all payroll, earnings, weekly-summary, pay-cycle, and widget code in Schedulo2. Use whenever adding or changing any code that groups shifts or earnings by week or renders week/cycle date ranges — payroll cycles, weekly insights, dashboard week cards, widget totals, exports — on Android, iOS, or the shared KMP module. Also use when triaging any bug report about wrong week ranges, wrong cycle boundaries, or "shows Monday to Sunday" on either platform.
 ---
 
 # Payroll Fiscal-Week Grouping
+
+**Dates and day handling are a top-priority design element of this app** (owner
+directive). A wrong week boundary silently misstates people's pay — treat any
+date/day defect as a showstopper, and treat every change to week math or date
+labels as high-risk: verify on BOTH platforms before considering it done.
 
 ## The rule
 
@@ -60,6 +65,36 @@ start date. The formats differ per platform and must each stay byte-stable:
 Changing how a cycle start is computed silently orphans previously saved adjustments
 (they stop matching any cycle). Stale keys from before the fiscal-week fix are
 intentionally **not** migrated. Do not "unify" or reformat cycleKey without a migration.
+
+## Triage: "one platform shows Monday–Sunday, the other is fine"
+
+Before hunting for a code bug, check WHICH BUILD the reporter is running. Store
+builds lag the repo: deploys only run on push to `main`, while day-to-day work
+merges into `dev-branch` (the default branch). A fix that lives on `dev-branch`
+has NOT shipped until dev-branch is merged into main AND the resulting
+Play Store / TestFlight run succeeds AND the device actually updates
+(TestFlight especially requires Apple processing plus a manual update).
+
+Concrete instance (2026-07-18): iOS Earnings showed Monday–Sunday cycles even
+though the repo code was correct — the phone was on TestFlight build 8 (built
+2026-07-09 from a pre-fix `main`, with `comps.weekday = 2 // Monday` still in
+`getWeeklyEarningsSummary`). Build 9, the first iOS build containing the
+fiscal-week fix, had uploaded only hours earlier. Diagnosis path: compare the
+shipped run's commit (`git show <deployed-sha>:<file>`) against current code
+before touching anything.
+
+## Date label formatting
+
+Week/cycle ranges are user-facing pay statements — keep formats identical on
+both platforms and stable across releases:
+
+- Week/cycle range labels: `MMM dd` start and end, en dash with spaces
+  (`Jul 03 – Jul 09`); append `(Current)` for the active cycle where used.
+- Report headers use `MMM dd, yyyy`; CSV exports use `yyyy-MM-dd` / `HH:mm`.
+- A cycle's displayed end date is the LAST DAY of the cycle (start + 7 days
+  minus a moment), never the exclusive-boundary next start day.
+- Never change a persisted format (see cycleKey warning above) and never let a
+  locale default pick the format — always set an explicit `dateFormat`.
 
 ## Checklist for any change touching weekly grouping
 
