@@ -1,13 +1,15 @@
 <div align="center">
 
-# Schedulo
+# Shifnex
 
 **Track shifts. Manage earnings. Stay organized.**
 
 A cross-platform app for shift workers to manage multiple jobs, track hours, monitor earnings, and coordinate with teams — available on both iOS and Android.
 
-[![Build & Deploy Android](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-playstore.yml/badge.svg)](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-playstore.yml)
-[![Build & Deploy iOS](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-appstore.yml/badge.svg)](https://github.com/pendli-sheshank/Schedulo2/actions/workflows/deploy-appstore.yml)
+*Formerly known as Schedulo — rebranded to Shifnex in July 2026.*
+
+[![Build & Deploy Android](https://github.com/pendli-sheshank/Shifnex/actions/workflows/deploy-playstore.yml/badge.svg)](https://github.com/pendli-sheshank/Shifnex/actions/workflows/deploy-playstore.yml)
+[![Build & Deploy iOS](https://github.com/pendli-sheshank/Shifnex/actions/workflows/deploy-appstore.yml/badge.svg)](https://github.com/pendli-sheshank/Shifnex/actions/workflows/deploy-appstore.yml)
 
 </div>
 
@@ -17,24 +19,27 @@ A cross-platform app for shift workers to manage multiple jobs, track hours, mon
 
 ### Shift Management
 - Add, edit, and delete shifts with date/time pickers
-- Set shift reminders (15m, 30m, 1hr before)
+- Set shift reminders (15m, 30m, 1hr before) with full-screen alarm-style alerts
 - View upcoming and previous shifts in the Plan tab with calendar views (month, week, day)
-- Support for both hourly and gig work shifts
+- Plan an entire week at once, aligned to each employer's pay-cycle start day
+- Support for both hourly and gig work shifts (gig shifts auto-mark as paid)
+- Each shift stores its hourly rate at creation, so later job-rate changes are never retroactive
 
 ### Multi-Job Support
 - Configure multiple employers/jobs
-- Set hourly rates per job
+- Set hourly rates per job, plus bonus amounts
 - Define weekly goals (hours or earnings targets)
-- Customizable weekly cycle start day per employer
+- Customizable weekly cycle start day per employer (e.g. Friday–Thursday pay weeks)
 - Overtime tracking with configurable thresholds and multipliers
 
 ### Pay & Earnings
-- Real-time dashboard with total earnings and hours
+- Real-time dashboard with earnings and hours, split between personal and team shifts
 - Per-employer goal progress bars
 - Pay cycle management with paid/unpaid status tracking
+- **Fiscal-week payroll grouping** — weekly totals anchor to each job's cycle start day, never a hardcoded Monday
 - Payment window period display with countdown timers
 - Pay adjustments (Bonus, Overpaid, Underpaid, Deduction, Correction)
-- Export reports in Text or CSV format with employer/week/cycle filtering
+- Export reports in Text or CSV format with employer/week/cycle filtering and overtime breakdown
 
 ### Biometric Login
 - Face ID / Touch ID on iOS
@@ -59,10 +64,11 @@ A cross-platform app for shift workers to manage multiple jobs, track hours, mon
 - **Create / Edit Teams**: Managers create a team (name, company, working hours, address) and receive a unique 6-character invite code
 - **Join Teams**: Members enter the invite code to join from any device
 - **Assign Shifts**: Managers assign shifts to specific team members with company, role, time, and pay details
-- **Accept / Decline**: Members see assigned shifts and can accept or decline them
-- **Shift Swaps**: Members request to swap or trade shifts with teammates; managers approve or decline
+- **Accept / Decline**: Members see assigned shifts and can accept or decline them; accepted shifts sync into their personal schedule
+- **Shift Swaps**: Members request to swap or trade shifts with teammates; managers approve or decline; each member keeps their own pay rate
 - **Per-Shift Tasks**: Attach a task checklist to a shift and track completion per member
 - **Weekly Roster Grid**: View the whole team's week at a glance to spot coverage gaps
+- **Weekly Team Plan**: Managers plan a full week of coverage with per-member pay rates
 - **Team Chat & Announcements**: Send messages and pinned announcements to the team in real time
 - **Photo Sharing**: Share a photo in team chat — images are stored securely and **auto-deleted once every member has seen them**
 - **Real-time Updates**: All team data syncs in real-time across devices via Firestore
@@ -79,12 +85,100 @@ A cross-platform app for shift workers to manage multiple jobs, track hours, mon
 - Theme selection (Light / Dark / System)
 - Notification preferences
 - Default shift settings
+- Grouped settings lists with auto-save
 
 ### Authentication
-- Firebase Authentication (email/password)
+- Firebase Authentication (email/password) with email verification
 - Biometric login option (Face ID, Touch ID, Fingerprint)
+- Privacy policy consent checkbox at signup
 - Form validation and inline error banners
-- Secure session management with proper logout/data clearing
+- Secure session management with proper logout/data clearing (no data leaks across accounts)
+
+### Polish & Resilience
+- Skeleton loaders while data streams in
+- Optimistic local updates with rollback on Firestore failure
+- Connectivity monitoring with offline indicators
+- Micro-animations and a notched bottom nav bar with centered FAB menu
+- Audited against 2026 mobile design guidelines (see `AUDIT_REPORT_2026_DESIGN_GUIDELINES.md`)
+
+---
+
+## Development History — Updates & Improvements
+
+Shifnex has shipped continuously since day one: **100+ pull requests** merged between May 31 and July 31, 2026, taking the project from a single-platform prototype to a live, dual-store release (tagged `Live_Release`). The story so far:
+
+### Phase 1 — Android Foundation (late May – early June 2026)
+The project began as an Android-only timesheet app named **Schedulo**.
+- Email/password authentication with Firebase, redesigned login/signup screens, and an enhanced profile screen
+- Core shift CRUD with date/time pickers and a real-time dashboard
+- **Full Firestore real-time sync** for cross-device data access
+- Full dark mode with system theme auto-detection
+- Overtime tracking with configurable threshold and multiplier
+- CSV export reports; Plan screen redesign with weekly grouping and timesheet details
+- Full-screen alarm-style shift reminders with sound and vibration
+- First Play Store CI/CD pipeline (GitHub Actions → internal testing track)
+
+### Phase 2 — Reliability & Pay Cycles (early June 2026)
+- Fixed mark-as-paid persistence (optimistic local updates + Firestore field-name mismatch)
+- Gig shifts auto-marked as paid and separated from weekly pay cycles
+- Fixed memory leaks, missing optimistic updates, and data-loss edge cases; Firestore became the single source of truth
+- Dashboard redesigned with modern design principles
+- Security hardening, account deletion, and analytics groundwork
+- Reliable reminders, profile settings, shift notes, and notification preferences
+- Export redesigned around employer pay cycles with overtime breakdown
+- Plan tab rebuilt with calendar **Month, Week, and Day views**, future-week planning, and calendar add-shift buttons
+- Pay adjustments per weekly cycle (bonus, underpaid, overpaid, deduction)
+
+### Phase 3 — Going Cross-Platform: iOS + KMP (mid June 2026)
+- **iOS app added with a Kotlin Multiplatform shared module** — shared models (`Shift`, `Job`, `Team`) and business logic (`ShiftCalculator`, `InsightsCalculator`) now compile for both platforms
+- SwiftUI UI with MVVM mirroring the Android architecture
+- Connected both apps to the **named Firestore database `"schedulo2"`** (fixing sync against the default DB)
+- Week planner aligned to each job's cycle start day, with access to the past 3 weeks
+- Fixed 14 issues from a full app audit
+- iOS CI/CD to **TestFlight**: an extended hardening campaign (PRs #21–#44) covering code signing for SPM packages, keychain setup, App Store validation (icons, orientations, encryption declaration), auto-incrementing build numbers from the CI run number, and reliable IPA export/upload
+
+### Phase 4 — Platform Features: Biometrics, Calendar, Widgets, Teams v1 (mid-late June 2026)
+- Biometric login on both platforms (Face ID / Touch ID / Android Biometric), including fixes for the auto-trigger, bypass-on-reopen, and logout-loop bugs
+- Native calendar sync on both platforms (EventKit / CalendarContract)
+- **Home screen widgets** on both platforms (WidgetKit / Glance) showing the next shift and weekly summary
+- First team management release: create/join teams with invite codes, assign shifts, Firestore security rules
+- iOS Pay tab reached parity: payment window, pay adjustments, mark as paid
+- Tab restructure with a dedicated Team tab, employer dropdowns, accept-to-sync shifts
+- Auto-approve options, hide-pay setting, weekly team plan, and a manager dashboard
+
+### Phase 5 — Teams Deep Build (late June 2026)
+A five-phase epic turned teams into a full workforce tool:
+- **Phase 0**: notification and widget data reliability fixes
+- **Phase 1**: team permissions + shift accept/decline
+- **Phase 2**: weekly roster grid view
+- **Phase 3**: team chat and announcements
+- **Phase 4**: shift swap requests with manager approval workflow
+- Then on top: per-shift task checklists, swap initiation from the schedule, team weekly cycle start day, photo sharing in chat with **auto-delete after all members have seen the image**, WhatsApp-style chat UI, and chat notifications
+- Team management redesigned into a responsive **bento-style dashboard** (dashboard / schedule / tasks tiles)
+- Create/Edit Team expanded (company, hours, address) and teams decoupled from personal Jobs
+- Firestore rules hardened against team privilege-escalation and shift-forgery; error feedback surfaced in the UI
+- Fixed orphaned personal shifts when team shifts are deleted; members keep their own pay rate through swaps
+- New app icon and UI animations (splash screens later removed after causing an Android force-close)
+
+### Phase 6 — Polish, Compliance & Hardening (early July 2026)
+- Widget reliability on both platforms: fixed the Android "couldn't add widget" error and hardcoded preview data, and the iOS widget not receiving app data
+- Photo picker fixes across Android versions (Android 11+ visibility, requestCode overflow, `ACTION_GET_CONTENT` fallback)
+- Privacy policy checkbox at login; Terms & Conditions added to store listings
+- Full **2026 design guidelines audit** with compliance fixes, followed by skeleton loaders, optimistic updates, connectivity monitoring, and micro-animations
+- Dashboard polish: notched nav bar, centered FAB menu; Profile & Settings polish: grouped lists, auto-save, modal and jobs UX
+- Patched the Glance protobuf **CVE-2024-7254** flagged by Play Console
+- **Security & UI audit** (`AUDIT_REPORT_SECURITY_AND_UI.md`) with fixes for team data isolation and design tokens; security-rules **emulator test suite** (`firebase-tests/`) wired into CI
+- GitHub Actions workflow to deploy Firestore/Storage rules directly
+
+### Phase 7 — Rebrand & Live Release (mid-late July 2026)
+- **Renamed the app to Shifnex** on both platforms and rebranded all in-app text
+- iOS marketing version automation in CI (auto-injected `MARKETING_VERSION`); version 1.0.1 shipped to TestFlight
+- **Payroll fiscal weeks**: weekly earnings grouping anchored to each job's `weeklyCycleStartDay` instead of calendar weeks — codified as a repo skill so future changes follow the same rules
+- Shifts now priced at their **stored hourly rate**, so employer rate changes aren't retroactively applied to past shifts
+- Fixed the team schedule flow, Plan-tab duplicates, and split dashboard earnings into personal vs. team
+- Fixed team creation being blocked by stale email verification, and **team data leaking across sign-outs**
+- CI storage-quota management: deploy artifacts now expire after 7 days; store deploys unblocked with non-blocking archival
+- Tagged **`Live_Release`** — Shifnex is live on both store pipelines
 
 ---
 
@@ -112,7 +206,7 @@ A cross-platform app for shift workers to manage multiple jobs, track hours, mon
 ## Project Structure
 
 ```
-Schedulo2/
+Shifnex/
 ├── shared/                          # Kotlin Multiplatform shared module
 │   └── src/commonMain/kotlin/
 │       └── com/schedulo/shared/
@@ -143,8 +237,11 @@ Schedulo2/
 │           ├── Team/                # Team management views
 │           └── Profile/             # Profile, Settings
 ├── iosApp/ScheduloWidget/           # iOS widget extension (WidgetKit)
+├── firebase-tests/                  # Firestore/Storage rules emulator tests
 └── firestore.rules                  # Firestore security rules
 ```
+
+> Internal module and bundle identifiers retain the original `schedulo`/`Schedulo2` naming for store and Firebase continuity; the user-facing brand is **Shifnex**.
 
 ---
 
@@ -159,8 +256,8 @@ Schedulo2/
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/pendli-sheshank/Schedulo2.git
-   cd Schedulo2
+   git clone https://github.com/pendli-sheshank/Shifnex.git
+   cd Shifnex
    ```
 
 2. **Add Firebase configuration**
@@ -176,6 +273,19 @@ Schedulo2/
    cd iosApp && xcodegen generate && open Schedulo2.xcodeproj
    ```
 
+### Tests
+
+```bash
+# Android unit tests
+./gradlew :androidApp:testDebugUnitTest
+
+# Shared module tests (commonTest on the JVM)
+./gradlew :shared:testAndroidHostTest
+
+# Firestore/Storage security-rules tests (needs Firebase emulator)
+cd firebase-tests && npm install && npm test
+```
+
 ---
 
 ## CI/CD
@@ -183,11 +293,16 @@ Schedulo2/
 ### Android → Google Play Store
 - **Trigger**: Push to `main` or manual dispatch
 - **Pipeline**: Build signed AAB → Upload to Play Store internal testing track
+- **Version code**: Set from `github.run_number + 100`
+- **Artifacts**: Build artifacts expire after 7 days to protect storage quota
 
 ### iOS → TestFlight
 - **Trigger**: Push to `main` or manual dispatch
-- **Pipeline**: Build KMP framework → Generate Xcode project → Archive → Upload to TestFlight
-- **Build number**: Auto-incremented from `github.run_number + 100`
+- **Pipeline**: Build KMP framework → Generate Xcode project (XcodeGen) → Archive → Upload to TestFlight
+- **Build number**: Auto-incremented from `github.run_number + 100`; `MARKETING_VERSION` injected automatically
+
+### Firebase Rules
+- **`deploy-firebase-rules.yml`** deploys `firestore.rules` and `storage.rules` — runs automatically when a rules file changes on `main`, or manually from the Actions tab
 
 ### Required GitHub Secrets
 
@@ -208,17 +323,18 @@ Schedulo2/
 | `IOS_GOOGLE_SERVICE_PLIST_BASE64` | iOS | Base64-encoded GoogleService-Info.plist |
 | `WIDGET_PROVISIONING_PROFILE` | iOS | Base64-encoded widget provisioning profile |
 | `IOS_WIDGET_PROVISIONING_PROFILE_NAME` | iOS | Widget profile specifier name |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase | Service account JSON for rules deployment |
 
 ---
 
 ## Team Management — How It Works
 
-1. **Manager creates a team** in the Profile → Team Management screen, giving it a name
+1. **Manager creates a team** in the Profile → Team Management screen, giving it a name, company, working hours, and address
 2. A **6-character invite code** is generated automatically (e.g., `X4K9PM`)
 3. **Manager shares the code** with team members (via text, chat, etc.)
 4. **Members join** by entering the invite code on their device
 5. **Manager assigns shifts** to specific members — setting company, role, date/time, and hourly rate
-6. **Members receive assignments** and can **Accept** or **Decline** each shift
+6. **Members receive assignments** and can **Accept** or **Decline** each shift; accepted shifts sync into their personal schedule
 7. All data syncs in **real-time** across all team members' devices
 
 ### Firestore Collections
@@ -227,7 +343,7 @@ Schedulo2/
 |------------|---------|
 | `teams` | Team metadata (name, owner, invite code, member count) |
 | `team_members` | Membership records (userId, teamId, role) |
-| `team_shifts` | Assigned shifts (assignedTo, assignedBy, status) |
+| `team_shifts` | Assigned shifts (assignedTo, assignedBy, status, tasks) |
 | `team_messages` | Chat messages and announcements (text, `imageUrl`, `seenBy`) |
 
 > Chat photos are uploaded to **Firebase Cloud Storage** under `chat_images/{teamId}/{messageId}.jpg` and are deleted automatically once every team member has seen the message.
