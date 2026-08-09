@@ -138,10 +138,23 @@ service cloud.firestore {
     match /feedback/{feedbackId} {
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'id', 'userId', 'userEmail', 'category', 'description',
+          'stepsToReproduce', 'screenshotUrl', 'appVersion', 'platform',
+          'osVersion', 'deviceModel', 'status', 'createdAt'
+        ])
         && request.resource.data.userId == request.auth.uid
+        // The client keys the document by its own id; requiring them to agree
+        // keeps a report addressable by either.
+        && request.resource.data.id == feedbackId
+        // Triage state is server-side only: update is denied, so anything other
+        // than the initial value here would be permanent and unearned.
+        && request.resource.data.status == 'new'
         && request.resource.data.category in ['bug', 'feature', 'other']
         && request.resource.data.description is string
-        && request.resource.data.description.size() > 0
+        // trim() so a description of only spaces can't satisfy the length floor —
+        // the clients trim before sending, and this keeps the two in agreement.
+        && request.resource.data.description.trim().size() > 0
         && request.resource.data.description.size() <= 2000
         && (!('stepsToReproduce' in request.resource.data)
           || (request.resource.data.stepsToReproduce is string

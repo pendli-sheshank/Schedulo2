@@ -278,7 +278,7 @@ describe('feedback submissions', () => {
   });
   it('feature and other are also accepted categories', async () => {
     await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ category: 'feature' })));
-    await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f3'), report({ category: 'other' })));
+    await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f3'), report({ id: 'f3', category: 'other' })));
   });
   it('a report cannot be attributed to another user', async () => {
     await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ userId: OUTSIDER })));
@@ -289,11 +289,26 @@ describe('feedback submissions', () => {
   it('an empty description is rejected', async () => {
     await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ description: '' })));
   });
+  it('a whitespace-only description is rejected', async () => {
+    // The clients trim before sending; without trim() in the rules a report of
+    // pure spaces would clear the length floor and land as an unactionable doc.
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ description: '    \n\t  ' })));
+  });
+  it('the document id must match the id in the payload', async () => {
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f9'), report({ id: 'f2' })));
+  });
+  it('a report cannot be filed already triaged', async () => {
+    // update is denied, so a status set at creation would be permanent.
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ status: 'triaged' })));
+  });
+  it('unknown fields are rejected', async () => {
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ isAdmin: true })));
+  });
   it('a description at the 2000-char cap is accepted but one over is not', async () => {
     // The cap is mirrored in FeedbackLimits.MAX_DESCRIPTION; if the two drift,
     // the client lets the user type a report the server then refuses.
     await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ description: 'x'.repeat(2000) })));
-    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f3'), report({ description: 'x'.repeat(2001) })));
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f3'), report({ id: 'f3', description: 'x'.repeat(2001) })));
   });
   it('over-long steps to reproduce are rejected', async () => {
     await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ stepsToReproduce: 'x'.repeat(2001) })));

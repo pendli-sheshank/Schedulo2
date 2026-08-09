@@ -134,6 +134,13 @@ class FeedbackViewModel : ViewModel() {
             _errorMessage.value = "Please describe the issue before sending."
             return
         }
+        // The text field truncates as you type, but the cap is re-checked here so
+        // a programmatic assignment can't get as far as a rules rejection — which
+        // would land after the screenshot had already uploaded.
+        if (!FeedbackLimits.isValidSteps(stepsToReproduce)) {
+            _errorMessage.value = "Steps to reproduce is too long (max ${FeedbackLimits.MAX_STEPS} characters)."
+            return
+        }
 
         _isSubmitting.value = true
         _errorMessage.value = null
