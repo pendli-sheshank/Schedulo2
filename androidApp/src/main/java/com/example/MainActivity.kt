@@ -80,6 +80,7 @@ class MainActivity : FragmentActivity() {
             val biometricLockActive by authViewModel.biometricLockActive.collectAsState()
             val dashboardViewModel: DashboardViewModel = viewModel()
             val teamViewModel: TeamViewModel = viewModel()
+            val feedbackViewModel: FeedbackViewModel = viewModel()
             dashboardViewModel.setAppContext(this@MainActivity)
 
             LaunchedEffect(Unit) {
@@ -260,7 +261,10 @@ class MainActivity : FragmentActivity() {
                             )
                         }
                         composable("profile") {
-                            ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") }, onNavigateToJobs = { navController.navigate("jobs") })
+                            ProfileScreen(dashboardViewModel = dashboardViewModel, authViewModel = authViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() }, onNavigateToInsights = { navController.navigate("insights") }, onNavigateToJobs = { navController.navigate("jobs") }, onNavigateToFeedback = { navController.navigate("feedback") })
+                        }
+                        composable("feedback") {
+                            SendFeedbackScreen(viewModel = feedbackViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })
                         }
                         composable("insights") {
                             InsightsScreen(dashboardViewModel = dashboardViewModel, onBack = { if (navController.previousBackStackEntry != null) navController.popBackStack() })

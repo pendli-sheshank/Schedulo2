@@ -20,6 +20,7 @@ struct ProfileView: View {
     @State private var showDeleteAccount = false
     @State private var showReauthDialog = false
     @State private var deletePassword = ""
+    @State private var showFeedback = false
 
     @ObservedObject private var calendarService = CalendarService.shared
     @State private var availableCalendars: [EKCalendar] = []
@@ -83,6 +84,9 @@ struct ProfileView: View {
                     // Insights
                     insightsCard
 
+                    // Send Feedback
+                    feedbackCard
+
                     Divider().padding(.horizontal, 16)
 
                     // Logout
@@ -133,6 +137,9 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showChangePassword) {
             changePasswordSheet
+        }
+        .sheet(isPresented: $showFeedback) {
+            SendFeedbackView()
         }
         .alert("Delete Account", isPresented: $showDeleteAccount) {
             Button("Delete", role: .destructive) {
@@ -517,6 +524,33 @@ struct ProfileView: View {
                     Text("Earnings Insights")
                         .font(.system(size: 16, weight: .bold))
                     Text("Charts, trends & analytics")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
+            .padding(16)
+            .background(settingsCardBackground)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Feedback Card
+
+    private var feedbackCard: some View {
+        Button(action: { showFeedback = true }) {
+            HStack(spacing: 8) {
+                Image(systemName: "ladybug.fill")
+                    .foregroundColor(.primaryGreen)
+                    .font(.system(size: 16))
+                VStack(alignment: .leading) {
+                    Text("Send Feedback")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Report a bug or suggest a feature")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                 }
