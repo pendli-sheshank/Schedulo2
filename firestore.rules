@@ -130,6 +130,29 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
 
+    // Feedback: bug reports and suggestions submitted from the in-app feedback
+    // screen. A report is immutable once written — update and delete are denied
+    // outright — so it can't be edited or withdrawn after triage has started on
+    // it. That also means the screenshot must be uploaded before the document is
+    // created, since there is no second write to attach the URL.
+    match /feedback/{feedbackId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.category in ['bug', 'feature', 'other']
+        && request.resource.data.description is string
+        && request.resource.data.description.size() > 0
+        && request.resource.data.description.size() <= 2000
+        && (!('stepsToReproduce' in request.resource.data)
+          || (request.resource.data.stepsToReproduce is string
+            && request.resource.data.stepsToReproduce.size() <= 2000))
+        && (!('screenshotUrl' in request.resource.data)
+          || (request.resource.data.screenshotUrl is string
+            && request.resource.data.screenshotUrl.size() <= 1000))
+        && request.resource.data.createdAt is number;
+      allow update, delete: if false;
+    }
+
     // Invite codes: a small public-by-secret lookup so joiners can resolve a
     // code to a teamId WITHOUT the teams collection being world-readable.
     // Reads are allowed only by exact document id (the code itself is the

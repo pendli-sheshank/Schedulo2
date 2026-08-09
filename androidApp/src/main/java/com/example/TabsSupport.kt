@@ -1792,7 +1792,8 @@ fun ProfileScreen(
     authViewModel: AuthViewModel? = null,
     onBack: () -> Unit,
     onNavigateToInsights: () -> Unit = {},
-    onNavigateToJobs: () -> Unit = {}
+    onNavigateToJobs: () -> Unit = {},
+    onNavigateToFeedback: () -> Unit = {}
 ) {
     val currentCompany by dashboardViewModel.defaultCompany.collectAsState()
     val currentRate by dashboardViewModel.defaultRate.collectAsState()
@@ -2163,6 +2164,24 @@ fun ProfileScreen(
                     title = "Earnings Insights",
                     subtitle = "Charts, trends & analytics",
                     onClick = { onNavigateToInsights() }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ---- Help & Support ----
+            SettingsGroupLabel("Help & Support")
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                SettingsNavRow(
+                    icon = Icons.Default.BugReport,
+                    title = "Send Feedback",
+                    subtitle = "Report a bug or suggest a feature",
+                    onClick = { onNavigateToFeedback() }
                 )
             }
 

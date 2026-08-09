@@ -20,6 +20,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   writeBatch,
   increment,
   collection,
@@ -245,5 +246,72 @@ describe('schedule-assignment notifications', () => {
   });
   it('the recipient cannot rewrite other fields', async () => {
     await assertFails(updateDoc(doc(ctxFor(MEMBER), 'notifications', 'n1'), { company: 'Other' }));
+  });
+});
+
+describe('feedback submissions', () => {
+  const report = (overrides = {}) => ({
+    id: 'f2',
+    userId: MEMBER,
+    userEmail: 'm@x.com',
+    category: 'bug',
+    description: 'The pay screen shows last week total.',
+    stepsToReproduce: '',
+    screenshotUrl: '',
+    appVersion: '91.0',
+    platform: 'android',
+    osVersion: '14',
+    deviceModel: 'Pixel 8',
+    status: 'new',
+    createdAt: 100,
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'feedback', 'f1'), report({ id: 'f1' }));
+    });
+  });
+
+  it('a signed-in user can file their own report', async () => {
+    await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report()));
+  });
+  it('feature and other are also accepted categories', async () => {
+    await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ category: 'feature' })));
+    await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f3'), report({ category: 'other' })));
+  });
+  it('a report cannot be attributed to another user', async () => {
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ userId: OUTSIDER })));
+  });
+  it('an unknown category is rejected', async () => {
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ category: 'crash' })));
+  });
+  it('an empty description is rejected', async () => {
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ description: '' })));
+  });
+  it('a description at the 2000-char cap is accepted but one over is not', async () => {
+    // The cap is mirrored in FeedbackLimits.MAX_DESCRIPTION; if the two drift,
+    // the client lets the user type a report the server then refuses.
+    await assertSucceeds(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ description: 'x'.repeat(2000) })));
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f3'), report({ description: 'x'.repeat(2001) })));
+  });
+  it('over-long steps to reproduce are rejected', async () => {
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), report({ stepsToReproduce: 'x'.repeat(2001) })));
+  });
+  it('a missing createdAt is rejected', async () => {
+    const { createdAt, ...withoutTimestamp } = report();
+    await assertFails(setDoc(doc(ctxFor(MEMBER), 'feedback', 'f2'), withoutTimestamp));
+  });
+  it('the reporter can read their own report back', async () => {
+    await assertSucceeds(getDoc(doc(ctxFor(MEMBER), 'feedback', 'f1')));
+  });
+  it('another user cannot read someone else\'s report', async () => {
+    await assertFails(getDoc(doc(ctxFor(OUTSIDER), 'feedback', 'f1')));
+  });
+  it('a submitted report is immutable — the reporter cannot edit it', async () => {
+    await assertFails(updateDoc(doc(ctxFor(MEMBER), 'feedback', 'f1'), { description: 'changed' }));
+  });
+  it('a submitted report cannot be withdrawn', async () => {
+    await assertFails(deleteDoc(doc(ctxFor(MEMBER), 'feedback', 'f1')));
   });
 });

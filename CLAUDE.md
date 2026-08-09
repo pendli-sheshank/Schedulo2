@@ -43,6 +43,7 @@ The app uses a **named Firestore database** called `"schedulo2"` (not the defaul
 | `shifts` | userId, company, startTime, endTime, hourlyRate | User-scoped |
 | `jobs` | userId, title, isGigWork, defaultHourlyRate, bonusAmount | User-scoped |
 | `pay_adjustments` | userId, cycleKey, employer, type, amount | User-scoped |
+| `feedback` | userId, category, description, screenshotUrl | User-scoped, create-only |
 | `teams` | name, ownerId, inviteCode, memberCount | Role-based |
 | `team_members` | teamId, userId, role, displayName | Role-based |
 | `team_shifts` | teamId, assignedTo, company, status, tasks[] | Role-based |
@@ -85,9 +86,9 @@ Security rules are in `firestore.rules`.
 
 **Every code change must bump the fallback version code** in `androidApp/build.gradle.kts`:
 ```kotlin
-val ciVersionCode = (System.getenv("VERSION_CODE") ?: "87").toInt()
+val ciVersionCode = (System.getenv("VERSION_CODE") ?: "91").toInt()
 ```
-CI sets `VERSION_CODE` from the GitHub run number + 100. The fallback (currently 87) must be incremented with each release to avoid Play Store "version code already used" errors.
+CI sets `VERSION_CODE` from the GitHub run number + 100. The fallback (currently 91) must be incremented with each release to avoid Play Store "version code already used" errors.
 
 ## CI/CD
 
