@@ -18,5 +18,18 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
       allow delete: if isTeamMember();
     }
+
+    // Screenshots attached to a feedback report, scoped to the reporter. The
+    // path embeds the uid so ownership is decided by the path alone, without a
+    // Firestore lookup — the feedback document doesn't exist yet at upload time.
+    // Create only, deliberately: `write` would also grant update and delete, and
+    // the feedback document referencing this image is immutable, so replacing or
+    // removing the image would leave a report pointing at changed or dead content.
+    match /feedback_screenshots/{userId}/{imageId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
   }
 }

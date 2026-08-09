@@ -533,6 +533,32 @@ final class FirebaseService {
         db.collection("pay_adjustments").document(adjustmentId).delete()
     }
 
+    // MARK: - Feedback
+
+    /// Store a bug report. Unlike the other writes here this one reports its
+    /// error: the user is waiting on a confirmation screen, and a silent failure
+    /// would tell them the report was filed when it wasn't.
+    func submitFeedback(_ feedback: FeedbackReport, completion: @escaping (Error?) -> Void) {
+        let data: [String: Any] = [
+            "id": feedback.id,
+            "userId": feedback.userId,
+            "userEmail": feedback.userEmail,
+            "category": feedback.category,
+            "description": feedback.description,
+            "stepsToReproduce": feedback.stepsToReproduce,
+            "screenshotUrl": feedback.screenshotUrl,
+            "appVersion": feedback.appVersion,
+            "platform": feedback.platform,
+            "osVersion": feedback.osVersion,
+            "deviceModel": feedback.deviceModel,
+            "status": feedback.status,
+            "createdAt": feedback.createdAt
+        ]
+        db.collection("feedback").document(feedback.id).setData(data) { error in
+            DispatchQueue.main.async { completion(error) }
+        }
+    }
+
     // MARK: - Listener Management
 
     func removeAllListeners() {

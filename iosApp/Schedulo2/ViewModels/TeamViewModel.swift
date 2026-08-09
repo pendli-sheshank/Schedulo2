@@ -1065,12 +1065,7 @@ final class TeamViewModel: ObservableObject {
 
         let senderName = currentUserDisplayName
         let messageId = UUID().uuidString
-        let maxDim: CGFloat = 800
-        let scale: CGFloat = min(maxDim / image.size.width, maxDim / image.size.height, 1)
-        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        let resized: UIImage = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
-        guard let data = resized.jpegData(compressionQuality: 0.5) else {
+        guard let data = compressImageForUpload(image) else {
             isUploadingImage = false
             errorMessage = "Failed to compress image"
             return
